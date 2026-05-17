@@ -1,0 +1,112 @@
+.meta-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  height: 100%;
+}
+
+.meta-panel__title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.meta-panel__icon { font-size: 1.1rem; }
+
+.meta-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.meta-form__label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.meta-form__input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  padding: 9px 12px;
+  width: 100%;
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.meta-form__input:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.meta-form__input::placeholder { color: var(--text-muted); }
+
+.meta-form__input--short { width: 120px; }
+
+.author-row {
+  display: flex;
+  gap: 8px;
+}
+
+.author-add-btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  width: 36px;
+  font-size: 1.2rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--transition), transform var(--transition);
+}
+
+.author-add-btn:hover {
+  background: var(--accent-light);
+  transform: scale(1.05);
+}
+
+.author-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.author-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(99,102,241,0.15);
+  border: 1px solid rgba(99,102,241,0.3);
+  color: var(--accent-light);
+  border-radius: 99px;
+  font-size: 0.8rem;
+  padding: 3px 10px 3px 10px;
+}
+
+.author-tag__remove {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0;
+  transition: color var(--transition);
+}
+
+.author-tag__remove:hover { color: var(--danger); }
