@@ -3,8 +3,9 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 
-// Absolute path to tectonic.exe (located inside backend directory)
-const TECTONIC_PATH = path.resolve(__dirname, "../../tectonic.exe");
+// Cross-platform tectonic resolution (local tectonic.exe / local tectonic / system fallback)
+const localBinary = path.resolve(__dirname, "../../", process.platform === "win32" ? "tectonic.exe" : "tectonic");
+const TECTONIC_PATH = fs.existsSync(localBinary) ? localBinary : "tectonic";
 
 /**
  * Compiles a LaTeX string to PDF using Tectonic.

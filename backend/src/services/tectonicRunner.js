@@ -12,8 +12,9 @@ const os = require('os');
 const fs = require('fs');
 const { logger } = require('../utils/logger');
 
-// Resolve tectonic.exe — it lives in the backend folder (f:\new-doc\backend\tectonic.exe)
-const TECTONIC_PATH = path.resolve(__dirname, '..', '..', 'tectonic.exe');
+// Cross-platform tectonic resolution (local tectonic.exe / local tectonic / system fallback)
+const localBinary = path.resolve(__dirname, '..', '..', process.platform === 'win32' ? 'tectonic.exe' : 'tectonic');
+const TECTONIC_PATH = fs.existsSync(localBinary) ? localBinary : 'tectonic';
 
 /**
  * Compile a LaTeX string to PDF using Tectonic.
