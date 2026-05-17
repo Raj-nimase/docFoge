@@ -11,9 +11,26 @@ const visionRoutes   = require('./src/routes/visionRoutes');
 const app  = express();
 const PORT = process.env.PORT || 3001;
 
-// ─── Middleware ────────────────────────────────────────────────────────────────
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, or standard server-to-server calls)
+    if (!origin) return callback(null, true);
+
+    const allowedOrigins = [
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
+      'https://docformatter.netlify.app'
+    ];
+
+    const isLocalhost = origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:');
+    const isNetlify = origin.endsWith('.netlify.app');
+
+    if (allowedOrigins.includes(origin) || isLocalhost || isNetlify) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   exposedHeaders: ['Content-Disposition', 'Content-Type', 'Content-Length'],
 }));
 app.use(express.json({ limit: '50mb' }));
