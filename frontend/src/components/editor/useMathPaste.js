@@ -163,7 +163,7 @@ export function transformMathHtml(html) {
     const finalHtml = doc.body ? doc.body.innerHTML : doc.documentElement.outerHTML;
 
     // Send debug info to backend (fire and forget)
-    fetch('http://localhost:3001/api/debug', {
+    fetch(`${import.meta.env.VITE_API_URL || 'https://docfoge.onrender.com/api'}/debug`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ html: `ORIGINAL:\n${html}\n\nTRANSFORMED:\n${finalHtml}` })

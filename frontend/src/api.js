@@ -1,4 +1,4 @@
-const BASE = 'http://localhost:3001/api';
+const BASE = import.meta.env.VITE_API_URL || 'https://docfoge.onrender.com/api';
 
 // ─── Compile ──────────────────────────────────────────────────────────────────
 

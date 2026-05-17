@@ -68,7 +68,7 @@ export default function Workspace() {
 
       if (final.status === 'done') {
         const safeTitle = (title || 'document').replace(/[^a-z0-9 ]/gi, '_');
-        const pdfApiUrl = `http://localhost:3001/api/documents/export/${jobId}/pdf`;
+        const pdfApiUrl = `${import.meta.env.VITE_API_URL || 'https://docfoge.onrender.com/api'}/documents/export/${jobId}/pdf`;
 
         // Fetch as Blob for same-origin blob URL
         const res = await fetch(pdfApiUrl);
