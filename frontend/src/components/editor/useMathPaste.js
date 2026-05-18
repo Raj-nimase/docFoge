@@ -1,3 +1,5 @@
+const API_BASE = 'https://docfoge.onrender.com/api';
+
 // Unicode → LaTeX symbol map
 const UNICODE_MAP = {
   'π': '\\pi ',
@@ -163,7 +165,7 @@ export function transformMathHtml(html) {
     const finalHtml = doc.body ? doc.body.innerHTML : doc.documentElement.outerHTML;
 
     // Send debug info to backend (fire and forget)
-    fetch(`${import.meta.env.VITE_API_URL || 'https://docfoge.onrender.com/api'}/debug`, {
+    fetch(`${API_BASE}/debug`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ html: `ORIGINAL:\n${html}\n\nTRANSFORMED:\n${finalHtml}` })

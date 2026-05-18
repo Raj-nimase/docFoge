@@ -1,4 +1,5 @@
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+/** Backend is always the Render deployment – no env vars needed on the frontend. */
+const BASE = 'https://docfoge.onrender.com/api';
 
 const TOKEN_KEY = 'acadoc_token';
 
