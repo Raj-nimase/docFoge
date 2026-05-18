@@ -2,18 +2,21 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
 
+const { connectDB } = require('./src/config/db');
 const documentRoutes = require('./src/routes/documentRoutes');
 const compileRoutes  = require('./src/routes/compileRoutes');
 const templateRoutes = require('./src/routes/templateRoutes');
 const visionRoutes   = require('./src/routes/visionRoutes');
+const authRoutes     = require('./src/routes/authRoutes');
+const projectRoutes  = require('./src/routes/projectRoutes');
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps, curl, or standard server-to-server calls)
     if (!origin) return callback(null, true);
 
     const allowedOrigins = [
@@ -34,42 +37,63 @@ app.use(cors({
   exposedHeaders: ['Content-Disposition', 'Content-Type', 'Content-Length'],
 }));
 app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-const fs = require('fs');
-
-// Debug endpoint for clipboard HTML
 app.post('/api/debug', (req, res) => {
   fs.appendFileSync('clipboard_debug.txt', '--- DEBUG CLIPBOARD HTML ---\n' + req.body.html + '\n----------------------------\n');
   res.sendStatus(200);
 });
-app.use(express.urlencoded({ extended: true }));
 
-// ─── Health Check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'AcaDoc Backend', timestamp: new Date().toISOString() });
 });
 
-// ─── Routes ───────────────────────────────────────────────────────────────────
-app.use('/api/documents', documentRoutes); // legacy parse/export (kept for compatibility)
+app.use('/api/auth', authRoutes);
+app.use('/api/projects', projectRoutes);
+app.use('/api/documents', documentRoutes);
 app.use('/api/compile',   compileRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/vision',    visionRoutes);
 
-// ─── 404 ──────────────────────────────────────────────────────────────────────
 app.use((_req, res) => {
   res.status(404).json({ success: false, error: 'Route not found' });
 });
 
-// ─── Global Error Handler ─────────────────────────────────────────────────────
 app.use((err, _req, res, _next) => {
   console.error('[UnhandledError]', err);
-  res.status(500).json({ success: false, error: 'Internal server error' });
+
+  if (err.code === 11000) {
+    return res.status(409).json({ success: false, error: 'Duplicate entry' });
+  }
+
+  if (err.name === 'ValidationError') {
+    const message = Object.values(err.errors).map(e => e.message).join(', ');
+    return res.status(400).json({ success: false, error: message });
+  }
+
+  res.status(err.status || 500).json({
+    success: false,
+    error: err.message || 'Internal server error',
+  });
 });
 
-// ─── Start ────────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`\n🚀  AcaDoc Backend → http://localhost:${PORT}`);
-  console.log(`   Health    : GET  http://localhost:${PORT}/api/health`);
-  console.log(`   Compile   : POST http://localhost:${PORT}/api/compile`);
-  console.log(`   Templates : GET  http://localhost:${PORT}/api/templates\n`);
+async function start() {
+  if (!process.env.JWT_SECRET) {
+    console.warn('\n⚠️  JWT_SECRET is not set. Add it to backend/.env (see .env.example)\n');
+  }
+
+  await connectDB();
+
+  app.listen(PORT, () => {
+    console.log(`\n🚀  AcaDoc Backend → http://localhost:${PORT}`);
+    console.log(`   Health    : GET  http://localhost:${PORT}/api/health`);
+    console.log(`   Auth      : POST http://localhost:${PORT}/api/auth/register`);
+    console.log(`   Projects  : GET  http://localhost:${PORT}/api/projects`);
+    console.log(`   Compile   : POST http://localhost:${PORT}/api/compile\n`);
+  });
+}
+
+start().catch((err) => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
 });

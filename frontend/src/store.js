@@ -1,35 +1,60 @@
 /**
  * AcaDoc Zustand Store
- *
- * State shape:
- *   projects[]          — all projects, persisted to localStorage
- *   currentProjectId    — ID of the open project
- *   activeChapterId     — currently visible chapter/section
- *   compileJob          — { status, jobId, blobUrl, error }
- *   toast               — { id, type, message }
  */
 
 import { create } from 'zustand';
 import { getTemplate } from './lib/templates';
+import * as api from './api';
 
 const LS_KEY = 'acadoc_projects';
 
-function loadProjects() {
+function loadProjectsLocal() {
   try {
     const raw = localStorage.getItem(LS_KEY);
     return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
-function saveProjects(projects) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(projects)); } catch (_) {}
+function saveProjectsLocal(projects) {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(projects));
+  } catch (_) {}
 }
 
 function genId() {
   return `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
-/** Build an initial project structure from a template */
+let syncTimer = null;
+
+function scheduleCloudSync(get) {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(async () => {
+    const token = api.getStoredToken();
+    if (!token) return;
+    try {
+      await api.syncUserProjects(get().projects);
+    } catch (err) {
+      console.warn('[sync]', err.message);
+    }
+  }, 1500);
+}
+
+/** Merge cloud and local project lists; newer updatedAt wins per project id */
+function mergeProjectLists(cloud = [], local = []) {
+  const byId = new Map();
+  for (const p of cloud) byId.set(p.id, p);
+  for (const p of local) {
+    const existing = byId.get(p.id);
+    if (!existing || (p.updatedAt || 0) >= (existing.updatedAt || 0)) {
+      byId.set(p.id, p);
+    }
+  }
+  return Array.from(byId.values()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+}
+
 function createProjectFromTemplate(templateId, metadata) {
   const tpl = getTemplate(templateId);
   const now = Date.now();
@@ -41,33 +66,23 @@ function createProjectFromTemplate(templateId, metadata) {
     metadata: { ...metadata },
     frontMatter: tpl.frontMatter.map(fm => ({
       ...fm,
-      content: null, // TipTap JSON, null until user edits
+      content: null,
     })),
     chapters: tpl.chapters.map(ch => ({
       ...ch,
       id: genId(),
-      content: null, // TipTap JSON
+      content: null,
     })),
   };
 }
 
 export const useAcaStore = create((set, get) => ({
-  // ── Project list ──────────────────────────────────────────────────────────
-  projects: loadProjects(),
-
-  // ── Editor state ─────────────────────────────────────────────────────────
+  projects: [],
+  projectsLoaded: false,
   currentProjectId: null,
-  activeChapterId:  null,
-
-  // ── Compile state ─────────────────────────────────────────────────────────
-  compileJob: null,  // null | { status, jobId, blobUrl, error }
-
-  // ── Toast ──────────────────────────────────────────────────────────────────
+  activeChapterId: null,
+  compileJob: null,
   toast: null,
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Selectors (derived from state)
-  // ─────────────────────────────────────────────────────────────────────────
 
   getCurrentProject() {
     return get().projects.find(p => p.id === get().currentProjectId) || null;
@@ -84,22 +99,57 @@ export const useAcaStore = create((set, get) => ({
     );
   },
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Project Actions
-  // ─────────────────────────────────────────────────────────────────────────
+  /**
+   * Load projects: signed-in users merge cloud + this browser, then sync to cloud.
+   * Guests use local storage only.
+   */
+  async loadProjectsForUser() {
+    const local = loadProjectsLocal();
+    const token = api.getStoredToken();
+
+    if (token) {
+      try {
+        const cloud = await api.fetchUserProjects();
+        const merged = mergeProjectLists(cloud, local);
+        const synced = await api.syncUserProjects(merged);
+        saveProjectsLocal(synced);
+        set({ projects: synced, projectsLoaded: true });
+        return { count: synced.length, merged: merged.length !== cloud.length };
+      } catch (err) {
+        console.warn('[projects] cloud load failed, using local cache', err.message);
+        if (local.length > 0) {
+          set({ projects: local, projectsLoaded: true });
+          return { count: local.length, offline: true };
+        }
+      }
+    }
+
+    set({ projects: local, projectsLoaded: true });
+    return { count: local.length, guest: true };
+  },
+
+  resetProjects() {
+    set({
+      projects: [],
+      projectsLoaded: false,
+      currentProjectId: null,
+      activeChapterId: null,
+      compileJob: null,
+    });
+  },
 
   createProject(templateId, metadata) {
     const project = createProjectFromTemplate(templateId, metadata);
     const firstChapterId = project.chapters[0]?.id || project.frontMatter[0]?.id || null;
-
     const updated = [project, ...get().projects];
-    saveProjects(updated);
+    saveProjectsLocal(updated);
     set({
       projects: updated,
       currentProjectId: project.id,
       activeChapterId: firstChapterId,
       compileJob: null,
     });
+    scheduleCloudSync(get);
     return project;
   },
 
@@ -112,16 +162,16 @@ export const useAcaStore = create((set, get) => ({
 
   deleteProject(projectId) {
     const updated = get().projects.filter(p => p.id !== projectId);
-    saveProjects(updated);
+    saveProjectsLocal(updated);
     set({
       projects: updated,
       currentProjectId: get().currentProjectId === projectId ? null : get().currentProjectId,
     });
+    scheduleCloudSync(get);
+    if (api.getStoredToken()) {
+      api.deleteUserProject(projectId).catch(err => console.warn('[delete]', err.message));
+    }
   },
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Chapter / Section Actions
-  // ─────────────────────────────────────────────────────────────────────────
 
   setActiveChapter(id) {
     set({ activeChapterId: id });
@@ -134,12 +184,13 @@ export const useAcaStore = create((set, get) => ({
       return {
         ...p,
         updatedAt: Date.now(),
-        frontMatter: p.frontMatter.map(s => s.id === sectionId ? { ...s, content: tiptapJson } : s),
-        chapters:    p.chapters.map(c    => c.id === sectionId ? { ...c, content: tiptapJson } : c),
+        frontMatter: p.frontMatter.map(s => (s.id === sectionId ? { ...s, content: tiptapJson } : s)),
+        chapters: p.chapters.map(c => (c.id === sectionId ? { ...c, content: tiptapJson } : c)),
       };
     });
-    saveProjects(updated);
+    saveProjectsLocal(updated);
     set({ projects: updated });
+    scheduleCloudSync(get);
   },
 
   updateMetadata(fields) {
@@ -148,8 +199,9 @@ export const useAcaStore = create((set, get) => ({
       if (p.id !== currentProjectId) return p;
       return { ...p, updatedAt: Date.now(), metadata: { ...p.metadata, ...fields } };
     });
-    saveProjects(updated);
+    saveProjectsLocal(updated);
     set({ projects: updated });
+    scheduleCloudSync(get);
   },
 
   addChapter(title) {
@@ -159,8 +211,9 @@ export const useAcaStore = create((set, get) => ({
       if (p.id !== currentProjectId) return p;
       return { ...p, updatedAt: Date.now(), chapters: [...p.chapters, newChapter] };
     });
-    saveProjects(updated);
+    saveProjectsLocal(updated);
     set({ projects: updated, activeChapterId: newChapter.id });
+    scheduleCloudSync(get);
   },
 
   deleteChapter(chapterId) {
@@ -169,10 +222,14 @@ export const useAcaStore = create((set, get) => ({
       if (p.id !== currentProjectId) return p;
       return { ...p, updatedAt: Date.now(), chapters: p.chapters.filter(c => c.id !== chapterId) };
     });
-    saveProjects(updated);
+    saveProjectsLocal(updated);
     const project = updated.find(p => p.id === currentProjectId);
-    const nextId  = project?.chapters[0]?.id || project?.frontMatter[0]?.id || null;
-    set({ projects: updated, activeChapterId: activeChapterId === chapterId ? nextId : activeChapterId });
+    const nextId = project?.chapters[0]?.id || project?.frontMatter[0]?.id || null;
+    set({
+      projects: updated,
+      activeChapterId: activeChapterId === chapterId ? nextId : activeChapterId,
+    });
+    scheduleCloudSync(get);
   },
 
   renameChapter(chapterId, newTitle) {
@@ -182,11 +239,12 @@ export const useAcaStore = create((set, get) => ({
       return {
         ...p,
         updatedAt: Date.now(),
-        chapters: p.chapters.map(c => c.id === chapterId ? { ...c, title: newTitle } : c),
+        chapters: p.chapters.map(c => (c.id === chapterId ? { ...c, title: newTitle } : c)),
       };
     });
-    saveProjects(updated);
+    saveProjectsLocal(updated);
     set({ projects: updated });
+    scheduleCloudSync(get);
   },
 
   reorderChapters(startIndex, endIndex) {
@@ -198,19 +256,14 @@ export const useAcaStore = create((set, get) => ({
       newChapters.splice(endIndex, 0, removed);
       return { ...p, updatedAt: Date.now(), chapters: newChapters };
     });
-    saveProjects(updated);
+    saveProjectsLocal(updated);
     set({ projects: updated });
+    scheduleCloudSync(get);
   },
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Compile Actions
-  // ─────────────────────────────────────────────────────────────────────────
-
-  setCompileJob(job) { set({ compileJob: job }); },
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Toast
-  // ─────────────────────────────────────────────────────────────────────────
+  setCompileJob(job) {
+    set({ compileJob: job });
+  },
 
   showToast(type, message) {
     const id = Date.now();

@@ -1,24 +1,78 @@
+import {
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
+  Heading1,
+  Heading2,
+  Heading3,
+  Pilcrow,
+  List,
+  ListOrdered,
+  Code2,
+  Quote,
+  Table2,
+  TableProperties,
+  ImagePlus,
+  Eraser,
+  Rows3,
+  Columns3,
+  Trash2,
+  Tag,
+  Sigma,
+} from 'lucide-react';
+import { HEADING_LEVELS, getActiveHeadingLevel, toggleHeading, clearHeading } from './editorFormatActions';
+
 export default function EditorToolbar({ editor }) {
   if (!editor) return null;
 
-  const btn = (action, label, title, isActive = false) => (
+  const activeLevel = getActiveHeadingLevel(editor);
+
+  const iconBtn = (action, icon, label, title, isActive = false) => (
     <button
-      className={`toolbar-btn ${isActive ? 'toolbar-btn--active' : ''}`}
+      type="button"
+      className={`toolbar-btn toolbar-btn--icon${isActive ? ' toolbar-btn--active' : ''}`}
       onClick={action}
       title={title}
-      type="button"
     >
-      {label}
+      {icon}
+      <span className="toolbar-btn-label">{label}</span>
     </button>
   );
 
+  const headingBtn = ({ level, label, short, hint }) => {
+    const icons = { 1: Heading1, 2: Heading2, 3: Heading3 };
+    const Icon = icons[level];
+    const active = activeLevel === level;
+    const title = active
+      ? `Unmark as ${label.toLowerCase()} — click to convert to normal text`
+      : hint;
+    return (
+      <button
+        key={level}
+        type="button"
+        className={`toolbar-btn toolbar-btn--heading${active ? ' toolbar-btn--active' : ''}`}
+        onClick={() => toggleHeading(editor, level)}
+        title={title}
+      >
+        <Icon size={15} strokeWidth={2} className="toolbar-heading-icon" />
+        <span className="toolbar-heading-text">
+          <span className="toolbar-heading-name">{label}</span>
+          <span className="toolbar-heading-num">{short}</span>
+        </span>
+      </button>
+    );
+  };
+
   const divider = () => <span className="toolbar-divider-vert" />;
 
-  /**
-   * Convert selected text into a table.
-   * Splits rows on newlines and columns on tab, pipe (|), or comma.
-   * First row becomes the header row.
-   */
+  const group = (label, children) => (
+    <div className="toolbar-group" role="group" aria-label={label}>
+      <span className="toolbar-group-label">{label}</span>
+      <div className="toolbar-group-btns">{children}</div>
+    </div>
+  );
+
   const convertTextToTable = () => {
     const { from, to } = editor.state.selection;
     const selectedText = editor.state.doc.textBetween(from, to, '\n');
@@ -28,31 +82,21 @@ export default function EditorToolbar({ editor }) {
       return;
     }
 
-    // Detect delimiter: tab > pipe > comma
     let delimiter = '\t';
-    if (selectedText.includes('\t')) {
-      delimiter = '\t';
-    } else if (selectedText.includes('|')) {
-      delimiter = '|';
-    } else if (selectedText.includes(',')) {
-      delimiter = ',';
-    }
+    if (selectedText.includes('\t')) delimiter = '\t';
+    else if (selectedText.includes('|')) delimiter = '|';
+    else if (selectedText.includes(',')) delimiter = ',';
 
     const lines = selectedText.split('\n').filter(l => l.trim());
     if (lines.length < 1) return;
 
-    const rows = lines.map(line =>
-      line.split(delimiter).map(cell => cell.trim())
-    );
-
-    // Normalize column count to the max across all rows
+    const rows = lines.map(line => line.split(delimiter).map(cell => cell.trim()));
     const maxCols = Math.max(...rows.map(r => r.length), 1);
     const normalized = rows.map(r => {
       while (r.length < maxCols) r.push('');
       return r;
     });
 
-    // Build TipTap table JSON
     const tableRows = normalized.map((row, rowIdx) => ({
       type: 'tableRow',
       content: row.map(cellText => ({
@@ -61,7 +105,6 @@ export default function EditorToolbar({ editor }) {
       })),
     }));
 
-    // Delete selected text and insert table
     editor.chain().focus().deleteSelection().insertContent({
       type: 'table',
       content: tableRows,
@@ -69,144 +112,198 @@ export default function EditorToolbar({ editor }) {
   };
 
   return (
-    <div className="editor-toolbar">
-      {/* Text formatting */}
-      {btn(() => editor.chain().focus().toggleBold().run(),      <b>B</b>,       'Bold',      editor.isActive('bold'))}
-      {btn(() => editor.chain().focus().toggleItalic().run(),    <i>I</i>,       'Italic',    editor.isActive('italic'))}
-      {btn(() => editor.chain().focus().toggleUnderline().run(), <u>U</u>,       'Underline', editor.isActive('underline'))}
-      {btn(() => editor.chain().focus().toggleStrike().run(),    <s>S</s>,       'Strikethrough', editor.isActive('strike'))}
+    <div id="tour-editor-toolbar" className="editor-toolbar">
+      {group('Text', <>
+        {iconBtn(() => editor.chain().focus().toggleBold().run(), <Bold size={15} />, 'Bold', 'Bold (Ctrl+B)', editor.isActive('bold'))}
+        {iconBtn(() => editor.chain().focus().toggleItalic().run(), <Italic size={15} />, 'Italic', 'Italic (Ctrl+I)', editor.isActive('italic'))}
+        {iconBtn(() => editor.chain().focus().toggleUnderline().run(), <Underline size={15} />, 'Underline', 'Underline (Ctrl+U)', editor.isActive('underline'))}
+        {iconBtn(() => editor.chain().focus().toggleStrike().run(), <Strikethrough size={15} />, 'Strike', 'Strikethrough', editor.isActive('strike'))}
+      </>)}
+
       {divider()}
 
-      {/* Headings */}
-      {btn(() => editor.chain().focus().toggleHeading({ level: 1 }).run(), '§ 1.1', 'Section (1.1)', editor.isActive('heading', { level: 1 }))}
-      {btn(() => editor.chain().focus().toggleHeading({ level: 2 }).run(), '§ 1.1.1', 'Subsection (1.1.1)', editor.isActive('heading', { level: 2 }))}
-      {btn(() => editor.chain().focus().toggleHeading({ level: 3 }).run(), '§ 1.1.1.1', 'Sub-subsection (1.1.1.1)', editor.isActive('heading', { level: 3 }))}
+      {group('Sections', <>
+        {HEADING_LEVELS.map(headingBtn)}
+        {activeLevel !== null && (
+          <button
+            type="button"
+            className="toolbar-btn toolbar-btn--icon toolbar-btn--normal"
+            onClick={() => clearHeading(editor)}
+            title="Remove section marking — normal paragraph"
+          >
+            <Pilcrow size={15} />
+            <span className="toolbar-btn-label">Normal</span>
+          </button>
+        )}
+      </>)}
+
       {divider()}
 
-      {/* Lists */}
-      {btn(() => editor.chain().focus().toggleBulletList().run(),  '• List',  'Bullet List',   editor.isActive('bulletList'))}
-      {btn(() => editor.chain().focus().toggleOrderedList().run(), '1. List', 'Ordered List',  editor.isActive('orderedList'))}
+      {group('Lists', <>
+        {iconBtn(() => editor.chain().focus().toggleBulletList().run(), <List size={15} />, 'Bullets', 'Bullet list', editor.isActive('bulletList'))}
+        {iconBtn(() => editor.chain().focus().toggleOrderedList().run(), <ListOrdered size={15} />, 'Numbered', 'Numbered list', editor.isActive('orderedList'))}
+      </>)}
+
       {divider()}
 
-      {/* Blocks */}
-      {btn(() => editor.chain().focus().toggleCodeBlock().run(),  '</>', 'Code Block', editor.isActive('codeBlock'))}
-      {btn(() => editor.chain().focus().toggleBlockquote().run(), '❝',  'Blockquote', editor.isActive('blockquote'))}
+      {group('Blocks', <>
+        {iconBtn(() => editor.chain().focus().toggleCodeBlock().run(), <Code2 size={15} />, 'Code', 'Code block', editor.isActive('codeBlock'))}
+        {iconBtn(() => editor.chain().focus().toggleBlockquote().run(), <Quote size={15} />, 'Quote', 'Blockquote', editor.isActive('blockquote'))}
+      </>)}
+
       {divider()}
 
-      {/* Table */}
-      {btn(
-        () => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
-        '⊞ Table',
-        'Insert 3×3 Table'
-      )}
-      {btn(convertTextToTable, '⊞ Text→Table', 'Convert selected text to table (rows: newlines, cols: tab/pipe/comma)')}
+      {group('Insert', <>
+        <button
+          type="button"
+          className="toolbar-btn toolbar-btn--icon"
+          title="Insert 3×3 table"
+          onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+        >
+          <Table2 size={15} />
+          <span className="toolbar-btn-label">Table</span>
+        </button>
+        <button
+          type="button"
+          className="toolbar-btn toolbar-btn--icon"
+          title="Convert selected text to table (rows: newlines, cols: tab/pipe/comma)"
+          onClick={convertTextToTable}
+        >
+          <TableProperties size={15} />
+          <span className="toolbar-btn-label">Text→Table</span>
+        </button>
+        <button
+          type="button"
+          className="toolbar-btn toolbar-btn--icon"
+          title="Insert image from file"
+          onClick={() => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/png, image/jpeg, image/jpg';
+            input.onchange = (e) => {
+              const file = e.target.files[0];
+              if (file) {
+                const reader = new FileReader();
+                reader.onload = (readerEvent) => {
+                  editor.chain().focus().setImage({ src: readerEvent.target.result }).run();
+                };
+                reader.readAsDataURL(file);
+              }
+            };
+            input.click();
+          }}
+        >
+          <ImagePlus size={15} />
+          <span className="toolbar-btn-label">Image</span>
+        </button>
+      </>)}
 
-      {/* When inside a table: add/remove rows/cols */}
       {editor.isActive('table') && (
         <>
           {divider()}
-          {btn(() => editor.chain().focus().addRowAfter().run(),    '+ Row',    'Add Row')}
-          {btn(() => editor.chain().focus().deleteRow().run(),      '− Row',    'Delete Row')}
-          {btn(() => editor.chain().focus().addColumnAfter().run(), '+ Col',    'Add Column')}
-          {btn(() => editor.chain().focus().deleteColumn().run(),   '− Col',    'Delete Column')}
-          {btn(() => editor.chain().focus().deleteTable().run(),    '✕ Table',  'Delete Table')}
+          {group('Table edit', <>
+            <button type="button" className="toolbar-btn toolbar-btn--icon" onClick={() => editor.chain().focus().addRowAfter().run()} title="Add row">
+              <Rows3 size={15} /><span className="toolbar-btn-label">+ Row</span>
+            </button>
+            <button type="button" className="toolbar-btn toolbar-btn--icon" onClick={() => editor.chain().focus().deleteRow().run()} title="Delete row">
+              <Rows3 size={15} /><span className="toolbar-btn-label">− Row</span>
+            </button>
+            <button type="button" className="toolbar-btn toolbar-btn--icon" onClick={() => editor.chain().focus().addColumnAfter().run()} title="Add column">
+              <Columns3 size={15} /><span className="toolbar-btn-label">+ Col</span>
+            </button>
+            <button type="button" className="toolbar-btn toolbar-btn--icon" onClick={() => editor.chain().focus().deleteColumn().run()} title="Delete column">
+              <Columns3 size={15} /><span className="toolbar-btn-label">− Col</span>
+            </button>
+            <button type="button" className="toolbar-btn toolbar-btn--icon btn-danger-hover" onClick={() => editor.chain().focus().deleteTable().run()} title="Delete table">
+              <Trash2 size={15} /><span className="toolbar-btn-label">Delete</span>
+            </button>
+            <button
+              type="button"
+              className="toolbar-btn toolbar-btn--icon"
+              title="Set table caption"
+              onClick={() => {
+                const currentCaption = editor.getAttributes('table').caption || '';
+                const newCaption = prompt('Enter Table Name (Caption):', currentCaption);
+                if (newCaption !== null) {
+                  editor.chain().focus().updateAttributes('table', { caption: newCaption }).run();
+                }
+              }}
+            >
+              <Tag size={15} /><span className="toolbar-btn-label">Caption</span>
+            </button>
+          </>)}
         </>
       )}
-
-      {divider()}
-      {btn(() => editor.chain().focus().unsetAllMarks().clearNodes().run(), '✕ Clear', 'Clear Formatting')}
-
-      {divider()}
-      <button
-        className="toolbar-btn"
-        title="Insert Image (Local)"
-        onClick={() => {
-          const input = document.createElement('input');
-          input.type = 'file';
-          input.accept = 'image/png, image/jpeg, image/jpg';
-          input.onchange = (e) => {
-            const file = e.target.files[0];
-            if (file) {
-              const reader = new FileReader();
-              reader.onload = (readerEvent) => {
-                editor.chain().focus().setImage({ src: readerEvent.target.result }).run();
-              };
-              reader.readAsDataURL(file);
-            }
-          };
-          input.click();
-        }}
-      >
-        🖼 Image
-      </button>
 
       {editor.isActive('math') && (
         <>
           {divider()}
-          <button
-            className="toolbar-btn"
-            title="Toggle Display Mode (Centered)"
-            onClick={() => {
-              const { display } = editor.getAttributes('math');
-              editor.chain().focus().updateAttributes('math', { display: !display }).run();
-            }}
-          >
-            {editor.getAttributes('math').display ? '↳ Inline' : '↔ Display'}
-          </button>
-          <button
-            className="toolbar-btn btn-danger-hover"
-            title="Delete Equation"
-            onClick={() => editor.chain().focus().deleteSelection().run()}
-          >
-            ✕ Delete Eq.
-          </button>
+          {group('Equation', <>
+            <button
+              type="button"
+              className="toolbar-btn toolbar-btn--icon"
+              title="Toggle display mode (centered)"
+              onClick={() => {
+                const { display } = editor.getAttributes('math');
+                editor.chain().focus().updateAttributes('math', { display: !display }).run();
+              }}
+            >
+              <Sigma size={15} />
+              <span className="toolbar-btn-label">{editor.getAttributes('math').display ? 'Inline' : 'Display'}</span>
+            </button>
+            <button
+              type="button"
+              className="toolbar-btn toolbar-btn--icon btn-danger-hover"
+              title="Delete equation"
+              onClick={() => editor.chain().focus().deleteSelection().run()}
+            >
+              <Trash2 size={15} /><span className="toolbar-btn-label">Delete</span>
+            </button>
+          </>)}
         </>
       )}
 
       {editor.isActive('image') && (
         <>
           {divider()}
-          <button
-            className="toolbar-btn"
-            title="Set Figure Caption (Name)"
-            onClick={() => {
-              const currentTitle = editor.getAttributes('image').title || '';
-              const newTitle = prompt('Enter Figure Name (Caption):', currentTitle);
-              if (newTitle !== null) {
-                editor.chain().focus().updateAttributes('image', { title: newTitle }).run();
-              }
-            }}
-          >
-            🏷 Set Caption
-          </button>
-          <button
-            className="toolbar-btn btn-danger-hover"
-            title="Delete Selected Image"
-            onClick={() => editor.chain().focus().deleteSelection().run()}
-          >
-            ✕ Delete Image
-          </button>
+          {group('Figure', <>
+            <button
+              type="button"
+              className="toolbar-btn toolbar-btn--icon"
+              title="Set figure caption"
+              onClick={() => {
+                const currentTitle = editor.getAttributes('image').title || '';
+                const newTitle = prompt('Enter Figure Name (Caption):', currentTitle);
+                if (newTitle !== null) {
+                  editor.chain().focus().updateAttributes('image', { title: newTitle }).run();
+                }
+              }}
+            >
+              <Tag size={15} /><span className="toolbar-btn-label">Caption</span>
+            </button>
+            <button
+              type="button"
+              className="toolbar-btn toolbar-btn--icon btn-danger-hover"
+              title="Delete image"
+              onClick={() => editor.chain().focus().deleteSelection().run()}
+            >
+              <Trash2 size={15} /><span className="toolbar-btn-label">Delete</span>
+            </button>
+          </>)}
         </>
       )}
 
-      {editor.isActive('table') && (
-        <>
-          {divider()}
-          <button
-            className="toolbar-btn"
-            title="Set Table Caption (Name)"
-            onClick={() => {
-              const currentCaption = editor.getAttributes('table').caption || '';
-              const newCaption = prompt('Enter Table Name (Caption):', currentCaption);
-              if (newCaption !== null) {
-                editor.chain().focus().updateAttributes('table', { caption: newCaption }).run();
-              }
-            }}
-          >
-            🏷 Set Table Caption
-          </button>
-        </>
-      )}
+      {divider()}
+
+      <button
+        type="button"
+        className="toolbar-btn toolbar-btn--icon"
+        title="Clear all formatting"
+        onClick={() => editor.chain().focus().unsetAllMarks().clearNodes().run()}
+      >
+        <Eraser size={15} />
+        <span className="toolbar-btn-label">Clear</span>
+      </button>
     </div>
   );
 }

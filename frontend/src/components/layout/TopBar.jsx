@@ -1,8 +1,11 @@
 import { useCallback } from 'react';
+import { LogOut, HelpCircle } from 'lucide-react';
 import useAcaStore from '../../store';
+import useAuthStore from '../../authStore';
 import { compileProject, pollUntilDone, fetchCompiledPdf } from '../../api';
 
-export default function TopBar({ onGoToDashboard }) {
+export default function TopBar({ onGoToDashboard, onLogout, onStartTour }) {
+  const signedIn = useAuthStore(s => s.status === 'authenticated');
   const currentProject = useAcaStore(s => s.getCurrentProject());
   const compileJob     = useAcaStore(s => s.compileJob);
   const setCompileJob  = useAcaStore(s => s.setCompileJob);
@@ -61,13 +64,30 @@ export default function TopBar({ onGoToDashboard }) {
       </div>
 
       <div className="topbar-right">
+        {signedIn && onLogout && (
+          <button
+            type="button"
+            className="btn-ghost btn-sm topbar-signout"
+            title="Sign out"
+            onClick={onLogout}
+          >
+            <LogOut size={14} />
+            Sign out
+          </button>
+        )}
         {isDone && (
           <button className="btn-ghost btn-sm" onClick={handleDownload}>
             ↓ Download PDF
           </button>
         )}
+        {onStartTour && (
+          <button type="button" className="btn-ghost btn-sm topbar-tour-btn" onClick={onStartTour} title="Editor tour">
+            <HelpCircle size={16} />
+            Tour
+          </button>
+        )}
         <button
-          id="btn-compile"
+          id="tour-compile-btn"
           className={`btn-compile ${isCompiling ? 'btn-compile--loading' : ''}`}
           onClick={handleCompile}
           disabled={isCompiling || !currentProject}

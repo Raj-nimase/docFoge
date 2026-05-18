@@ -14,6 +14,7 @@ import { useEffect, useCallback, useRef } from 'react';
 import katex from 'katex';
 import useAcaStore from '../../store';
 import EditorToolbar from './Toolbar';
+import SelectionBubbleMenu from './SelectionBubbleMenu';
 
 const MathView = ({ node, updateAttributes, selected }) => {
   const containerRef = useRef(null);
@@ -311,8 +312,9 @@ export default function ChapterEditor({ sectionId, onContentChange }) {
   return (
     <div className="chapter-editor">
       <EditorToolbar editor={editor} />
-      <div className="chapter-editor-scroll">
+      <div id="tour-editor-content" className="chapter-editor-scroll">
         <div className="chapter-paper">
+          {editor && <SelectionBubbleMenu editor={editor} />}
           <EditorContent editor={editor} className="tiptap-editor" />
         </div>
       </div>

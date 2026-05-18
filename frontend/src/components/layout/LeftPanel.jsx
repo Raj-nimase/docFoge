@@ -38,7 +38,7 @@ export default function LeftPanel() {
   };
 
   return (
-    <aside className="left-panel">
+    <aside id="tour-left-panel" className="left-panel">
       {/* Project title */}
       <div className="left-panel-header">
         <div className="left-panel-project-title">

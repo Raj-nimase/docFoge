@@ -1,4 +1,96 @@
-const BASE = import.meta.env.VITE_API_URL || 'https://docfoge.onrender.com/api';
+const BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+
+const TOKEN_KEY = 'acadoc_token';
+
+export function getStoredToken() {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+async function parseJson(res) {
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.success === false) {
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
+  return data;
+}
+
+export async function authFetch(path, options = {}) {
+  const { token: _token, body, headers: extraHeaders, ...fetchOptions } = options;
+  const token = _token ?? getStoredToken();
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(extraHeaders || {}),
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE}${path}`, {
+    method: fetchOptions.method || 'GET',
+    ...fetchOptions,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  return parseJson(res);
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+export async function register({ name, email, password, role, institution, department }) {
+  return authFetch('/auth/register', {
+    method: 'POST',
+    body: { name, email, password, role, institution, department },
+    token: null,
+  });
+}
+
+export async function login(email, password) {
+  return authFetch('/auth/login', {
+    method: 'POST',
+    body: { email: email.trim(), password },
+    token: null,
+  });
+}
+
+export async function resetPassword(email, newPassword) {
+  return authFetch('/auth/reset-password', {
+    method: 'POST',
+    body: { email: email.trim(), newPassword: newPassword },
+    token: null,
+  });
+}
+
+export async function getMe(token) {
+  const data = await authFetch('/auth/me', { token });
+  return data.user;
+}
+
+export async function updateProfile(fields) {
+  const data = await authFetch('/auth/me', { method: 'PATCH', body: fields });
+  return data.user;
+}
+
+// ─── Projects (cloud) ─────────────────────────────────────────────────────────
+
+export async function fetchUserProjects() {
+  const data = await authFetch('/projects');
+  return data.projects;
+}
+
+export async function syncUserProjects(projects) {
+  const data = await authFetch('/projects/sync/all', {
+    method: 'PUT',
+    body: { projects },
+  });
+  return data.projects;
+}
+
+export async function deleteUserProject(clientId) {
+  await authFetch(`/projects/${clientId}`, { method: 'DELETE' });
+}
 
 // ─── Compile ──────────────────────────────────────────────────────────────────
 

@@ -17,7 +17,7 @@ export default function MetadataForm({ onDone }) {
 
   if (!open) {
     return (
-      <button className="sidebar-settings-btn" onClick={() => setOpen(true)} title="Document Settings">
+      <button id="tour-doc-settings" type="button" className="sidebar-settings-btn" onClick={() => setOpen(true)} title="Document Settings">
         ⚙ Settings
       </button>
     );

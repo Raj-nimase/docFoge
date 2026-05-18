@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import useAcaStore from '../store';
+import useAuthStore from '../authStore';
 import { TEMPLATES } from '../lib/templates';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -24,8 +25,11 @@ import {
   ChevronRight,
   Menu,
   CheckCircle,
-  HelpCircle
+  HelpCircle,
+  LogOut,
+  LogIn
 } from 'lucide-react';
+import { GUEST_TRIAL_DAYS } from '../lib/guestTrial';
 
 const TEMPLATE_MAP = Object.fromEntries(TEMPLATES.map(t => [t.id, t]));
 
@@ -51,10 +55,47 @@ function getTemplateIcon(iconStr, className = "") {
   }
 }
 
-export default function Dashboard({ onNewProject, onOpenProject }) {
+export default function Dashboard({ onNewProject, onOpenProject, onLogout, onSignIn }) {
   const projects      = useAcaStore(s => s.projects);
   const openProject   = useAcaStore(s => s.openProject);
   const deleteProject = useAcaStore(s => s.deleteProject);
+  const showToast     = useAcaStore(s => s.showToast);
+
+  const user            = useAuthStore(s => s.user);
+  const authStatus      = useAuthStore(s => s.status);
+  const getInitials     = useAuthStore(s => s.getInitials);
+  const getTrialLabel   = useAuthStore(s => s.getTrialLabel);
+  const updateProfile   = useAuthStore(s => s.updateProfile);
+  const isGuest         = authStatus === 'guest';
+  const signedIn        = authStatus === 'authenticated';
+  const trialLabel      = getTrialLabel();
+  const firstName       = user?.name?.trim().split(/\s+/)[0] || null;
+  const welcomeTitle    = signedIn && firstName
+    ? `Welcome back, ${firstName}!`
+    : isGuest
+      ? 'Welcome to AcaDoc Pro'
+      : 'Welcome back!';
+  const welcomeSubtitle = signedIn
+    ? 'Pick up where you left off—create, edit, and compile publication-ready LaTeX documents from your workspace.'
+    : 'Turn unstructured drafts into professional, publication-ready LaTeX documents. Start a project or browse templates to begin.';
+
+  const [profileForm, setProfileForm] = useState({
+    name: '',
+    role: '',
+    institution: '',
+    department: '',
+  });
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    setProfileForm({
+      name: user.name || '',
+      role: user.role || '',
+      institution: user.institution || '',
+      department: user.department || '',
+    });
+  }, [user]);
   
   // Custom States
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -158,16 +199,49 @@ export default function Dashboard({ onNewProject, onOpenProject }) {
 
         {/* User Profile Card */}
         <div className="sidebar-profile">
-          <div className="profile-avatar">SJ</div>
+          <div className="profile-avatar">{getInitials()}</div>
           <div className="profile-info">
-            <span className="profile-name">Sarah Jenkins</span>
-            <span className="profile-role">University Principal</span>
+            <span className="profile-name">{user?.name || 'Guest'}</span>
+            <span className="profile-role">
+              {isGuest
+                ? (trialLabel ? `Free trial · ${trialLabel}` : `Free trial · ${GUEST_TRIAL_DAYS} days`)
+                : ([user?.role, user?.institution].filter(Boolean).join(' · ') || user?.email)}
+            </span>
           </div>
+          {signedIn && onLogout ? (
+            <button
+              type="button"
+              className="profile-logout-btn profile-signout-btn"
+              title="Sign out"
+              onClick={onLogout}
+            >
+              <LogOut size={15} />
+              {!sidebarCollapsed && <span>Sign out</span>}
+            </button>
+          ) : isGuest && onSignIn ? (
+            <button type="button" className="profile-logout-btn profile-signin-btn" title="Sign in" onClick={onSignIn}>
+              <LogIn size={15} />
+              {!sidebarCollapsed && <span>Sign in</span>}
+            </button>
+          ) : null}
         </div>
       </aside>
 
       {/* 2. MAIN VIEWPORT */}
       <div className="db-main-viewport">
+        {isGuest && trialLabel && (
+          <div className="guest-trial-banner">
+            <span>
+              You&apos;re on a free guest trial ({trialLabel}). Projects are saved on this device only.
+            </span>
+            {onSignIn && (
+              <button type="button" className="btn-primary btn-sm" onClick={onSignIn}>
+                Sign in free
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Top Navbar */}
         <header className="db-navbar">
           <div className="db-navbar-left">
@@ -206,6 +280,13 @@ export default function Dashboard({ onNewProject, onOpenProject }) {
                   onChange={e => setSearchQuery(e.target.value)}
                 />
               </div>
+            )}
+
+            {signedIn && onLogout && (
+              <button type="button" className="nav-signout-btn" onClick={onLogout} title="Sign out">
+                <LogOut size={16} />
+                Sign out
+              </button>
             )}
 
             {/* Notification Bell */}
@@ -286,13 +367,11 @@ export default function Dashboard({ onNewProject, onOpenProject }) {
                     transition={{ delay: 0.05, type: 'spring', stiffness: 200 }}
                     className="db-hero"
                   >
-                    <h2 className="db-hero-welcome">Welcome back, Sarah!</h2>
-                    <p className="db-hero-subtitle">
-                      Transform unstructured flat inputs into professional, publication-ready LaTeX documents instantly. Realize academic perfection.
-                    </p>
+                    <h2 className="db-hero-welcome">{welcomeTitle}</h2>
+                    <p className="db-hero-subtitle">{welcomeSubtitle}</p>
                     <div className="db-hero-actions">
                       <button className="btn-primary" onClick={onNewProject} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        <Sparkles size={14} /> Start AI Assistant
+                        <Sparkles size={14} /> New Project
                       </button>
                       <button className="btn-ghost" style={{ borderColor: 'rgba(255,255,255,0.2)', color: '#94a3b8', display: 'inline-flex', alignItems: 'center', gap: 6 }} onClick={() => setActiveTab('templates')}>
                         <BookOpen size={14} /> Browse Templates
@@ -546,33 +625,107 @@ export default function Dashboard({ onNewProject, onOpenProject }) {
               )}
 
               {/* ───── TAB 4: SETTINGS PANEL ───── */}
-              {activeTab === 'settings' && (
+              {activeTab === 'settings' && isGuest && (
                 <>
-                  <div className="dashboard-section-title">Workspace Configuration</div>
+                  <div className="dashboard-section-title">Account</div>
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 24, maxWidth: 640 }}
+                  >
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.5 }}>
+                      Sign in to edit your profile, sync projects to the cloud, and access your work from any device.
+                      {trialLabel && <> Your guest trial has <b>{trialLabel}</b> remaining.</>}
+                    </p>
+                    {onSignIn && (
+                      <button type="button" className="btn-primary" onClick={onSignIn}>
+                        Sign in or create account
+                      </button>
+                    )}
+                  </motion.div>
+                </>
+              )}
+
+              {activeTab === 'settings' && !isGuest && (
+                <>
+                  <div className="dashboard-section-title">Account Profile</div>
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 24, maxWidth: 640 }}
                   >
                     <div className="metadata-field" style={{ marginBottom: 16 }}>
-                      <label className="metadata-label">Academic Institution</label>
-                      <input type="text" className="metadata-input" defaultValue="Department of Computer Engineering" />
+                      <label className="metadata-label">Full name</label>
+                      <input
+                        type="text"
+                        className="metadata-input"
+                        value={profileForm.name}
+                        onChange={e => setProfileForm(f => ({ ...f, name: e.target.value }))}
+                      />
                     </div>
                     <div className="metadata-field" style={{ marginBottom: 16 }}>
-                      <label className="metadata-label">Citation Default Engine</label>
-                      <select className="metadata-input" style={{ width: '100%' }}>
-                        <option>IEEE Citation standard</option>
-                        <option>APA 7th Format</option>
-                        <option>Harvard Referencing</option>
+                      <label className="metadata-label">Email</label>
+                      <input type="email" className="metadata-input" value={user?.email || ''} disabled />
+                    </div>
+                    <div className="metadata-field" style={{ marginBottom: 16 }}>
+                      <label className="metadata-label">Role</label>
+                      <select
+                        className="metadata-input"
+                        style={{ width: '100%' }}
+                        value={profileForm.role}
+                        onChange={e => setProfileForm(f => ({ ...f, role: e.target.value }))}
+                      >
+                        <option>Student</option>
+                        <option>Faculty</option>
+                        <option>Researcher</option>
+                        <option>Administrator</option>
                       </select>
                     </div>
-                    <div className="metadata-field" style={{ marginBottom: 20 }}>
-                      <label className="metadata-label">Preferred Preamble Packages</label>
-                      <textarea className="metadata-input" rows={4} defaultValue="\usepackage{amsmath}&#10;\usepackage{booktabs}&#10;\usepackage{graphicx}" />
+                    <div className="metadata-field" style={{ marginBottom: 16 }}>
+                      <label className="metadata-label">Institution</label>
+                      <input
+                        type="text"
+                        className="metadata-input"
+                        value={profileForm.institution}
+                        onChange={e => setProfileForm(f => ({ ...f, institution: e.target.value }))}
+                      />
                     </div>
-                    <button className="btn-primary" onClick={() => alert('Settings Saved Successfully!')}>
-                      Save Preferences
+                    <div className="metadata-field" style={{ marginBottom: 20 }}>
+                      <label className="metadata-label">Department</label>
+                      <input
+                        type="text"
+                        className="metadata-input"
+                        value={profileForm.department}
+                        onChange={e => setProfileForm(f => ({ ...f, department: e.target.value }))}
+                      />
+                    </div>
+                    <button
+                      className="btn-primary"
+                      disabled={savingProfile}
+                      onClick={async () => {
+                        setSavingProfile(true);
+                        try {
+                          await updateProfile(profileForm);
+                          showToast('success', 'Profile updated');
+                        } catch (err) {
+                          showToast('error', err.message);
+                        } finally {
+                          setSavingProfile(false);
+                        }
+                      }}
+                    >
+                      {savingProfile ? 'Saving…' : 'Save profile'}
                     </button>
+                    {signedIn && onLogout && (
+                      <button
+                        type="button"
+                        className="btn-ghost nav-signout-btn nav-signout-btn--block"
+                        onClick={onLogout}
+                      >
+                        <LogOut size={15} style={{ marginRight: 6 }} />
+                        Sign out
+                      </button>
+                    )}
                   </motion.div>
                 </>
               )}

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { TEMPLATES } from '../lib/templates';
 import useAcaStore from '../store';
+import useAuthStore from '../authStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
@@ -15,7 +16,6 @@ import {
   BookOpen,
   FileCode,
   Files,
-  Sliders,
   CheckCircle,
   HelpCircle,
   ArrowRight,
@@ -45,8 +45,9 @@ function getTemplateIcon(iconStr, className = "") {
 
 export default function NewProject({ onCreated, onCancel }) {
   const createProject = useAcaStore(s => s.createProject);
+  const user = useAuthStore(s => s.user);
 
-  // Stepper state: 1 to 5
+  // Stepper state: 1 to 4 (Details → Template → Content → Assemble)
   const [step, setStep]           = useState(1);
   const [direction, setDirection] = useState(1); // 1 = next, -1 = back
 
@@ -75,24 +76,18 @@ export default function NewProject({ onCreated, onCancel }) {
     "Suggest Academic Section Headings"
   ]);
 
-  // STEP 4: AI Formatting Preferences
-  const [formality, setFormality]     = useState('Academic'); // 'Academic' | 'Professional' | 'Creative'
-  const [spacing, setSpacing]         = useState('1.6'); // '1.0' | '1.3' | '1.6'
-  const [citation, setCitation]       = useState('IEEE'); // 'IEEE' | 'APA' | 'Harvard'
-  const [headerFooter, setHeaderFooter] = useState(true);
-
-  // STEP 5: Preview & Compilation
+  // STEP 4: Preview & Compilation
   const [compilingLogs, setCompilingLogs] = useState([]);
   const [compileProgress, setCompileProgress] = useState(0);
 
   // Template metadata details fields mapper
   const [metadata, setMetadata] = useState({
     title: '',
-    authors: 'Dr. Sarah Jenkins',
-    guide: 'Prof. Richard Feynman',
-    department: 'Department of Computer Science',
-    institution: 'Oxford Academic Institute',
-    year: '2026-27'
+    authors: user?.name || '',
+    guide: '',
+    department: user?.department || '',
+    institution: user?.institution || '',
+    year: new Date().getFullYear().toString(),
   });
 
   const selectedTpl = TEMPLATES.find(t => t.id === selectedId) || TEMPLATES[1];
@@ -101,6 +96,17 @@ export default function NewProject({ onCreated, onCancel }) {
   useEffect(() => {
     setMetadata(prev => ({ ...prev, title }));
   }, [title]);
+
+  // Prefill author/institution from signed-in user
+  useEffect(() => {
+    if (!user) return;
+    setMetadata(prev => ({
+      ...prev,
+      authors: prev.authors || user.name || '',
+      institution: prev.institution || user.institution || '',
+      department: prev.department || user.department || '',
+    }));
+  }, [user]);
 
   // Filter templates list based on search/category
   const filteredTemplates = TEMPLATES.filter(t => {
@@ -114,9 +120,9 @@ export default function NewProject({ onCreated, onCancel }) {
     return searchMatch;
   });
 
-  // Step 5 simulated compilation logging
+  // Step 4 simulated compilation logging
   useEffect(() => {
-    if (step !== 5) return;
+    if (step !== 4) return;
 
     setCompilingLogs([]);
     setCompileProgress(0);
@@ -126,7 +132,7 @@ export default function NewProject({ onCreated, onCancel }) {
       { time: '12:04:02', msg: `📦 Assembling chapters directory based on: ${selectedTpl.name}`, success: false },
       { time: '12:04:03', msg: `📂 Hydrating metadata values for authors: "${metadata.authors}"`, success: false },
       { time: '12:04:04', msg: `🪄 Ingesting draft texts: ${(draftContent || '').slice(0, 30)}...`, success: false },
-      { time: '12:04:05', msg: `✨ Styling citation standards to [${citation}] layout`, success: false },
+      { time: '12:04:05', msg: '✨ Applying document layout and citation standards...', success: false },
       { time: '12:04:06', msg: `🛡️ Injecting LaTeX packages & standard styles...`, success: false },
       { time: '12:04:07', msg: '✅ LaTeX document workspace compiled successfully!', success: true }
     ];
@@ -158,10 +164,6 @@ export default function NewProject({ onCreated, onCancel }) {
       description,
       category,
       tags,
-      formality,
-      spacing,
-      citation,
-      headerFooter,
       draftContent
     });
 
@@ -203,14 +205,8 @@ export default function NewProject({ onCreated, onCancel }) {
           </div>
           <span className={`stepper-line ${step > 3 ? 'stepper-line--active' : ''}`} />
 
-          <div className={`stepper-node ${step === 4 ? 'stepper-node--active' : ''} ${step > 4 ? 'stepper-node--completed' : ''}`} onClick={() => step > 4 && goToStep(4)} style={{ cursor: step > 4 ? 'pointer' : 'default' }}>
-            <span className="stepper-circle">{step > 4 ? <Check size={12} /> : "4"}</span>
-            <span className="stepper-label">AI Style</span>
-          </div>
-          <span className={`stepper-line ${step > 4 ? 'stepper-line--active' : ''}`} />
-
-          <div className={`stepper-node ${step === 5 ? 'stepper-node--active' : ''}`}>
-            <span className="stepper-circle">5</span>
+          <div className={`stepper-node ${step === 4 ? 'stepper-node--active' : ''}`}>
+            <span className="stepper-circle">4</span>
             <span className="stepper-label">Assemble</span>
           </div>
         </header>
@@ -436,94 +432,10 @@ export default function NewProject({ onCreated, onCancel }) {
                 </div>
               )}
 
-              {/* STEP 4: AI FORMATTING PREFERENCES */}
+              {/* STEP 4: PREVIEW & ASSEMBLY */}
               {step === 4 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 640, margin: '0 auto', width: '100%' }}>
-                  <div className="dashboard-section-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Sliders size={18} style={{ color: 'var(--accent)' }} /> Step 4 — Customize LaTeX Styling Guidelines
-                  </div>
-
-                  <div className="pref-grid">
-                    
-                    {/* Formality Selector */}
-                    <div className="metadata-field">
-                      <label className="metadata-label">Document Writing Style</label>
-                      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                        {['Academic', 'Professional', 'Creative'].map(form => (
-                          <motion.button
-                            whileHover={{ scale: 1.02 }}
-                            key={form}
-                            className={`btn-ghost ${formality === form ? 'toolbar-btn--active' : ''}`}
-                            onClick={() => setFormality(form)}
-                            style={{ flex: 1 }}
-                          >
-                            {form}
-                          </motion.button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Spacing Selector */}
-                    <div className="metadata-field">
-                      <label className="metadata-label">Line Spacing (Spread)</label>
-                      <select className="metadata-input" value={spacing} onChange={e => setSpacing(e.target.value)} style={{ marginTop: 4 }}>
-                        <option value="1.0">Single Space (1.0)</option>
-                        <option value="1.3">Standard (1.3)</option>
-                        <option value="1.6">Double Space (1.6)</option>
-                      </select>
-                    </div>
-
-                    {/* Citation Select */}
-                    <div className="metadata-field">
-                      <label className="metadata-label">Citation Bibliography Format</label>
-                      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                        {['IEEE', 'APA', 'Harvard'].map(cit => (
-                          <motion.button
-                            whileHover={{ scale: 1.02 }}
-                            key={cit}
-                            className={`btn-ghost ${citation === cit ? 'toolbar-btn--active' : ''}`}
-                            onClick={() => setCitation(cit)}
-                            style={{ flex: 1 }}
-                          >
-                            {cit} format
-                          </motion.button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Header Toggle */}
-                    <div className="metadata-field" style={{ justifyContent: 'center' }}>
-                      <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <input
-                          type="checkbox"
-                          checked={headerFooter}
-                          onChange={e => setHeaderFooter(e.target.checked)}
-                        />
-                        <span>Include Header / Footer indices</span>
-                      </label>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginTop: 4 }}>
-                        Starts page numbers on Chapters (omits front cover)
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Visual preview box */}
-                  <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16, background: 'var(--bg)', marginTop: 12 }}>
-                    <span className="metadata-label" style={{ display: 'block', marginBottom: 8 }}>📐 Document Spacing Preview</span>
-                    <div style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: 16, fontSize: '0.78rem' }}>
-                      <h4 style={{ fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>1. INTRODUCTION</h4>
-                      <p style={{ lineHeight: spacing, textAlign: 'justify', color: 'var(--text-muted)' }}>
-                        In this document, we propose a state-of-the-art framework to organize files. Standard bibliographic elements correspond to the {citation} formatting system, incorporating {formality} styled parameters.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 5: PREVIEW & ASSEMBLY */}
-              {step === 5 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 640, margin: '0 auto', width: '100%', textAlign: 'center' }}>
-                  <div className="dashboard-section-title">Step 5 — Assembling Workspace Assets</div>
+                  <div className="dashboard-section-title">Step 4 — Assembling Workspace Assets</div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '20px 0' }}>
                     <div className="preview-compile-spinner" style={{ width: 44, height: 44 }} />
@@ -566,7 +478,7 @@ export default function NewProject({ onCreated, onCancel }) {
 
         {/* WIZARD ACTIONS FOOTER */}
         <footer className="new-project-footer">
-          {step > 1 && step < 5 ? (
+          {step > 1 && step < 4 ? (
             <button className="btn-ghost" onClick={() => goToStep(step - 1)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <ArrowLeft size={14} /> Back
             </button>
@@ -577,7 +489,7 @@ export default function NewProject({ onCreated, onCancel }) {
               Cancel Creation
             </button>
 
-            {step < 4 ? (
+            {step < 3 ? (
               <button
                 className="btn-primary"
                 disabled={step === 1 && !title}
@@ -586,8 +498,8 @@ export default function NewProject({ onCreated, onCancel }) {
               >
                 Next Step <ArrowRight size={14} />
               </button>
-            ) : step === 4 ? (
-              <button className="btn-primary" onClick={() => goToStep(5)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            ) : step === 3 ? (
+              <button className="btn-primary" onClick={() => goToStep(4)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 Assemble Workspace <Sparkles size={14} />
               </button>
             ) : (

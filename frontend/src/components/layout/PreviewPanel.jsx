@@ -16,7 +16,7 @@ export default function PreviewPanel() {
   };
 
   return (
-    <div className="preview-panel">
+    <div id="tour-preview-panel" className="preview-panel">
       <div className="preview-panel-header">
         <span className="preview-panel-label">
           <span className="preview-panel-dot" />
