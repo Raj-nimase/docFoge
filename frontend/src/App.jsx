@@ -59,7 +59,7 @@ export default function App() {
 
   useEffect(() => {
     if (authStatus === "authenticated") {
-      loadProjectsForUser();
+      loadProjectsForUser(true); // force=true: bypass cache, always fetch fresh from cloud after login
       // ensure we're on the app after sign in
       if (window.location.pathname === "/auth") navigate("/");
     }

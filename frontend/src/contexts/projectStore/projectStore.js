@@ -187,8 +187,8 @@ export const useProjectStore = create((set, get) => ({
       return { count: get().projects.length, guest: !api.getStoredToken() };
     }
 
-    // If a load is already in-flight, return the same promise
-    if (_loadProjectsPromise) return _loadProjectsPromise;
+    // If a load is already in-flight AND we're not forcing, return the same promise
+    if (!force && _loadProjectsPromise) return _loadProjectsPromise;
 
     _loadProjectsPromise = (async () => {
       const t0 = Date.now();
