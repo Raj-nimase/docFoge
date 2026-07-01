@@ -148,8 +148,20 @@ async function processCompile(jobId, project) {
     if (images && images.length > 0) {
       for (const img of images) {
         const imgPath = path.join(tmpDir, img.filename);
-        fs.writeFileSync(imgPath, img.base64, "base64");
-        logger.info("CompileRoute", `Saved image: ${imgPath}`);
+        if (img.base64) {
+          fs.writeFileSync(imgPath, img.base64, "base64");
+          logger.info("CompileRoute", `Saved base64 image: ${imgPath}`);
+        } else if (img.url) {
+          try {
+            const response = await fetch(img.url);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const arrayBuffer = await response.arrayBuffer();
+            fs.writeFileSync(imgPath, Buffer.from(arrayBuffer));
+            logger.info("CompileRoute", `Downloaded remote image: ${imgPath}`);
+          } catch (fetchErr) {
+            logger.error("CompileRoute", `Failed to download ${img.url}`, fetchErr.message);
+          }
+        }
       }
     }
 

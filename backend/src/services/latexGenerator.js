@@ -439,6 +439,19 @@ function convertNode(node, templateId) {
         extractedImages.push({ filename, base64: base64Data });
         
         return `\\begin{figure}[htbp]\n  \\centering\n  \\includegraphics[width=0.8\\textwidth]{${filename}}\n  \\caption{${caption}}\n\\end{figure}`;
+      } else if (src.startsWith("http")) {
+        imageCounter++;
+        let extension = "png";
+        try {
+          const urlExt = new URL(src).pathname.split('.').pop().toLowerCase();
+          if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(urlExt)) extension = urlExt;
+        } catch(e) {}
+        
+        const prefix = currentPrefix ? `${currentPrefix}_` : "";
+        const filename = `${prefix}img_${imageCounter}.${extension}`;
+        extractedImages.push({ filename, url: src });
+        
+        return `\\begin{figure}[htbp]\n  \\centering\n  \\includegraphics[width=0.8\\textwidth]{${filename}}\n  \\caption{${caption}}\n\\end{figure}`;
       }
       return "";
     }
