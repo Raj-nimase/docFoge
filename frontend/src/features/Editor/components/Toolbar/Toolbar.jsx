@@ -22,6 +22,7 @@ import {
   Sigma,
 } from 'lucide-react';
 import { HEADING_LEVELS, getActiveHeadingLevel, toggleHeading, clearHeading } from '@/features/Editor/utils/editorFormatActions';
+import useAcaStore from '@/contexts/projectStore/projectStore';
 
 export default function EditorToolbar({ editor }) {
   if (!editor) return null;
@@ -182,18 +183,20 @@ export default function EditorToolbar({ editor }) {
             input.accept = 'image/png, image/jpeg, image/jpg';
             input.onchange = (e) => {
               const file = e.target.files[0];
-              if (file) {
-                import('@/services/api').then(({ uploadImage }) => {
-                  uploadImage(file)
-                    .then((url) => {
-                      editor.chain().focus().setImage({ src: url }).run();
-                    })
-                    .catch((err) => {
-                      console.error('Image upload failed:', err);
-                      alert('Image upload failed: ' + err.message);
-                    });
-                });
-              }
+              if (!file) return;
+              const showToast = useAcaStore.getState().showToast;
+              showToast('info', 'Uploading image...');
+              import('@/services/api').then(({ uploadImage }) => {
+                uploadImage(file)
+                  .then((url) => {
+                    editor.chain().focus().setImage({ src: url }).run();
+                    showToast('success', 'Image uploaded ✓');
+                  })
+                  .catch((err) => {
+                    console.error('Image upload failed:', err);
+                    showToast('error', 'Image upload failed: ' + err.message);
+                  });
+              });
             };
             input.click();
           }}
