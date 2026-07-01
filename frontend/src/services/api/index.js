@@ -1,5 +1,7 @@
-/** Backend is always the Render deployment – no env vars needed on the frontend. */
-const BASE = 'https://docfoge.onrender.com/api';//http://localhost:3001/api';
+/** Dev uses Vite proxy (/api → localhost); prod defaults to Render unless overridden. */
+const BASE =
+  import.meta.env.VITE_API_BASE ||
+  (import.meta.env.DEV ? '/api' : 'https://docfoge.onrender.com/api');
 
 const TOKEN_KEY = 'acadoc_token';
 
@@ -99,8 +101,8 @@ export async function updateProfile(fields) {
 
 // ─── Projects (cloud) ─────────────────────────────────────────────────────────
 
-export async function fetchUserProjects() {
-  const data = await authFetch('/projects');
+export async function fetchUserProjects({ timeoutMs = 15000 } = {}) {
+  const data = await authFetch('/projects', { timeoutMs });
   return data.projects;
 }
 
@@ -130,12 +132,28 @@ export async function deleteUserProject(clientId) {
  * @param {object} project
  * @returns {object} The saved project from the server.
  */
-export async function upsertUserProject(project) {
+export async function upsertUserProject(project, { timeoutMs = 15000 } = {}) {
   const data = await authFetch('/projects/item', {
     method: 'PUT',
     body: project,
+    timeoutMs,
   });
   return data.project;
+}
+
+/** Best-effort sync when the tab is closing (fetch keepalive). */
+export function upsertUserProjectKeepalive(project) {
+  const token = getStoredToken();
+  if (!token || !project?.id) return;
+  fetch(`${BASE}/projects/item`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(project),
+    keepalive: true,
+  }).catch(() => {});
 }
 
 /**
