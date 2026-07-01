@@ -262,51 +262,22 @@ export default function ChapterEditor({ sectionId, onContentChange }) {
           if (item.type.indexOf('image') === 0) {
             event.preventDefault();
             const file = item.getAsFile();
-            const reader = new FileReader();
-            reader.onload = async (readerEvent) => {
-              const base64Full = readerEvent.target.result;
-              const base64Data = base64Full.split(',')[1];
-              
-              const showToast = useAcaStore.getState().showToast;
-              showToast('info', 'Scanning image with Vision AI...');
-              
-              try {
-                const { extractMathFromImage, uploadImage } = await import('@/services/api');
-                const result = await extractMathFromImage(base64Data);
-                
-                if (result.type === 'math') {
-                  const node = view.state.schema.nodes.math.create({ latex: result.content });
+            const showToast = useAcaStore.getState().showToast;
+            
+            showToast('info', 'Uploading image...');
+            import('@/services/api').then(({ uploadImage }) => {
+              uploadImage(file)
+                .then((url) => {
+                  const node = view.state.schema.nodes.image.create({ src: url });
                   const transaction = view.state.tr.replaceSelectionWith(node);
                   view.dispatch(transaction);
-                  showToast('success', 'Formula extracted ✓');
-                } else if (result.type === 'html' || result.type === 'text') {
-                  const cleanedContent = transformMathHtml(result.content);
-                  editor.commands.insertContent(cleanedContent);
-                  showToast('success', 'Content extracted ✓');
-                } else {
-                  // Fallback: Vision AI returned something unexpected — upload the image to Cloudinary
-                  showToast('info', 'Uploading image...');
-                  const url = await uploadImage(file);
-                  const node = view.state.schema.nodes.image.create({ src: url });
-                  view.dispatch(view.state.tr.replaceSelectionWith(node));
                   showToast('success', 'Image uploaded ✓');
-                }
-              } catch (err) {
-                // If Vision AI fails, attempt a plain image upload as a fallback
-                try {
-                  const { uploadImage } = await import('@/services/api');
-                  showToast('info', 'Uploading image...');
-                  const url = await uploadImage(file);
-                  const node = view.state.schema.nodes.image.create({ src: url });
-                  view.dispatch(view.state.tr.replaceSelectionWith(node));
-                  showToast('success', 'Image uploaded ✓');
-                } catch (uploadErr) {
-                  showToast('error', 'Could not process image: ' + uploadErr.message);
-                  console.error(uploadErr);
-                }
-              }
-            };
-            reader.readAsDataURL(file);
+                })
+                .catch((err) => {
+                  showToast('error', 'Image upload failed: ' + err.message);
+                  console.error(err);
+                });
+            });
             return true;
           }
         }

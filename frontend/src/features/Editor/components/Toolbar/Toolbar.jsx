@@ -183,11 +183,16 @@ export default function EditorToolbar({ editor }) {
             input.onchange = (e) => {
               const file = e.target.files[0];
               if (file) {
-                const reader = new FileReader();
-                reader.onload = (readerEvent) => {
-                  editor.chain().focus().setImage({ src: readerEvent.target.result }).run();
-                };
-                reader.readAsDataURL(file);
+                import('@/services/api').then(({ uploadImage }) => {
+                  uploadImage(file)
+                    .then((url) => {
+                      editor.chain().focus().setImage({ src: url }).run();
+                    })
+                    .catch((err) => {
+                      console.error('Image upload failed:', err);
+                      alert('Image upload failed: ' + err.message);
+                    });
+                });
               }
             };
             input.click();
