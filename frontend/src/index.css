@@ -1,5 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Source+Serif+Four:ital,wght@0,400;0,700;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;0,9..144,800;1,9..144,600&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,700;1,8..60,400&display=swap');
 @import "tailwindcss";
+
 
 :root {
   /* Color Palette - Academic Precision (Stitch Blueprint) */
@@ -34,6 +35,7 @@
   --font-sans: 'Hanken Grotesk', 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
   --font-serif: 'Source Serif Four', 'Times New Roman', serif;
+  --font-editor: 'Times New Roman', Times, serif;
 }
 
 *, *::before, *::after {
@@ -1564,7 +1566,7 @@ body {
 .tiptap-editor .ProseMirror {
   outline: none;
   min-height: 700px;
-  font-family: var(--font-serif);
+  font-family: var(--font-editor);
   font-size: 12pt;
   line-height: 2;
   color: #000000;
@@ -1702,7 +1704,7 @@ body {
   pointer-events: none;
   float: left;
   height: 0;
-  font-family: var(--font-serif);
+  font-family: var(--font-editor);
   font-size: 12pt;
 }
 
@@ -1882,7 +1884,7 @@ body {
   border: none;
   background: transparent;
   text-align: center;
-  font-family: var(--font-serif);
+  font-family: var(--font-editor);
   font-style: italic;
   font-size: 11pt;
   color: #475569;
@@ -1917,14 +1919,18 @@ body {
 /* Math NodeView Styles */
 .math-view-wrapper {
   position: relative;
-  border-radius: var(--radius-sm);
-  transition: all 0.15s ease;
-  padding: 2px 4px;
+  display: inline-block;
+  vertical-align: middle;
+  line-height: normal;
+  padding: 0;
+  margin: 0 1px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
 }
 
 .math-view-wrapper.selected {
-  background: rgba(15, 23, 42, 0.03);
-  box-shadow: 0 0 0 1.5px var(--accent);
+  /* No box/background around selected math node to avoid visual clutter */
 }
 
 .math-container {
@@ -1932,6 +1938,37 @@ body {
   flex-direction: column;
   align-items: center;
   position: relative;
+  line-height: normal;
+}
+
+.math-render-area {
+  cursor: pointer;
+  padding: 0;
+  line-height: normal;
+}
+
+/* Keep KaTeX math fonts isolated from document Times New Roman styling */
+.tiptap-editor .math-view-wrapper,
+.tiptap-editor .math-view-wrapper .math-container,
+.tiptap-editor .math-view-wrapper .math-render-area {
+  font-family: KaTeX_Main, 'Times New Roman', serif;
+  line-height: normal;
+  text-align: initial;
+}
+
+.tiptap-editor .katex {
+  font-size: 1.1em;
+  line-height: 1.2;
+}
+
+.tiptap-editor .katex .katex-mathml {
+  position: absolute;
+  overflow: hidden;
+  clip: rect(1px, 1px, 1px, 1px);
+  height: 1px;
+  width: 1px;
+  padding: 0;
+  border: 0;
 }
 
 .math-input-popover {
@@ -1982,11 +2019,6 @@ body {
   font-size: 0.62rem;
   color: var(--text-muted);
   font-style: italic;
-}
-
-.math-render-area {
-  cursor: pointer;
-  padding: 2px 4px;
 }
 
 /* ── SETTINGS MODAL FORM COMPONENTS ── */
@@ -2153,6 +2185,12 @@ body {
   flex-direction: column;
   gap: 4px;
   overflow-y: auto;
+}
+
+.sidebar-nav-link {
+  text-decoration: none;
+  color: inherit;
+  display: block;
 }
 
 .sidebar-nav-item {
@@ -2374,6 +2412,7 @@ body {
 /* Main Dashboard layout split */
 .db-main-viewport {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2381,13 +2420,17 @@ body {
 
 .db-content-wrapper {
   flex: 1;
+  min-height: 0;
   display: flex;
   overflow: hidden;
 }
 
 .db-scrollable-content {
   flex: 1;
+  width: 100%;
+  min-width: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 24px;
 }
 
@@ -2906,7 +2949,7 @@ body {
   border-radius: var(--radius-md);
   padding: 16px;
   outline: none;
-  font-family: var(--font-serif);
+  font-family: var(--font-editor);
   font-size: 11pt;
   line-height: 1.6;
   resize: none;

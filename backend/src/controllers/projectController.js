@@ -29,7 +29,7 @@ async function upsertProject(req, res, next) {
         createdAt: createdAt || Date.now(),
         updatedAt: updatedAt || Date.now(),
       },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
+      { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true }
     );
 
     res.json({ success: true, project: doc.toClientJSON() });
@@ -43,6 +43,14 @@ async function syncProjects(req, res, next) {
     const { projects } = req.body;
     if (!Array.isArray(projects)) {
       return res.status(400).json({ success: false, error: 'projects must be an array' });
+    }
+
+    // Log incoming payload size and count to help diagnose slow syncs
+    try {
+      const payloadSize = JSON.stringify(req.body).length;
+      console.log('[syncProjects] received', `projects=${projects.length}`, `bytes=${payloadSize}`);
+    } catch (e) {
+      console.log('[syncProjects] received', `projects=${projects.length}`);
     }
 
     const ops = projects.map(p => ({
@@ -65,10 +73,16 @@ async function syncProjects(req, res, next) {
     }));
 
     if (ops.length > 0) {
+      console.time('[syncProjects] bulkWrite');
       await Project.bulkWrite(ops);
+      console.timeEnd('[syncProjects] bulkWrite');
     }
 
+    console.time('[syncProjects] find');
     const docs = await Project.find({ userId: req.user._id }).sort({ updatedAt: -1 });
+    console.timeEnd('[syncProjects] find');
+
+    console.log('[syncProjects] returning', `projects=${docs.length}`);
     res.json({ success: true, projects: docs.map(d => d.toClientJSON()) });
   } catch (err) {
     next(err);

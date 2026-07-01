@@ -11,6 +11,7 @@ const templateRoutes = require('./src/routes/templateRoutes');
 const visionRoutes   = require('./src/routes/visionRoutes');
 const authRoutes     = require('./src/routes/authRoutes');
 const projectRoutes  = require('./src/routes/projectRoutes');
+const imageRoutes    = require('./src/routes/imageRoutes');
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -36,7 +37,8 @@ app.use(cors({
   },
   exposedHeaders: ['Content-Disposition', 'Content-Type', 'Content-Length'],
 }));
-app.use(express.json({ limit: '50mb' }));
+// Reduced from 50mb now that base64 images are stored in Cloudinary, not embedded in project JSON
+app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 app.post('/api/debug', (req, res) => {
@@ -48,12 +50,13 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'AcaDoc Backend', timestamp: new Date().toISOString() });
 });
 
-app.use('/api/auth', authRoutes);
-app.use('/api/projects', projectRoutes);
+app.use('/api/auth',      authRoutes);
+app.use('/api/projects',  projectRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/compile',   compileRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/vision',    visionRoutes);
+app.use('/api/images',    imageRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ success: false, error: 'Route not found' });
