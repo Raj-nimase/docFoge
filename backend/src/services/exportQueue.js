@@ -56,32 +56,61 @@ async function processJob(jobId) {
 
   job.status = 'processing';
   job.updatedAt = Date.now();
+  job.startTime = Date.now();
   logger.info('ExportQueue', `Processing job: ${jobId}`);
+
+  const t0 = Date.now();
+  const ts = () => `[BACKEND][${new Date().toISOString()}][+${Date.now() - t0}ms]`;
+  console.log(`${ts()} ── processJob START jobId=${jobId}`);
 
   try {
     const { title, blocks, template } = job.data;
+    console.log(`${ts()} Input data: title="${title}", blocksCount=${blocks.length}, template="${template}"`);
 
     // Validate blocks
+    console.log(`${ts()} Step 1: Validating blocks...`);
     const validation = validateBlocks(blocks);
     if (!validation.valid) {
       throw new Error(`Block validation failed: ${validation.errors.join('; ')}`);
     }
+    console.log(`${ts()} Step 1 done. Blocks valid.`);
 
     // Generate LaTeX
+    console.log(`${ts()} Step 2: Generating LaTeX...`);
     const { latex, safe, reason } = generateLatex(title, validation.blocks, template);
+    console.log(`${ts()} Step 2 done. safe=${safe} latexBytes=${latex.length}`);
     if (!safe) throw new Error(`LaTeX safety check failed: ${reason}`);
 
     // Compile
-    const { pdfPath } = await compileTex(latex, jobId);
+    console.log(`${ts()} Step 3: Compiling LaTeX to PDF...`);
+    const { pdfPath, cached } = await compileTex(latex, jobId);
+    console.log(`${ts()} Step 3 done. PDF at ${pdfPath}, cached=${cached}`);
 
     job.status = 'done';
     job.pdfPath = pdfPath;
     job.updatedAt = Date.now();
+    job.durationMs = Date.now() - job.startTime;
+    console.log(`
+===================================================
+[BACKEND SUCCESS] PDF Export Completed!
+Job ID: ${jobId}
+Total Backend Time: ${job.durationMs}ms (${(job.durationMs / 1000).toFixed(2)}s)
+===================================================
+`);
     logger.info('ExportQueue', `Job done: ${jobId} → ${pdfPath}`);
   } catch (err) {
     job.status = 'failed';
     job.error = err.message;
     job.updatedAt = Date.now();
+    job.durationMs = Date.now() - job.startTime;
+    console.log(`
+===================================================
+[BACKEND FAILED] PDF Export Failed!
+Job ID: ${jobId}
+Error: ${err.message}
+Total Backend Time: ${job.durationMs}ms (${(job.durationMs / 1000).toFixed(2)}s)
+===================================================
+`);
     logger.error('ExportQueue', `Job failed: ${jobId}`, err.message);
   }
 }

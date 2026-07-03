@@ -9,8 +9,7 @@
 const express = require("express");
 const { v4: uuidv4 } = require("uuid");
 const { generateProjectLatex } = require("../services/latexGenerator");
-const { compileTex, cleanupJob } = require("../services/tectonicRunner");
-const { TEMPLATES } = require("../data/templates");
+const { compileTex, cleanupJob, warmUp } = require("../services/tectonicRunner");
 const { logger } = require("../utils/logger");
 const path = require("path");
 const os = require("os");
@@ -65,7 +64,11 @@ router.get("/:jobId/status", (req, res) => {
   if (!job)
     return res.status(404).json({ success: false, error: "Job not found" });
 
-  const response = { success: true, status: job.status };
+  const response = { 
+    success: true, 
+    status: job.status,
+    durationMs: job.durationMs || null
+  };
   if (job.status === "failed") response.error = job.error;
   return res.json(response);
 });
@@ -119,73 +122,82 @@ async function processCompile(jobId, project) {
 
   job.status = "processing";
   job.updatedAt = Date.now();
+  job.startTime = Date.now();
+
+  const t0 = Date.now();
+  const ts = () => `[BACKEND][${new Date().toISOString()}][+${Date.now() - t0}ms]`;
+  console.log(`${ts()} ── processCompile START jobId=${jobId}`);
 
   try {
-    // ── DEBUG: Dump incoming chapter content to see if bold marks exist ──
-    if (project.chapters && project.chapters.length > 0) {
-      for (const ch of project.chapters) {
-        console.log(`\n===== DEBUG: Chapter "${ch.title}" raw content =====`);
-        console.log(JSON.stringify(ch.content, null, 2));
-        // Specifically look for any marks
-        const findMarks = (node) => {
-          if (!node) return;
-          if (node.marks && node.marks.length > 0) {
-            console.log(`  FOUND MARKS on text "${node.text}":`, JSON.stringify(node.marks));
-          }
-          if (node.content) node.content.forEach(findMarks);
-        };
-        if (ch.content) findMarks(ch.content);
-      }
-    }
-
+    // ── Step A: LaTeX generation ──────────────────────────────────────────────
+    console.log(`${ts()} Step A: Generating LaTeX...`);
     const { latex, images, safe, reason } = generateProjectLatex(project, jobId);
+    console.log(`${ts()} Step A done. safe=${safe} latexBytes=${latex.length} images=${images?.length ?? 0}`);
     if (!safe) throw new Error(`LaTeX safety check failed: ${reason}`);
 
-    // Save images to disk so tectonic can find them
+    // ── Step B: Write temp dir & save images ─────────────────────────────────
     const tmpDir = path.join(os.tmpdir(), "docforge");
     if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 
     if (images && images.length > 0) {
+      console.log(`${ts()} Step B: Saving ${images.length} image(s)...`);
       for (const img of images) {
         const imgPath = path.join(tmpDir, img.filename);
         if (img.base64) {
           fs.writeFileSync(imgPath, img.base64, "base64");
-          logger.info("CompileRoute", `Saved base64 image: ${imgPath}`);
+          console.log(`${ts()} Step B: Saved base64 image: ${img.filename}`);
         } else if (img.url) {
           try {
+            console.log(`${ts()} Step B: Fetching remote image: ${img.url}`);
             const response = await fetch(img.url);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const arrayBuffer = await response.arrayBuffer();
             fs.writeFileSync(imgPath, Buffer.from(arrayBuffer));
-            logger.info("CompileRoute", `Downloaded remote image: ${imgPath}`);
+            console.log(`${ts()} Step B: Downloaded remote image: ${img.filename}`);
           } catch (fetchErr) {
+            console.log(`${ts()} Step B: FAILED to download ${img.url}: ${fetchErr.message}`);
             logger.error("CompileRoute", `Failed to download ${img.url}`, fetchErr.message);
           }
         }
       }
+      console.log(`${ts()} Step B done.`);
     }
 
-    // ── DEBUG: Show generated LaTeX to verify \textbf appears ──
-    console.log(`\n===== DEBUG: Generated LaTeX (first 80 lines) =====`);
-    console.log(latex.split("\n").slice(0, 80).join("\n"));
-    console.log(`===== END DEBUG =====\n`);
-
-    // Log generated LaTeX for debugging (first 60 lines)
-    const preview = latex.split("\n").slice(0, 60).join("\n");
-    logger.info("CompileRoute", `LaTeX preview:\n${preview}`);
-
-    const { pdfPath } = await compileTex(latex, jobId);
+    // ── Step C: Run Tectonic ──────────────────────────────────────────────────
+    console.log(`${ts()} Step C: Starting Tectonic compilation...`);
+    const { pdfPath, cached } = await compileTex(latex, jobId);
+    console.log(`${ts()} Step C done. PDF at ${pdfPath} (cached=${cached})`);
 
     job.status = "done";
     job.pdfPath = pdfPath;
+    job.cached  = cached;
     job.updatedAt = Date.now();
+    job.durationMs = Date.now() - job.startTime;
+    console.log(`
+===================================================
+[BACKEND SUCCESS] PDF Generation Completed!
+Job ID    : ${jobId}
+Cache hit : ${cached}
+Total Time: ${job.durationMs}ms (${(job.durationMs / 1000).toFixed(2)}s)
+===================================================
+`);
     logger.info("CompileRoute", `Job done: ${jobId}`);
   } catch (err) {
     job.status = "failed";
     job.error = err.message;
     job.updatedAt = Date.now();
+    job.durationMs = Date.now() - job.startTime;
+    console.log(`
+===================================================
+[BACKEND FAILED] PDF Generation Failed!
+Job ID: ${jobId}
+Error: ${err.message}
+Total Backend Time: ${job.durationMs}ms (${(job.durationMs / 1000).toFixed(2)}s)
+===================================================
+`);
     logger.error("CompileRoute", `Job failed: ${jobId}`, err.message);
   }
 }
 
 module.exports = router;
+module.exports.warmUp = warmUp;

@@ -7,6 +7,7 @@ const fs = require('fs');
 const { connectDB } = require('./src/config/db');
 const documentRoutes = require('./src/routes/documentRoutes');
 const compileRoutes  = require('./src/routes/compileRoutes');
+const { warmUp: tectonicWarmUp } = compileRoutes;
 const templateRoutes = require('./src/routes/templateRoutes');
 const visionRoutes   = require('./src/routes/visionRoutes');
 const authRoutes     = require('./src/routes/authRoutes');
@@ -23,11 +24,13 @@ app.use(cors({
     const allowedOrigins = [
       'http://localhost:5173',
       'http://127.0.0.1:5173',
-      'https://docformatter.netlify.app'
+      'https://docformatter.netlify.app',
     ];
 
     const isLocalhost = origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:');
-    const isNetlify = origin.endsWith('.netlify.app');
+    const isNetlify   = origin.endsWith('.netlify.app');
+    // Expo Go on Android sends no Origin header (handled above by !origin check).
+    // Built APK requests also arrive without an Origin — allowed by default.
 
     if (allowedOrigins.includes(origin) || isLocalhost || isNetlify) {
       callback(null, true);
@@ -80,6 +83,35 @@ app.use((err, _req, res, _next) => {
   });
 });
 
+/**
+ * Self-ping keep-alive for Render free tier.
+ *
+ * Render spins down free services after 15 minutes of inactivity.
+ * A cold start means Node restarts AND Tectonic re-initialises —
+ * adding 30-40 seconds to the first compile after idle.
+ *
+ * This pings our own /api/health every 14 minutes to keep the dyno
+ * awake. It only runs when RENDER_EXTERNAL_URL is set (i.e. on Render),
+ * so local dev is unaffected.
+ */
+function startKeepAlive() {
+  const url = process.env.RENDER_EXTERNAL_URL;
+  if (!url) return; // not on Render — skip
+
+  const INTERVAL_MS = 14 * 60 * 1000; // 14 minutes (Render timeout is 15)
+
+  setInterval(async () => {
+    try {
+      const res = await fetch(`${url}/api/health`);
+      console.log(`[KeepAlive] Pinged ${url}/api/health → ${res.status}`);
+    } catch (err) {
+      console.warn(`[KeepAlive] Ping failed: ${err.message}`);
+    }
+  }, INTERVAL_MS);
+
+  console.log(`[KeepAlive] Active — pinging every 14 min to prevent Render spin-down.`);
+}
+
 async function start() {
   if (!process.env.JWT_SECRET) {
     console.warn('\n⚠️  JWT_SECRET is not set. Add it to backend/.env (see .env.example)\n');
@@ -94,6 +126,14 @@ async function start() {
     console.log(`   Projects  : GET  http://localhost:${PORT}/api/projects`);
     console.log(`   Compile   : POST http://localhost:${PORT}/api/compile\n`);
   });
+
+  // Pre-warm Tectonic after the server is listening so startup isn't blocked.
+  // This compiles a tiny document to initialise the format cache and package
+  // loading, so the first real user compile is fast instead of cold-start slow.
+  tectonicWarmUp();
+
+  // Keep the Render free-tier dyno alive (no-op in local dev).
+  startKeepAlive();
 }
 
 start().catch((err) => {

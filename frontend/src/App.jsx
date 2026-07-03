@@ -41,15 +41,14 @@ export default function App() {
       // do a short health check; if reachable, load cloud projects in background
       (async () => {
         try {
-          await api.authFetch("/health", { timeoutMs: 5000, token: null });
+          await api.authFetch("/health", { timeoutMs: 1200, token: null });
           if (cancelled) return;
-          await loadProjectsForUser(true);
+          await loadProjectsForUser();
         } catch (err) {
           console.log(
             "[app] backend health check failed — using local cache",
             err.message || err,
           );
-          if (!cancelled) await loadProjectsForUser();
         }
       })();
     })();
@@ -81,31 +80,25 @@ export default function App() {
   };
 
   const handleAuthSuccess = async () => {
-    resetProjects();
-    const result = await loadProjectsForUser(true);
+    const result = await loadProjectsForUser();
     navigate("/");
-    if (result?.cloudFailed) {
-      showToast(
-        "error",
-        "Signed in, but could not load projects from the cloud. Check your connection and refresh.",
-      );
-    } else if (result?.offline) {
+    if (result?.offline) {
       showToast(
         "warning",
         "Signed in, but could not reach the server. Projects on this device only.",
       );
-    } else if (result?.pushed > 0) {
-      showToast(
-        "success",
-        `Saved ${result.pushed} local project${result.pushed === 1 ? "" : "s"} to your account.`,
-      );
+    } else if (result?.merged) {
+      showToast("success", "Your local projects were saved to your account.");
     } else if (result?.count > 0) {
       showToast(
         "success",
         `Loaded ${result.count} project${result.count === 1 ? "" : "s"} from your account.`,
       );
     } else {
-      showToast("success", "Signed in. Create a project to get started.");
+      showToast(
+        "success",
+        "Signed in. Your projects will sync across devices.",
+      );
     }
   };
 

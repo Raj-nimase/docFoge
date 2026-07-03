@@ -230,6 +230,7 @@ body {
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes scaleIn { from { transform: scale(.97); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 /* ── DASHBOARD ── */
 .dashboard {
@@ -1620,6 +1621,32 @@ body {
   margin: 0.2em 0;
 }
 
+/* 1st Level Ordered List */
+.tiptap-editor .ProseMirror ol {
+  list-style-type: decimal;
+}
+
+/* Unordered Lists */
+.tiptap-editor .ProseMirror ul {
+  list-style-type: disc;
+}
+.tiptap-editor .ProseMirror ul ul {
+  list-style-type: circle;
+}
+.tiptap-editor .ProseMirror ul ul ul {
+  list-style-type: square;
+}
+
+/* 2nd Level Ordered List: a) b) c) */
+.tiptap-editor .ProseMirror ol ol > li::marker {
+  content: counter(list-item, lower-alpha) ") ";
+}
+
+/* 3rd Level Ordered List: i. ii. iii. */
+.tiptap-editor .ProseMirror ol ol ol > li::marker {
+  content: counter(list-item, lower-roman) ". ";
+}
+
 .tiptap-editor .ProseMirror li {
   font-size: 12pt;
   color: #000000;
@@ -1706,6 +1733,15 @@ body {
   height: 0;
   font-family: var(--font-editor);
   font-size: 12pt;
+}
+
+.tiptap-editor .ProseMirror [data-number]::before {
+  content: attr(data-number);
+  margin-right: 0.5em;
+  font-weight: 700;
+  color: #0f172a;
+  font-family: inherit;
+  display: inline-block;
 }
 
 .tiptap-editor .ProseMirror img {
@@ -1804,6 +1840,70 @@ body {
   border: 2.5px solid rgba(15, 23, 42, 0.05);
   border-top-color: var(--accent);
   animation: spin .8s linear infinite;
+}
+
+/* ── Progress overlay ── */
+.preview-progress-overlay {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 32px 40px;
+  text-align: center;
+  background: #ffffff;
+}
+
+/* Floating overlay sits on top of the faded old PDF */
+.preview-progress-overlay--floating {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  flex: unset;
+  background: rgba(255,255,255,0.92);
+  backdrop-filter: blur(6px);
+  border-top: 1px solid rgba(15,23,42,0.07);
+  padding: 16px 24px;
+  gap: 8px;
+  z-index: 10;
+}
+
+/* Progress bar track */
+.preview-progress-bar-wrap {
+  width: 100%;
+  max-width: 260px;
+  height: 4px;
+  background: rgba(15, 23, 42, 0.08);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+/* Progress bar fill — smooth transition on every update */
+.preview-progress-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 99px;
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Stale (previous) PDF shown faded while recompiling */
+.preview-iframe--stale {
+  opacity: 0.35;
+  pointer-events: none;
+  filter: blur(1px);
+  transition: opacity 0.3s ease;
+}
+
+/* Fresh PDF fades in smoothly */
+.preview-iframe--fresh {
+  animation: fadeInPdf 0.4s ease forwards;
+}
+
+@keyframes fadeInPdf {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 .preview-compile-text {

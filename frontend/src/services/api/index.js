@@ -1,7 +1,10 @@
-/** Dev uses Vite proxy (/api → localhost); prod defaults to Render unless overridden. */
-const BASE =
-  import.meta.env.VITE_API_BASE ||
-  (import.meta.env.DEV ? '/api' : 'https://docfoge.onrender.com/api');
+/** Single source of truth for the backend URL. Change this one line to switch environments. */
+export const API_BASE_URL ='https://docfoge.onrender.com/api'
+
+//`http://localhost:3001/api`;
+
+/** @internal used by all api functions in this file */
+const BASE = API_BASE_URL;
 
 const TOKEN_KEY = 'acadoc_token';
 
@@ -101,8 +104,8 @@ export async function updateProfile(fields) {
 
 // ─── Projects (cloud) ─────────────────────────────────────────────────────────
 
-export async function fetchUserProjects({ timeoutMs = 15000 } = {}) {
-  const data = await authFetch('/projects', { timeoutMs });
+export async function fetchUserProjects() {
+  const data = await authFetch('/projects');
   return data.projects;
 }
 
@@ -132,28 +135,12 @@ export async function deleteUserProject(clientId) {
  * @param {object} project
  * @returns {object} The saved project from the server.
  */
-export async function upsertUserProject(project, { timeoutMs = 15000 } = {}) {
+export async function upsertUserProject(project) {
   const data = await authFetch('/projects/item', {
     method: 'PUT',
     body: project,
-    timeoutMs,
   });
   return data.project;
-}
-
-/** Best-effort sync when the tab is closing (fetch keepalive). */
-export function upsertUserProjectKeepalive(project) {
-  const token = getStoredToken();
-  if (!token || !project?.id) return;
-  fetch(`${BASE}/projects/item`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(project),
-    keepalive: true,
-  }).catch(() => {});
 }
 
 /**
@@ -219,14 +206,24 @@ export async function fetchCompiledPdf(jobId) {
 }
 
 /**
+ * Get the exported PDF blob URL (from the /documents/export route).
+ */
+export async function fetchExportPdf(jobId) {
+  const res = await fetch(`${BASE}/documents/export/${jobId}/pdf`);
+  if (!res.ok) throw new Error(`Export PDF fetch failed (${res.status})`);
+  const blob = await res.blob();
+  return URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+}
+
+/**
  * Poll until done or failed.
  */
 export async function pollUntilDone(jobId, onStatus, { intervalMs = 1500, maxAttempts = 40 } = {}) {
   for (let i = 0; i < maxAttempts; i++) {
-    await new Promise(r => setTimeout(r, intervalMs));
     const status = await getCompileStatus(jobId);
     onStatus(status);
     if (status.status === 'done' || status.status === 'failed') return status;
+    await new Promise(r => setTimeout(r, intervalMs));
   }
   throw new Error('Compile timed out');
 }

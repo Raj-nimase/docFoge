@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import useDocStore from '@/contexts/projectStore/projectStore';
 import LivePreview from '@/features/Editor/components/LivePreview/LivePreview';
-import { parseDocument, enqueueExport, pollExportUntilDone } from '@/services/api';
+import { parseDocument, enqueueExport, pollExportUntilDone, fetchExportPdf } from '@/services/api';
 import Spinner from '@/components/Spinner/Spinner';
 
 const SAMPLE_TEXT = `Introduction
@@ -68,14 +68,7 @@ export default function Workspace() {
 
       if (final.status === 'done') {
         const safeTitle = (title || 'document').replace(/[^a-z0-9 ]/gi, '_');
-        const pdfApiUrl = `https://docfoge.onrender.com/api/documents/export/${jobId}/pdf`;
-
-        // Fetch as Blob for same-origin blob URL
-        const res = await fetch(pdfApiUrl);
-        if (!res.ok) throw new Error(`PDF fetch failed: ${res.status}`);
-        const blob = await res.blob();
-        const pdfBlob = new Blob([blob], { type: 'application/pdf' });
-        const blobUrl = URL.createObjectURL(pdfBlob);
+        const blobUrl = await fetchExportPdf(jobId);
 
         setExportJob({ status: 'done', jobId, blobUrl, safeTitle });
         showToast('success', '✓ PDF generated successfully!');

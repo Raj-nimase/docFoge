@@ -1,4 +1,5 @@
-const API_BASE = 'https://docfoge.onrender.com/api';
+import { API_BASE_URL } from '@/services/api';
+const API_BASE = API_BASE_URL;
 
 // Unicode → LaTeX symbol map
 const UNICODE_MAP = {
@@ -110,6 +111,15 @@ export function transformMathHtml(html) {
       let text = headingEl.textContent.trim();
       if (!text) return;
 
+      // If the heading is actually a list item like "a) Narrow AI" or "i. Something",
+      // convert it to a bold paragraph so it isn't treated as a sub-sub-heading.
+      if (/^([a-zA-Z]|(?:i|ii|iii|iv|v|vi|vii|viii|ix|x))[.)]\s+/i.test(text)) {
+        const p = doc.createElement('p');
+        p.innerHTML = `<strong>${headingEl.innerHTML}</strong>`;
+        headingEl.parentNode.replaceChild(p, headingEl);
+        return;
+      }
+
       // 1. Strip section prefixes like "3.1 " or "2.4.1 "
       const prefixMatch = text.match(/^(\d+(?:\.\d+)+)[^\S\n]+(.*)/);
       if (prefixMatch) {
@@ -161,6 +171,17 @@ export function transformMathHtml(html) {
       const katexHtmlNodes = doc.querySelectorAll('.katex-html');
       katexHtmlNodes.forEach(node => node.remove());
     }
+
+    // Remove horizontal rules (<hr>) and paragraphs that are just markdown dividers (---)
+    const hrNodes = doc.querySelectorAll('hr');
+    hrNodes.forEach(node => node.remove());
+
+    const pNodes = doc.querySelectorAll('p');
+    pNodes.forEach(p => {
+      if (/^[-*_]{3,}$/.test(p.textContent.trim())) {
+        p.remove();
+      }
+    });
 
     const finalHtml = doc.body ? doc.body.innerHTML : doc.documentElement.outerHTML;
 

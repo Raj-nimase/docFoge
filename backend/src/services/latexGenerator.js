@@ -5,6 +5,21 @@
 
 const { escapeLatex, auditLatexSource } = require("./latexSanitizer");
 
+function stripAllPrefixes(text) {
+  let cleaned = text;
+  let lastCleaned;
+  do {
+    lastCleaned = cleaned;
+    cleaned = cleaned.replace(/^\d+(?:\.\d+)*\.?\s*/, ""); // numeric prefixes
+    cleaned = cleaned.replace(/^[a-zA-Z][.)]\s*/, ""); // alpha prefixes
+    cleaned = cleaned.replace(
+      /^(?:i|ii|iii|iv|v|vi|vii|viii|ix|x)[.)]\s*/i,
+      "",
+    ); // roman numeral prefixes
+  } while (cleaned !== lastCleaned);
+  return cleaned.trim();
+}
+
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 let imageCounter = 0;
@@ -339,7 +354,7 @@ function convertNodeWithShift(node, shift, templateId) {
     const isIEEE = templateId === "ieee-paper";
     const maxLevel = isIEEE ? 4 : 3;
     const shiftedLevel = Math.max(1, Math.min(maxLevel, rawLevel + shift));
-    const text = convertInline(node.content, templateId);
+    const text = stripAllPrefixes(convertInline(node.content, templateId));
     const cmds = { 1: "section", 2: "subsection", 3: "subsubsection", 4: "paragraph" };
     return `\\${cmds[shiftedLevel] || "paragraph"}{${text}}`;
   }
@@ -355,7 +370,7 @@ function convertNode(node, templateId) {
 
     case "heading": {
       const level = node.attrs && node.attrs.level ? node.attrs.level : 1;
-      const text = convertInline(node.content, templateId);
+      const text = stripAllPrefixes(convertInline(node.content, templateId));
       const isIEEE = templateId === "ieee-paper";
       const actualLevel = isIEEE ? level + 1 : level;
       const cmds = { 1: "section", 2: "subsection", 3: "subsubsection", 4: "paragraph" };

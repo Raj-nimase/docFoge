@@ -8,6 +8,8 @@
 const PREAMBLE = `\\documentclass[12pt,a4paper]{report}
 
 % ─── Packages ──────────────────────────────────────────────────────────────────
+\\usepackage[utf8]{inputenc}         % UTF-8 input encoding (required for pdflatex)
+\\usepackage[T1]{fontenc}            % Proper font encoding for pdflatex
 \\usepackage[a4paper, margin=1in]{geometry}
 \\usepackage{mathptmx}            % Times New Roman-like font (Type1, no system fonts needed)
 \\usepackage{setspace}            % Line spacing
