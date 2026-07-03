@@ -1,7 +1,7 @@
 /**
  * Tectonic Runner
  *
- * Wraps tectonic.exe compilation in a promise-based interface.
+ * Wraps tectonic compilation in a promise-based interface.
  * Writes .tex to OS temp dir, runs tectonic, returns PDF path.
  *
  * Optimisations:
@@ -11,11 +11,15 @@
  *  2. Smart pass selection — documents without TOC/cross-refs use
  *     --reruns 0 (1 pass, ~40% faster). Documents with \tableofcontents,
  *     \listoffigures, \ref, or \cite get --reruns 1 (2 passes).
- *  3. --only-cached — prevents Tectonic from hitting the network for
- *     packages. Falls back to network only if a package is genuinely missing.
- *  4. --format latex — forces pdflatex engine (2-3x faster than XeTeX).
- *  5. Pre-warm export — callers can invoke warmUp() at server start so
- *     the first real compile doesn't pay cold-start cost.
+ *  3. Network-first on cold start — on a fresh deploy (no .fmt file cached),
+ *     Tectonic needs network access to build the format. We always allow
+ *     network on the first compile attempt. --only-cached is NEVER used
+ *     because it blocks format generation on cold starts (Render, fresh deploy).
+ *  4. NOTE: --format latex is intentionally NOT used. That flag requires a
+ *     pre-built tectonic-format-latex.tex which doesn't exist on cold Render
+ *     deploys and causes "failed to open input file" errors.
+ *  5. Pre-warm — callers can invoke warmUp() at server start so the first
+ *     real compile doesn't pay cold-start cost.
  */
 
 const { spawn }  = require('child_process');
@@ -138,17 +142,7 @@ async function compileTex(latexSource, jobId) {
   ts(`Pass mode: ${multiPass ? '2-pass (TOC/refs detected)' : '1-pass (simple document)'}`);
 
   // ── 4. Run Tectonic ───────────────────────────────────────────────────────
-  let logs;
-  try {
-    logs = await runTectonic(texPath, TMP_DIR, { multiPass, allowNetwork: false });
-  } catch (err) {
-    if (err.message.includes('not available') || err.message.includes('not cached')) {
-      ts('Package not cached — retrying with network access…');
-      logs = await runTectonic(texPath, TMP_DIR, { multiPass, allowNetwork: true });
-    } else {
-      throw err;
-    }
-  }
+  const logs = await runTectonic(texPath, TMP_DIR, { multiPass });
 
   ts('Tectonic finished.');
 
@@ -170,19 +164,18 @@ async function compileTex(latexSource, jobId) {
 /**
  * @param {string} texPath
  * @param {string} outDir
- * @param {{ multiPass?: boolean, allowNetwork?: boolean }} opts
+ * @param {{ multiPass?: boolean }} opts
  */
-function runTectonic(texPath, outDir, { multiPass = true, allowNetwork = false } = {}) {
+function runTectonic(texPath, outDir, { multiPass = true } = {}) {
   return new Promise((resolve, reject) => {
     const args = [
       '--outdir', outDir,
       '--reruns', multiPass ? '1' : '0',  // 0 = 1 pass, 1 = 2 passes
-      '--format', 'latex',                // pdflatex engine (faster than XeTeX)
+      // NOTE: --format latex is intentionally omitted — it requires
+      // tectonic-format-latex.tex which is absent on cold Render deploys.
+      // NOTE: --only-cached is intentionally omitted — it blocks format
+      // generation (.fmt file) on fresh deploys, causing cold-start failures.
     ];
-
-    if (!allowNetwork) {
-      args.push('--only-cached');
-    }
 
     args.push(texPath);
 
