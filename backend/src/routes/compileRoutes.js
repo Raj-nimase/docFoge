@@ -131,7 +131,11 @@ async function processCompile(jobId, project) {
   try {
     // ── Step A: LaTeX generation ──────────────────────────────────────────────
     console.log(`${ts()} Step A: Generating LaTeX...`);
-    const { latex, images, safe, reason } = generateProjectLatex(project, jobId);
+    // Use a stable imagePrefix derived from project content — NOT jobId.
+    // jobId changes on every compile, which makes every LaTeX source unique
+    // and defeats the content-hash PDF cache in tectonicRunner.
+    const imagePrefix = project.id ?? jobId;
+    const { latex, images, safe, reason } = generateProjectLatex(project, imagePrefix);
     console.log(`${ts()} Step A done. safe=${safe} latexBytes=${latex.length} images=${images?.length ?? 0}`);
     if (!safe) throw new Error(`LaTeX safety check failed: ${reason}`);
 

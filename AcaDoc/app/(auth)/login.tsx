@@ -9,80 +9,75 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/stores/authStore';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors, Brand, Space, FontSize, Radius } from '@/constants/theme';
+import { C, S, R, F, shadows } from '@/constants/theme';
 
 export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const scheme = useColorScheme() ?? 'light';
-  const C = Colors[scheme];
-  const login = useAuthStore(s => s.login);
+  const login  = useAuthStore(s => s.login);
 
-  const [email, setEmail]         = useState('');
-  const [password, setPassword]   = useState('');
-  const [showPwd, setShowPwd]     = useState(false);
-  const [loading, setLoading]     = useState(false);
-  const [error, setError]         = useState('');
-  const [fieldErr, setFieldErr]   = useState<{ email?: string; password?: string }>({});
+  const [email, setEmail]       = useState('');
+  const [password, setPassword] = useState('');
+  const [showPwd, setShowPwd]   = useState(false);
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState('');
+  const [fieldErr, setFieldErr] = useState<{ email?: string; password?: string }>({});
 
   function validate() {
-    const errs: typeof fieldErr = {};
-    if (!email.trim()) errs.email = 'Email is required';
-    else if (!/\S+@\S+\.\S+/.test(email)) errs.email = 'Enter a valid email';
-    if (!password) errs.password = 'Password is required';
-    setFieldErr(errs);
-    return Object.keys(errs).length === 0;
+    const e: typeof fieldErr = {};
+    if (!email.trim())                    e.email    = 'Email is required';
+    else if (!/\S+@\S+\.\S+/.test(email)) e.email    = 'Enter a valid email';
+    if (!password)                         e.password = 'Password is required';
+    setFieldErr(e);
+    return !Object.keys(e).length;
   }
 
   async function handleLogin() {
     if (!validate()) return;
-    setError('');
-    setLoading(true);
-    try {
-      await login(email.trim(), password);
-      // Root layout will redirect to (tabs) on auth state change
-    } catch (err: any) {
-      setError(err.message || 'Login failed');
-    } finally {
-      setLoading(false);
-    }
+    setError(''); setLoading(true);
+    try { await login(email.trim(), password); }
+    catch (err: any) { setError(err.message || 'Login failed'); }
+    finally { setLoading(false); }
   }
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: C.background }}
+      style={[st.screen, { backgroundColor: C.bg }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'android' ? 0 : 0}
+      enabled={Platform.OS === 'ios'}
     >
       <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + Space['2xl'], paddingBottom: insets.bottom + Space.xl }]}
-        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[st.scroll, { paddingTop: insets.top + S['3xl'], paddingBottom: insets.bottom + S['2xl'] }]}
+        showsVerticalScrollIndicator={false}
       >
-        {/* Logo */}
-        <View style={styles.logoRow}>
-          <View style={[styles.logoIcon, { backgroundColor: Brand.accentLight }]}>
-            <Text style={styles.logoEmoji}>⬡</Text>
+        {/* Brand */}
+        <View style={st.brand}>
+          <View style={st.brandMark}>
+            <Text style={st.brandHex}>⬡</Text>
           </View>
-          <Text style={[styles.logoName, { color: C.text }]}>AcaDoc</Text>
+          <View>
+            <Text style={st.brandName}>AcaDoc</Text>
+            <Text style={st.brandTagline}>Academic Document Platform</Text>
+          </View>
         </View>
 
-        <Text style={[styles.heading, { color: C.text }]}>Welcome back</Text>
-        <Text style={[styles.sub, { color: C.textMuted }]}>Sign in to your account</Text>
+        <Text style={st.heading}>Welcome back</Text>
+        <Text style={st.sub}>Sign in to your workspace</Text>
 
-        {/* Error banner */}
-        {error ? (
-          <View style={[styles.errorBanner, { backgroundColor: Colors[scheme].errorLight }]}>
-            <Ionicons name="alert-circle-outline" size={16} color={Brand.error} />
-            <Text style={[styles.errorText, { color: Brand.error }]}>{error}</Text>
+        {!!error && (
+          <View style={st.errBanner}>
+            <Ionicons name="alert-circle-outline" size={15} color={C.error} />
+            <Text style={st.errText}>{error}</Text>
           </View>
-        ) : null}
+        )}
 
-        <View style={styles.form}>
+        <View style={st.form}>
           <Input
-            label="Email"
+            label="Email address"
             placeholder="you@example.com"
             value={email}
-            onChangeText={v => { setEmail(v); setFieldErr(e => ({ ...e, email: undefined })); }}
+            onChangeText={v => { setEmail(v); setFieldErr(p => ({ ...p, email: undefined })); }}
             keyboardType="email-address"
             error={fieldErr.email}
             autoComplete="email"
@@ -91,51 +86,62 @@ export default function LoginScreen() {
             label="Password"
             placeholder="••••••••"
             value={password}
-            onChangeText={v => { setPassword(v); setFieldErr(e => ({ ...e, password: undefined })); }}
+            onChangeText={v => { setPassword(v); setFieldErr(p => ({ ...p, password: undefined })); }}
             secureTextEntry={!showPwd}
             error={fieldErr.password}
-            autoComplete="password"
-            rightIcon={
-              <Ionicons name={showPwd ? 'eye-off-outline' : 'eye-outline'} size={20} color={C.textMuted} />
-            }
+            rightIcon={<Ionicons name={showPwd ? 'eye-off-outline' : 'eye-outline'} size={18} color={C.textFaint} />}
             onRightIconPress={() => setShowPwd(v => !v)}
           />
-
-          <TouchableOpacity onPress={() => router.push('/(auth)/forgot-password')} style={styles.forgotWrap}>
-            <Text style={[styles.forgot, { color: Brand.accent }]}>Forgot password?</Text>
+          <TouchableOpacity onPress={() => router.push('/(auth)/forgot-password')} style={st.forgotRow}>
+            <Text style={st.forgotText}>Forgot password?</Text>
           </TouchableOpacity>
-
           <Button label="Sign in" onPress={handleLogin} loading={loading} size="lg" />
         </View>
 
-        <View style={styles.bottomRow}>
-          <Text style={[styles.bottomText, { color: C.textMuted }]}>Don't have an account?</Text>
-          <TouchableOpacity onPress={() => router.push('/(auth)/register')}>
-            <Text style={[styles.bottomLink, { color: Brand.accent }]}> Sign up</Text>
-          </TouchableOpacity>
+        <View style={st.dividerRow}>
+          <View style={st.dividerLine} /><Text style={st.dividerText}>or</Text><View style={st.dividerLine} />
         </View>
+
+        <TouchableOpacity onPress={() => router.push('/(auth)/register')} style={st.signupBtn}>
+          <Text style={st.signupText}>
+            Don't have an account? <Text style={st.signupLink}>Create one free</Text>
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  scroll: { flexGrow: 1, paddingHorizontal: Space.xl },
-  logoRow: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, marginBottom: Space['2xl'] },
-  logoIcon: { width: 40, height: 40, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
-  logoEmoji: { fontSize: 22 },
-  logoName: { fontSize: FontSize.xl, fontWeight: '800', letterSpacing: -0.5 },
-  heading: { fontSize: FontSize['2xl'], fontWeight: '800', marginBottom: Space.xs },
-  sub: { fontSize: FontSize.base, marginBottom: Space.xl },
-  errorBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: Space.xs,
-    padding: Space.md, borderRadius: Radius.md, marginBottom: Space.md,
+const st = StyleSheet.create({
+  screen: { flex: 1 },
+  scroll: { flexGrow: 1, paddingHorizontal: S.xl },
+
+  brand:       { flexDirection: 'row', alignItems: 'center', gap: S.md, marginBottom: S['3xl'] },
+  brandMark:   { width: 48, height: 48, borderRadius: R.lg, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center', ...shadows.card },
+  brandHex:    { fontSize: 24, color: C.white },
+  brandName:   { fontSize: F.xl, fontWeight: '800', color: C.text, letterSpacing: -0.5 },
+  brandTagline:{ fontSize: F.xs, color: C.textFaint, marginTop: 1 },
+
+  heading: { fontSize: F['2xl'], fontWeight: '800', color: C.text, letterSpacing: -0.5, marginBottom: S.xs },
+  sub:     { fontSize: F.base, color: C.textMuted, marginBottom: S['2xl'], lineHeight: 22 },
+
+  errBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: S.sm,
+    backgroundColor: C.errorBg, borderRadius: R.md,
+    padding: S.md, marginBottom: S.md,
+    borderLeftWidth: 3, borderLeftColor: C.error,
   },
-  errorText: { fontSize: FontSize.sm, flex: 1 },
-  form: { gap: Space.lg },
-  forgotWrap: { alignSelf: 'flex-end', marginTop: -Space.xs },
-  forgot: { fontSize: FontSize.sm, fontWeight: '500' },
-  bottomRow: { flexDirection: 'row', justifyContent: 'center', marginTop: Space.xl },
-  bottomText: { fontSize: FontSize.base },
-  bottomLink: { fontSize: FontSize.base, fontWeight: '600' },
+  errText: { fontSize: F.sm, color: C.error, flex: 1, fontWeight: '500' },
+
+  form:       { gap: S.lg },
+  forgotRow:  { alignSelf: 'flex-end', marginTop: -S.xs },
+  forgotText: { fontSize: F.sm, color: C.accentLight, fontWeight: '600' },
+
+  dividerRow:  { flexDirection: 'row', alignItems: 'center', gap: S.md, marginVertical: S.xl },
+  dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: C.border },
+  dividerText: { fontSize: F.sm, color: C.textFaint, fontWeight: '500' },
+
+  signupBtn:  { alignItems: 'center', paddingVertical: S.sm },
+  signupText: { fontSize: F.base, color: C.textMuted },
+  signupLink: { color: C.accent, fontWeight: '700' },
 });

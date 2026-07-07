@@ -1,0 +1,317 @@
+:root {
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --accent: #2563eb;
+  --text-muted: #475569;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: #ffffff;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow-x: hidden;
+}
+
+/* ── TIPTAP PROSEMIRROR WYSIWYG CANVAS ── */
+.tiptap-editor {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.tiptap-editor .ProseMirror {
+  outline: none;
+  min-height: 100vh;
+  font-family: "Times New Roman", Times, serif;
+  font-size: 12pt;
+  line-height: 1.8;
+  color: #111111;
+  text-align: justify;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 14px 12px 40vh 12px;
+}
+
+.tiptap-editor .ProseMirror h1 {
+  font-size: 14pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  text-align: center;
+  margin: 1.6em 0 .5em;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.tiptap-editor .ProseMirror h2 {
+  font-size: 12pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin: 1.4em 0 .4em;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.tiptap-editor .ProseMirror h3 {
+  font-size: 12pt;
+  font-weight: 700;
+  margin: 1.2em 0 .3em;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.tiptap-editor .ProseMirror p {
+  font-size: 12pt;
+  line-height: 1.8;
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  text-align: justify;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.tiptap-editor .ProseMirror ul, .tiptap-editor .ProseMirror ol {
+  padding-left: 1.8rem;
+  line-height: 1.4;
+  max-width: 100%;
+  margin: 0.2em 0;
+}
+
+.tiptap-editor .ProseMirror ol {
+  list-style-type: decimal;
+}
+
+.tiptap-editor .ProseMirror ul {
+  list-style-type: disc;
+}
+
+.tiptap-editor .ProseMirror ul ul {
+  list-style-type: circle;
+}
+
+.tiptap-editor .ProseMirror ul ul ul {
+  list-style-type: square;
+}
+
+.tiptap-editor .ProseMirror ol ol > li::marker {
+  content: counter(list-item, lower-alpha) ") ";
+}
+
+.tiptap-editor .ProseMirror ol ol ol > li::marker {
+  content: counter(list-item, lower-roman) ". ";
+}
+
+.tiptap-editor .ProseMirror li {
+  font-size: 12pt;
+  color: #000000;
+  word-wrap: break-word;
+  margin: 0;
+}
+
+.tiptap-editor .ProseMirror li > p {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.tiptap-editor .ProseMirror strong {
+  font-weight: 700;
+}
+
+.tiptap-editor .ProseMirror em {
+  font-style: italic;
+}
+
+.tiptap-editor .ProseMirror u {
+  text-decoration: underline;
+}
+
+.tiptap-editor .ProseMirror code {
+  font-family: monospace;
+  background: #f1f5f9;
+  padding: 2px 5px;
+  border-radius: var(--radius-sm);
+  font-size: 10.5pt;
+  word-break: break-all;
+  color: #0f172a;
+}
+
+.tiptap-editor .ProseMirror pre {
+  background: #0f172a;
+  color: #f8fafc;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  font-size: 10pt;
+  line-height: 1.4;
+  overflow-x: auto;
+  max-width: 100%;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 12px 0;
+}
+
+.tiptap-editor .ProseMirror blockquote {
+  border-left: 3px solid #cbd5e1;
+  padding-left: 1em;
+  color: #475569;
+  font-style: italic;
+  max-width: 100%;
+  margin: 1rem 0;
+}
+
+.tiptap-editor .ProseMirror table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+  table-layout: fixed;
+  word-break: break-word;
+}
+
+.tiptap-editor .ProseMirror td, .tiptap-editor .ProseMirror th {
+  border: 1px solid #cbd5e1;
+  padding: 6px 10px;
+  font-size: 11pt;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  min-width: 0;
+}
+
+.tiptap-editor .ProseMirror th {
+  background: #f8fafc;
+  font-weight: 700;
+}
+
+/* Placeholder styling */
+.tiptap-editor .ProseMirror .tiptap-placeholder:first-child::before {
+  content: attr(data-placeholder);
+  color: #94a3b8;
+  pointer-events: none;
+  float: left;
+  height: 0;
+  font-style: italic;
+}
+
+/* Heading dynamic numbers styling */
+.tiptap-editor .ProseMirror [data-number]::before {
+  content: attr(data-number);
+  margin-right: 0.5em;
+  font-weight: 700;
+  color: #0f172a;
+  display: inline-block;
+}
+
+/* ── NODE VIEW STYLES ── */
+.image-view-wrapper, .table-view-wrapper {
+  margin: 1.5rem 0;
+  transition: all 0.2s ease;
+  border-radius: var(--radius-md);
+  padding: 8px;
+}
+
+.image-view-wrapper.selected, .table-view-wrapper.selected {
+  background: rgba(15, 23, 42, 0.02);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.image-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.image-container img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+
+.image-caption-input-wrap, .table-caption-input-wrap {
+  width: 100%;
+  max-width: 80%;
+  margin-top: 8px;
+  display: flex;
+  justify-content: center;
+}
+
+.image-caption-input, .table-caption-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: center;
+  font-family: inherit;
+  font-style: italic;
+  font-size: 11pt;
+  color: #475569;
+  padding: 4px 8px;
+  border-bottom: 1px solid transparent;
+  transition: all 0.15s ease;
+  outline: none;
+}
+
+.image-caption-input:hover, .table-caption-input:hover {
+  border-bottom-color: #cbd5e1;
+  color: #0f172a;
+}
+
+.image-caption-input:focus, .table-caption-input:focus {
+  border-bottom-color: var(--accent);
+  color: #000000;
+  background: #f8fafc;
+}
+
+.table-content-area {
+  width: 100%;
+}
+
+/* Math NodeView Styles */
+.math-view-wrapper {
+  position: relative;
+  display: inline-block;
+  vertical-align: middle;
+  line-height: normal;
+  padding: 0;
+  margin: 0 1px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.math-view-wrapper.selected {
+  outline: 2px solid var(--accent);
+  border-radius: 2px;
+  padding: 2px;
+}
+
+.math-container {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  line-height: normal;
+}
+
+.math-render-area {
+  cursor: pointer;
+  padding: 0;
+  line-height: normal;
+}
+
+.tiptap-editor .math-view-wrapper,
+.tiptap-editor .math-view-wrapper .math-container,
+.tiptap-editor .math-view-wrapper .math-render-area {
+  font-family: KaTeX_Main, "Times New Roman", serif;
+  line-height: normal;
+  text-align: initial;
+}
+
+.tiptap-editor .katex {
+  font-size: 1.1em;
+}

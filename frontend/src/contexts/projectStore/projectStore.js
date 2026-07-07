@@ -8,6 +8,8 @@ import * as api from "@/services/api";
 
 const LS_KEY = "acadoc_projects";
 
+// ── localStorage helpers ──────────────────────────────────────────────────────
+
 function loadProjectsLocal() {
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -17,10 +19,47 @@ function loadProjectsLocal() {
   }
 }
 
-function saveProjectsLocal(projects) {
+// Debounced localStorage writer.
+// saveProjectsLocal() is called on every keystroke via updateSectionContent.
+// JSON.stringify(allProjects) + localStorage.setItem blocks the main thread —
+// on a large project this is 5–15ms per keystroke, causing visible lag.
+//
+// The fix: buffer the latest snapshot and flush it after 1s of no activity.
+// Writes triggered by structural changes (createProject, deleteProject,
+// addChapter, etc.) still flush immediately via saveProjectsLocalNow().
+let _lsTimer = null;
+let _lsPending = null; // latest projects array waiting to be written
+
+function saveProjectsLocal(projects, immediate = false) {
+  _lsPending = projects;
+  if (immediate) {
+    // Structural mutations (create/delete/rename) flush right away
+    if (_lsTimer) { clearTimeout(_lsTimer); _lsTimer = null; }
+    _flushLocalStorage();
+  } else {
+    // Content edits are debounced — only write after 1s of no further changes
+    if (_lsTimer) clearTimeout(_lsTimer);
+    _lsTimer = setTimeout(_flushLocalStorage, 1000);
+  }
+}
+
+function _flushLocalStorage() {
+  if (_lsPending === null) return;
   try {
-    localStorage.setItem(LS_KEY, JSON.stringify(projects));
+    localStorage.setItem(LS_KEY, JSON.stringify(_lsPending));
   } catch (_) {}
+  _lsPending = null;
+  _lsTimer   = null;
+}
+
+// Safety net: if the user closes the tab while a debounced write is pending,
+// flush it synchronously. beforeunload allows one synchronous localStorage write.
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    if (_lsPending !== null) {
+      try { localStorage.setItem(LS_KEY, JSON.stringify(_lsPending)); } catch (_) {}
+    }
+  });
 }
 
 function genId() {
@@ -87,15 +126,26 @@ migrateLocalBase64Images();
 // Module-level dirty set + timer — tracks which project has unsaved cloud changes
 const dirtyProjectIds = new Set();
 let syncTimer = null;
+let _compileActive = false;  // set true while a compile job is running
+
+/** Called by TopBar before/after compile so sync doesn't race with Tectonic */
+export function setCompileActive(active) { _compileActive = active; }
 
 /**
  * Debounced sync for ONLY the currently active project.
- * Fires 1.5 s after the last mutation. Skips the network call if the project
- * is no longer dirty (e.g. a previous save already succeeded).
+ * Fires 2.5s after the last mutation (up from 1.5s — gives Render breathing
+ * room). Skips entirely if a compile is in progress to avoid timeouts caused
+ * by Tectonic consuming all of Render's CPU during compilation.
  */
 function scheduleActiveProjectSync(get) {
   clearTimeout(syncTimer);
   syncTimer = setTimeout(async () => {
+    // Don't race with an active compile — reschedule for after it finishes
+    if (_compileActive) {
+      scheduleActiveProjectSync(get);
+      return;
+    }
+
     const token = api.getStoredToken();
     if (!token) return;
 
@@ -112,7 +162,7 @@ function scheduleActiveProjectSync(get) {
       console.warn('[sync]', err.message);
       // Leave it in dirtyProjectIds so the next edit triggers a retry
     }
-  }, 1500);
+  }, 2500);  // 2.5s debounce — was 1.5s
 }
 
 /** Merge cloud and local project lists; newer updatedAt wins per project id */
@@ -151,6 +201,7 @@ function createProjectFromTemplate(templateId, metadata) {
   };
 }
 let _loadProjectsPromise = null;
+let _projectsLoadedOnce = false;  // true once any successful load completes
 
 export const useProjectStore = create((set, get) => ({
   projects: [],
@@ -182,12 +233,12 @@ export const useProjectStore = create((set, get) => ({
    * Guests use localStorage only.
    */
   async loadProjectsForUser(force = false) {
-    // Return cached if already loaded and not forced
-    if (!force && get().projectsLoaded) {
-      return { count: get().projects.length, guest: !api.getStoredToken() };
+    // Return immediately if already loaded and not forced
+    if (!force && _projectsLoadedOnce && get().projectsLoaded) {
+      return { count: get().projects.length, cached: true };
     }
 
-    // If a load is already in-flight AND we're not forcing, return the same promise
+    // Deduplicate: if a load is already in-flight return the same promise
     if (!force && _loadProjectsPromise) return _loadProjectsPromise;
 
     _loadProjectsPromise = (async () => {
@@ -223,6 +274,7 @@ export const useProjectStore = create((set, get) => ({
 
           saveProjectsLocal(final);
           set({ projects: final, projectsLoaded: true });
+          _projectsLoadedOnce = true;
           const elapsed = Date.now() - t0;
           console.log(
             '[projects] cloud load OK',
@@ -251,6 +303,7 @@ export const useProjectStore = create((set, get) => ({
       }
 
       set({ projects: local, projectsLoaded: true });
+      _projectsLoadedOnce = true;
       console.log(
         "[projects] guest/local only",
         `count=${local.length}`,
@@ -281,7 +334,7 @@ export const useProjectStore = create((set, get) => ({
     const firstChapterId =
       project.chapters[0]?.id || project.frontMatter[0]?.id || null;
     const updated = [project, ...get().projects];
-    saveProjectsLocal(updated);
+    saveProjectsLocal(updated, true); // immediate — new project must survive a refresh
     set({
       projects: updated,
       currentProjectId: project.id,
@@ -307,7 +360,7 @@ export const useProjectStore = create((set, get) => ({
 
   deleteProject(projectId) {
     const updated = get().projects.filter((p) => p.id !== projectId);
-    saveProjectsLocal(updated);
+    saveProjectsLocal(updated, true); // immediate — deletion must persist immediately
     set({
       projects: updated,
       currentProjectId:
@@ -340,7 +393,9 @@ export const useProjectStore = create((set, get) => ({
         ),
       };
     });
-    saveProjectsLocal(updated);
+    // Debounced — content edits happen on every keystroke; no need to
+    // hit localStorage synchronously each time.
+    saveProjectsLocal(updated, false);
     set({ projects: updated });
     dirtyProjectIds.add(currentProjectId);
     scheduleActiveProjectSync(get);
@@ -356,7 +411,8 @@ export const useProjectStore = create((set, get) => ({
         metadata: { ...p.metadata, ...fields },
       };
     });
-    saveProjectsLocal(updated);
+    // Debounced — metadata fields are typed in inputs, same as content.
+    saveProjectsLocal(updated, false);
     set({ projects: updated });
     dirtyProjectIds.add(currentProjectId);
     scheduleActiveProjectSync(get);
@@ -373,7 +429,7 @@ export const useProjectStore = create((set, get) => ({
         chapters: [...p.chapters, newChapter],
       };
     });
-    saveProjectsLocal(updated);
+    saveProjectsLocal(updated, true); // immediate — structural change
     set({ projects: updated, activeChapterId: newChapter.id });
     dirtyProjectIds.add(currentProjectId);
     scheduleActiveProjectSync(get);
@@ -389,7 +445,7 @@ export const useProjectStore = create((set, get) => ({
         chapters: p.chapters.filter((c) => c.id !== chapterId),
       };
     });
-    saveProjectsLocal(updated);
+    saveProjectsLocal(updated, true); // immediate — structural change
     const project = updated.find((p) => p.id === currentProjectId);
     const nextId =
       project?.chapters[0]?.id || project?.frontMatter[0]?.id || null;
@@ -413,7 +469,7 @@ export const useProjectStore = create((set, get) => ({
         ),
       };
     });
-    saveProjectsLocal(updated);
+    saveProjectsLocal(updated, true); // immediate — structural change
     set({ projects: updated });
     dirtyProjectIds.add(currentProjectId);
     scheduleActiveProjectSync(get);
@@ -428,7 +484,7 @@ export const useProjectStore = create((set, get) => ({
       newChapters.splice(endIndex, 0, removed);
       return { ...p, updatedAt: Date.now(), chapters: newChapters };
     });
-    saveProjectsLocal(updated);
+    saveProjectsLocal(updated, true); // immediate — structural change
     set({ projects: updated });
     dirtyProjectIds.add(currentProjectId);
     scheduleActiveProjectSync(get);

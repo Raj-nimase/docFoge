@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -27,6 +27,7 @@
     "katex": "^0.16.47",
     "lucide-react": "^1.16.0",
     "mathml-to-latex": "^1.5.0",
+    "pdfjs-dist": "^4.4.168",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-i18next": "^17.0.8",

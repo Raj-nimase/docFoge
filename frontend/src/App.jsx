@@ -11,6 +11,7 @@ import NewProject from "@/features/NewProject/pages/NewProjectPage";
 import Editor from "@/features/Editor/pages/EditorPage";
 import Auth from "@/features/Auth/pages/AuthPage";
 import Toast from "@/components/Toast/Toast";
+import MobileEditorPage from "@/features/Editor/pages/MobileEditorPage";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 
 
@@ -101,6 +102,10 @@ export default function App() {
       );
     }
   };
+
+  if (window.location.pathname === "/mobile-editor") {
+    return <MobileEditorPage />;
+  }
 
   if (booting || authStatus === "loading") {
     return (

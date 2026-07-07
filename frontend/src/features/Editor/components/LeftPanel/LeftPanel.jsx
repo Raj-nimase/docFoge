@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import useAcaStore from '@/contexts/projectStore/projectStore';
 
-export default function LeftPanel() {
+export default function LeftPanel({ collapsed, onToggleCollapse }) {
   const currentProject   = useAcaStore(s => s.getCurrentProject());
   const activeChapterId  = useAcaStore(s => s.activeChapterId);
   const setActiveChapter = useAcaStore(s => s.setActiveChapter);
@@ -15,8 +15,6 @@ export default function LeftPanel() {
   const [renameVal, setRenameVal]   = useState('');
   const [newChTitle, setNewChTitle] = useState('');
   const [addingNew, setAddingNew]   = useState(false);
-
-  if (!currentProject) return null;
 
   const handleRenameSubmit = (id) => {
     if (renameVal.trim()) renameChapter(id, renameVal.trim());
@@ -37,12 +35,78 @@ export default function LeftPanel() {
     reorderChapters(result.source.index, result.destination.index);
   };
 
+  // ── Collapsed rail — just shows icons for each section/chapter ──────────
+  if (collapsed) {
+    return (
+      <aside
+        id="tour-left-panel"
+        className="left-panel left-panel--collapsed"
+        title="Expand panel"
+      >
+        {/* Expand toggle at the top */}
+        <button
+          className="left-panel-collapse-btn left-panel-collapse-btn--collapsed"
+          onClick={onToggleCollapse}
+          title="Expand panel"
+          aria-label="Expand left panel"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="3" y1="6"  x2="21" y2="6"/>
+            <line x1="3" y1="12" x2="21" y2="12"/>
+            <line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+        </button>
+
+        {/* Front matter icons */}
+        {currentProject?.frontMatter.map(section => (
+          <button
+            key={section.id}
+            className={`left-panel-rail-btn ${activeChapterId === section.id ? 'left-panel-rail-btn--active' : ''}`}
+            onClick={() => setActiveChapter(section.id)}
+            title={section.label}
+          >
+            {section.auto ? '⚙' : '📄'}
+          </button>
+        ))}
+
+        {/* Chapter number icons */}
+        {currentProject?.chapters.map((ch, idx) => (
+          <button
+            key={ch.id}
+            className={`left-panel-rail-btn ${activeChapterId === ch.id ? 'left-panel-rail-btn--active' : ''}`}
+            onClick={() => setActiveChapter(ch.id)}
+            title={ch.title}
+          >
+            {idx + 1}
+          </button>
+        ))}
+      </aside>
+    );
+  }
+
+  // ── Expanded panel ───────────────────────────────────────────────────────
+  if (!currentProject) return null;
+
   return (
     <aside id="tour-left-panel" className="left-panel">
-      {/* Project title */}
+      {/* Header row: project title + collapse button */}
       <div className="left-panel-header">
-        <div className="left-panel-project-title">
-          {currentProject.metadata?.title || 'Untitled'}
+        <div className="left-panel-header-row">
+          <div className="left-panel-project-title">
+            {currentProject.metadata?.title || 'Untitled'}
+          </div>
+          <button
+            className="left-panel-collapse-btn"
+            onClick={onToggleCollapse}
+            title="Minimise panel"
+            aria-label="Collapse left panel"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="3" y1="6"  x2="21" y2="6"/>
+              <line x1="3" y1="12" x2="21" y2="12"/>
+              <line x1="3" y1="18" x2="21" y2="18"/>
+            </svg>
+          </button>
         </div>
         <div className="left-panel-template-badge">
           {currentProject.templateId?.replace(/-/g, ' ')}
@@ -71,11 +135,11 @@ export default function LeftPanel() {
         {/* Chapters */}
         <div className="left-panel-section">
           <div className="left-panel-section-title">Chapters</div>
-          
+
           <DragDropContext onDragEnd={onDragEnd}>
             <Droppable droppableId="chapters">
               {(provided) => (
-                <div 
+                <div
                   {...provided.droppableProps}
                   ref={provided.innerRef}
                   className="left-panel-chapters-list"
@@ -91,7 +155,7 @@ export default function LeftPanel() {
                           <div {...provided.dragHandleProps} className="left-panel-drag-handle">
                             ⋮⋮
                           </div>
-                          
+
                           {renamingId === ch.id ? (
                             <input
                               className="left-panel-rename-input"

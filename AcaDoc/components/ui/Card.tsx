@@ -1,37 +1,40 @@
 import React from 'react';
-import { View, StyleSheet, ViewStyle } from 'react-native';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors, Radius, Space } from '@/constants/theme';
+import { View, StyleSheet, ViewStyle, TouchableOpacity } from 'react-native';
+import { C, R, S, shadows } from '@/constants/theme';
 
 interface CardProps {
-  children: React.ReactNode;
-  style?: ViewStyle;
-  padding?: number;
+  children:  React.ReactNode;
+  style?:    ViewStyle;
+  padding?:  number;
+  onPress?:  () => void;
+  elevated?: boolean;
 }
 
-export function Card({ children, style, padding = Space.lg }: CardProps) {
-  const scheme = useColorScheme() ?? 'light';
-  const C = Colors[scheme];
+export function Card({ children, style, padding = S.lg, onPress, elevated = false }: CardProps) {
+  const base = [
+    styles.card,
+    elevated && shadows.strong,
+    !elevated && shadows.card,
+    { padding },
+    style,
+  ];
 
-  return (
-    <View style={[
-      styles.card,
-      { backgroundColor: C.surface, borderColor: C.border, padding },
-      style,
-    ]}>
-      {children}
-    </View>
-  );
+  if (onPress) {
+    return (
+      <TouchableOpacity onPress={onPress} activeOpacity={0.82} style={base}>
+        {children}
+      </TouchableOpacity>
+    );
+  }
+
+  return <View style={base}>{children}</View>;
 }
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: Radius.lg,
+    backgroundColor: C.card,
+    borderRadius: R.lg,
     borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    borderColor: C.border,
   },
 });

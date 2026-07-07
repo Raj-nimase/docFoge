@@ -5,11 +5,17 @@
  */
 
 // ── Backend URL ───────────────────────────────────────────────────────────────
-// Production  (Render):      'https://your-app-name.onrender.com/api'
+// Production  (Render):      'https://docfoge.onrender.com/api'
 // Local dev on real device:  'http://192.168.x.x:3001/api'  ← your PC's LAN IP
 // Local dev on emulator:     'http://10.0.2.2:3001/api'
 // ─────────────────────────────────────────────────────────────────────────────
-export const API_BASE = 'https://your-app-name.onrender.com/api';
+import Constants from 'expo-constants';
+
+export const API_BASE = 'https://docfoge.onrender.com/api';
+
+// Dynamically extract the Metro bundler's local IP (e.g. 192.168.x.x) so physical devices can reach Vite over Wi-Fi
+const devIp = Constants.expoConfig?.hostUri?.split(':')[0] || '127.0.0.1';
+export const FRONTEND_BASE = __DEV__ ? `http://${devIp}:5173` : API_BASE.replace('/api', '');
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

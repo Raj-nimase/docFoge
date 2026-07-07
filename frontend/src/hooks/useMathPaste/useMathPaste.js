@@ -91,25 +91,58 @@ export function isPdfGarble(text) {
 import { MathMLToLaTeX } from 'mathml-to-latex';
 
 /**
- * Transforms clipboard HTML to replace <math> nodes with TipTap math spans.
- * This hooks into ProseMirror's transformPastedHTML so it doesn't break normal text pasting.
+ * Transforms clipboard HTML to replace <math> nodes with TipTap math spans,
+ * strip heading prefixes, and remove <hr> / divider paragraphs.
+ *
+ * PERF: Uses a single TreeWalker pass to classify every element in one
+ * traversal, instead of 5 separate querySelectorAll calls that each walked
+ * the entire DOM independently. Nodes are collected first, then mutated
+ * after the walk completes (DOM mutation during a TreeWalker is unsafe).
  */
 export function transformMathHtml(html) {
   if (!html) return html;
 
-  const hasMath = html.includes('<math') || html.includes('katex');
+  // ── Cheap text-level gate ─────────────────────────────────────────────
+  const hasMath    = html.includes('<math') || html.includes('katex');
   const hasHeading = /<h[1-6][>\s]/i.test(html);
-  if (!hasMath && !hasHeading) return html;
+  const hasHr      = html.includes('<hr');
+  if (!hasMath && !hasHeading && !hasHr) return html;
 
   try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-    
-    // Process HTML headings to prevent giant headings and strip number prefixes
-    const headings = doc.querySelectorAll('h1, h2, h3, h4, h5, h6');
-    headings.forEach(headingEl => {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+
+    // ── Single TreeWalker: collect all interesting nodes ─────────────────
+    const mathNodes    = [];
+    const headingNodes = [];
+    const katexNodes   = [];
+    const toRemove     = [];  // <hr> and divider <p> elements
+
+    const walker = document.createTreeWalker(
+      doc.body,
+      NodeFilter.SHOW_ELEMENT,
+    );
+
+    let node;
+    while ((node = walker.nextNode())) {
+      const tag = node.tagName;
+
+      if (tag === 'MATH') {
+        mathNodes.push(node);
+      } else if (/^H[1-6]$/.test(tag)) {
+        headingNodes.push(node);
+      } else if (tag === 'HR') {
+        toRemove.push(node);
+      } else if (tag === 'P' && /^[-*_]{3,}$/.test(node.textContent.trim())) {
+        toRemove.push(node);
+      } else if (node.classList?.contains('katex-html')) {
+        katexNodes.push(node);
+      }
+    }
+
+    // ── Process headings (prefix stripping, list-item demotion) ──────────
+    for (const headingEl of headingNodes) {
       let text = headingEl.textContent.trim();
-      if (!text) return;
+      if (!text) continue;
 
       // If the heading is actually a list item like "a) Narrow AI" or "i. Something",
       // convert it to a bold paragraph so it isn't treated as a sub-sub-heading.
@@ -117,7 +150,7 @@ export function transformMathHtml(html) {
         const p = doc.createElement('p');
         p.innerHTML = `<strong>${headingEl.innerHTML}</strong>`;
         headingEl.parentNode.replaceChild(p, headingEl);
-        return;
+        continue;
       }
 
       // 1. Strip section prefixes like "3.1 " or "2.4.1 "
@@ -133,7 +166,7 @@ export function transformMathHtml(html) {
       if (paragraph.trim()) {
         const p = doc.createElement('p');
         p.textContent = paragraph;
-        
+
         // Insert the paragraph right after the heading element
         if (headingEl.nextSibling) {
           headingEl.parentNode.insertBefore(p, headingEl.nextSibling);
@@ -141,12 +174,11 @@ export function transformMathHtml(html) {
           headingEl.parentNode.appendChild(p);
         }
       }
-    });
-    
-    // Process MathML
+    }
+
+    // ── Process MathML ──────────────────────────────────────────────────
     if (hasMath) {
-      const mathNodes = doc.querySelectorAll('math');
-      mathNodes.forEach(mathNode => {
+      for (const mathNode of mathNodes) {
         try {
           let latex = '';
           // KaTeX and some other renderers embed the raw LaTeX inside an annotation tag
@@ -165,23 +197,14 @@ export function transformMathHtml(html) {
         } catch (e) {
           console.error('MathML convert error:', e);
         }
-      });
+      }
 
-      // Remove KaTeX garbage
-      const katexHtmlNodes = doc.querySelectorAll('.katex-html');
-      katexHtmlNodes.forEach(node => node.remove());
+      // Remove KaTeX visual-only duplicates
+      for (const node of katexNodes) node.remove();
     }
 
-    // Remove horizontal rules (<hr>) and paragraphs that are just markdown dividers (---)
-    const hrNodes = doc.querySelectorAll('hr');
-    hrNodes.forEach(node => node.remove());
-
-    const pNodes = doc.querySelectorAll('p');
-    pNodes.forEach(p => {
-      if (/^[-*_]{3,}$/.test(p.textContent.trim())) {
-        p.remove();
-      }
-    });
+    // ── Remove <hr> and divider <p> ─────────────────────────────────────
+    for (const node of toRemove) node.remove();
 
     const finalHtml = doc.body ? doc.body.innerHTML : doc.documentElement.outerHTML;
 
@@ -197,7 +220,7 @@ export function transformMathHtml(html) {
   } catch (err) {
     console.error('Failed to transform math HTML:', err);
   }
-  
+
   return html;
 }
 
@@ -357,7 +380,19 @@ export function looksLikeList(text) {
 
 export function handleRichPaste(view, event, editor) {
   const plainText = event.clipboardData?.getData('text/plain') || '';
-  const htmlText = event.clipboardData?.getData('text/html') || '';
+  const htmlText  = event.clipboardData?.getData('text/html')  || '';
+
+  // ── Fast exit: nothing to intercept ───────────────────────────────────
+  // If the plain text contains no math indicators (backslash, dollar sign,
+  // <math tag) AND no list indicators (bullets or "1. "-style prefixes),
+  // skip all detection and let TipTap's default paste handle it.
+  // This is the single highest-leverage optimisation for the common case
+  // of pasting plain paragraphs with zero LaTeX or list structure.
+  const looksLikeMath = /[\\$]|<math/.test(plainText);
+  const looksLikeListContent = /^[\s]*[•◦▪*\-]\s|^\s*\d+\.\s/m.test(plainText);
+  if (!looksLikeMath && !looksLikeListContent) {
+    return false;
+  }
 
   // Priority 3: Garbled LaTeX or short unicode formulas from web/Claude
   // Only intercept if the ENTIRE paste looks like a single formula.

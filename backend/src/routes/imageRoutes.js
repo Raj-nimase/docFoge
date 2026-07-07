@@ -13,7 +13,7 @@ const { uploadImageBuffer } = require('../services/storageService');
 
 const router = express.Router();
 
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
 const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 const upload = multer({

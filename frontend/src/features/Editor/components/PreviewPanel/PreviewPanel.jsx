@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import useAcaStore from '@/contexts/projectStore/projectStore';
+import PdfViewer from './PdfViewer';
 
 // Stages that map poll count → label (gives a sense of progress)
 const STAGES = [
@@ -26,38 +27,17 @@ export default function PreviewPanel() {
   // Keep the last successful PDF so we can show it (faded) during recompile
   const [lastBlobUrl, setLastBlobUrl] = useState(null);
 
-  // Track the "current" blobUrl that is fully rendered (no black flash)
-  // iframeReady: the blobUrl we consider safe to show without opacity:0
-  const [iframeReady, setIframeReady] = useState(false);
-  // seenBlobUrl: the blobUrl we have already started the reveal timer for
-  const seenBlobUrlRef = useRef(null);
-
   useEffect(() => {
     if (isDone && compileJob?.blobUrl) {
-      // Only start the reveal timer once per new blobUrl
-      if (seenBlobUrlRef.current === compileJob.blobUrl) return;
-      seenBlobUrlRef.current = compileJob.blobUrl;
-
-      setIframeReady(false);
       setLastBlobUrl(compileJob.blobUrl);
-
-      // Give the browser/PDF engine 800 ms to paint the first frame
-      // before we fade in the iframe. This prevents the black flash.
-      const timer = setTimeout(() => {
-        setIframeReady(true);
-      }, 800);
-      return () => clearTimeout(timer);
     }
   }, [isDone, compileJob?.blobUrl]);
 
   useEffect(() => {
     if (isCompiling) {
-      // Reset on new compile start
       if (prevStatus.current !== 'processing' && prevStatus.current !== 'pending') {
         setElapsed(0);
         setPollCount(0);
-        setIframeReady(false);
-        seenBlobUrlRef.current = null;
       }
       timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
     } else {
@@ -67,24 +47,18 @@ export default function PreviewPanel() {
     return () => clearInterval(timerRef.current);
   }, [isCompiling, compileJob?.status]);
 
-  // Increment poll count whenever status is 'processing'
   useEffect(() => {
     if (compileJob?.status === 'processing') {
       setPollCount(c => c + 1);
     }
   }, [compileJob?._tick]);
 
-  // Show the progress UI while compiling OR while the fresh iframe is still loading
-  const iframeLoading = isDone && compileJob?.blobUrl && !iframeReady;
-  const showProgress  = isCompiling || iframeLoading;
+  const showProgress = isCompiling;
 
-  // Pick the current stage label
-  const stageLabel = iframeLoading
-    ? 'Rendering PDF document…'
-    : [...STAGES].reverse().find(s => pollCount >= s.after)?.label ?? STAGES[0].label;
+  const stageLabel = [...STAGES].reverse().find(s => pollCount >= s.after)?.label ?? STAGES[0].label;
 
-  // Fake-progress: grows from 5% to 90% based on elapsed, snaps to 100% when done
-  const progressPct = (isDone || iframeLoading)
+  // Fake-progress: grows from 5 % to 90 % based on elapsed, snaps to 100 % when done
+  const progressPct = isDone
     ? 100
     : Math.min(90, 5 + elapsed * 6);
 
@@ -103,7 +77,7 @@ export default function PreviewPanel() {
           <span className="preview-panel-dot" />
           PDF Preview
         </span>
-        {isDone && iframeReady && (
+        {isDone && compileJob?.blobUrl && (
           <button className="btn-download" onClick={handleDownload} title="Download PDF">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -125,16 +99,12 @@ export default function PreviewPanel() {
           </div>
         )}
 
-        {/* ── Old PDF shown faded while recompiling or rendering ── */}
-        {showProgress && lastBlobUrl && (
-          <iframe
-            className="preview-iframe preview-iframe--stale"
-            src={lastBlobUrl}
-            title="Previous PDF (recompiling…)"
-          />
+        {/* ── PDF viewer (always mounted once we have a URL; stale=true while recompiling) ── */}
+        {lastBlobUrl && (
+          <PdfViewer blobUrl={lastBlobUrl} stale={isCompiling} />
         )}
 
-        {/* ── Progress overlay (shown on top of faded PDF or blank) ── */}
+        {/* ── Progress overlay — floats on top of the stale PDF or fills the panel ── */}
         {showProgress && (
           <div className={`preview-progress-overlay ${lastBlobUrl ? 'preview-progress-overlay--floating' : ''}`}>
             <div className="preview-compile-spinner" />
@@ -158,14 +128,6 @@ export default function PreviewPanel() {
           </div>
         )}
 
-        {/* ── Done: show fresh PDF only after the reveal timer fires ── */}
-        {isDone && compileJob?.blobUrl && iframeReady && (
-          <iframe
-            className="preview-iframe preview-iframe--fresh"
-            src={compileJob.blobUrl}
-            title="PDF Preview"
-          />
-        )}
       </div>
     </div>
   );

@@ -2,6 +2,13 @@
  * Project Store
  * Manages the in-memory list of projects.
  * All mutations auto-sync to the backend after a 1.5s debounce.
+ *
+ * Performance notes:
+ * - updateSectionContent uses targeted index-based updates so only the
+ *   affected section object changes reference.
+ * - Use the exported selectors (selectActiveProject, selectActiveSection)
+ *   in components instead of calling getActiveProject() in render — selectors
+ *   let Zustand skip re-renders when the selected value hasn't changed.
  */
 import { create } from 'zustand';
 import {
@@ -20,42 +27,33 @@ function genId(): string {
 }
 
 // ── Default sections/chapters per template ────────────────────────────────────
-// Mirrors the web app's template structure exactly
 function buildDefaultProject(templateId: string, metadata: Project['metadata']): Project {
   const now = Date.now();
 
   const frontMatter: Section[] = [
-    { id: 'title_page', label: 'Title Page', required: true, content: null },
-    { id: 'certificate', label: 'Certificate', required: false, content: null },
-    { id: 'acknowledgement', label: 'Acknowledgement', required: false, content: null },
-    { id: 'abstract', label: 'Abstract', required: false, content: null },
-    { id: 'toc', label: 'Table of Contents', required: true, content: null },
+    { id: 'title_page',      label: 'Title Page',          required: true,  content: null },
+    { id: 'certificate',     label: 'Certificate',         required: false, content: null },
+    { id: 'acknowledgement', label: 'Acknowledgement',     required: false, content: null },
+    { id: 'abstract',        label: 'Abstract',            required: false, content: null },
+    { id: 'toc',             label: 'Table of Contents',   required: true,  content: null },
   ];
 
   const chapters: Chapter[] =
     templateId === 'ieee-paper'
       ? [
           { id: genId(), title: 'Introduction', required: false, content: null },
-          { id: genId(), title: 'Methodology', required: false, content: null },
-          { id: genId(), title: 'Results', required: false, content: null },
-          { id: genId(), title: 'Conclusion', required: false, content: null },
+          { id: genId(), title: 'Methodology',  required: false, content: null },
+          { id: genId(), title: 'Results',       required: false, content: null },
+          { id: genId(), title: 'Conclusion',    required: false, content: null },
         ]
       : [
           { id: genId(), title: 'Introduction', required: false, content: null },
-          { id: genId(), title: 'Methodology', required: false, content: null },
+          { id: genId(), title: 'Methodology',  required: false, content: null },
           { id: genId(), title: 'Future Scope', required: false, content: null },
-          { id: genId(), title: 'Conclusion', required: false, content: null },
+          { id: genId(), title: 'Conclusion',   required: false, content: null },
         ];
 
-  return {
-    id: genId(),
-    templateId,
-    metadata,
-    frontMatter,
-    chapters,
-    createdAt: now,
-    updatedAt: now,
-  };
+  return { id: genId(), templateId, metadata, frontMatter, chapters, createdAt: now, updatedAt: now };
 }
 
 // ── Debounced sync ────────────────────────────────────────────────────────────
@@ -68,20 +66,15 @@ function scheduleSync(project: Project) {
   syncTimer = setTimeout(async () => {
     const ids = [...dirtyIds];
     dirtyIds.clear();
-    // Get latest state at flush time
     const projects = useProjectStore.getState().projects;
     for (const id of ids) {
       const p = projects.find(x => x.id === id);
-      if (p) {
-        apiUpsertProject(p).catch(err =>
-          console.warn('[projectStore] sync failed', err.message)
-        );
-      }
+      if (p) apiUpsertProject(p).catch(err => console.warn('[projectStore] sync failed', err.message));
     }
   }, 1500);
 }
 
-// ── Store ─────────────────────────────────────────────────────────────────────
+// ── State interface ───────────────────────────────────────────────────────────
 
 interface ProjectState {
   projects: Project[];
@@ -89,7 +82,7 @@ interface ProjectState {
   activeProjectId: string | null;
   activeChapterId: string | null;
 
-  // Queries
+  // Queries (kept for backward compat — prefer selectors below)
   getActiveProject: () => Project | null;
   getActiveSection: () => Section | Chapter | null;
 
@@ -112,6 +105,25 @@ interface ProjectState {
   updateSectionContent: (sectionId: string, content: TiptapDoc) => void;
   updateMetadata: (fields: Partial<Project['metadata']>) => void;
 }
+
+// ── Stable selectors — use these in components ────────────────────────────────
+// Zustand's equality check means components only re-render when the specific
+// slice they subscribed to actually changes reference.
+
+export const selectActiveProject = (s: ProjectState): Project | null =>
+  s.projects.find(p => p.id === s.activeProjectId) ?? null;
+
+export const selectActiveSection = (s: ProjectState): Section | Chapter | null => {
+  const project = s.projects.find(p => p.id === s.activeProjectId);
+  if (!project) return null;
+  return (
+    project.frontMatter.find(sec => sec.id === s.activeChapterId) ??
+    project.chapters.find(c => c.id === s.activeChapterId) ??
+    null
+  );
+};
+
+// ── Store ─────────────────────────────────────────────────────────────────────
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
@@ -153,12 +165,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   createProject: (templateId, metadata) => {
     const project = buildDefaultProject(templateId, metadata);
-    const firstId = project.chapters[0]?.id ?? project.frontMatter[0]?.id ?? null;
-    set(s => ({
-      projects: [project, ...s.projects],
-      activeProjectId: project.id,
-      activeChapterId: firstId,
-    }));
+    // Skip auto sections as default active — open on first chapter instead
+    const AUTO_IDS = new Set(['title_page', 'toc']);
+    const firstId =
+      project.chapters[0]?.id ??
+      project.frontMatter.find(s => !AUTO_IDS.has(s.id))?.id ??
+      null;
+    set(s => ({ projects: [project, ...s.projects], activeProjectId: project.id, activeChapterId: firstId }));
     scheduleSync(project);
     return project;
   },
@@ -168,86 +181,108 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       projects: s.projects.filter(p => p.id !== projectId),
       activeProjectId: s.activeProjectId === projectId ? null : s.activeProjectId,
     }));
-    await apiDeleteProject(projectId).catch(err =>
-      console.warn('[projectStore] delete failed', err.message)
-    );
+    await apiDeleteProject(projectId).catch(err => console.warn('[projectStore] delete failed', err.message));
   },
 
   openProject: (projectId) => {
     const project = get().projects.find(p => p.id === projectId);
     if (!project) return;
-    const firstId = project.chapters[0]?.id ?? project.frontMatter[0]?.id ?? null;
+    // Prefer first chapter; fall back to first editable front matter section.
+    // title_page and toc are auto-generated — skip them so the editor never
+    // opens on a non-editable section by default.
+    const AUTO_IDS = new Set(['title_page', 'toc']);
+    const firstId =
+      project.chapters[0]?.id ??
+      project.frontMatter.find(s => !AUTO_IDS.has(s.id))?.id ??
+      null;
     set({ activeProjectId: projectId, activeChapterId: firstId });
   },
 
   addChapter: (title) => {
     const { projects, activeProjectId } = get();
     const newChapter: Chapter = { id: genId(), title, required: false, content: null };
-    const updated = projects.map(p => {
-      if (p.id !== activeProjectId) return p;
-      return { ...p, updatedAt: Date.now(), chapters: [...p.chapters, newChapter] };
-    });
+    const pIdx = projects.findIndex(p => p.id === activeProjectId);
+    if (pIdx === -1) return;
+    const updatedProject = { ...projects[pIdx], updatedAt: Date.now(), chapters: [...projects[pIdx].chapters, newChapter] };
+    const updated = projects.map((p, i) => i === pIdx ? updatedProject : p);
     set({ projects: updated, activeChapterId: newChapter.id });
-    const p = updated.find(x => x.id === activeProjectId);
-    if (p) scheduleSync(p);
+    scheduleSync(updatedProject);
   },
 
   deleteChapter: (chapterId) => {
     const { projects, activeProjectId, activeChapterId } = get();
-    const updated = projects.map(p => {
-      if (p.id !== activeProjectId) return p;
-      return { ...p, updatedAt: Date.now(), chapters: p.chapters.filter(c => c.id !== chapterId) };
-    });
-    const active = updated.find(p => p.id === activeProjectId);
-    const nextId = active?.chapters[0]?.id ?? active?.frontMatter[0]?.id ?? null;
-    set({
-      projects: updated,
-      activeChapterId: activeChapterId === chapterId ? nextId : activeChapterId,
-    });
-    if (active) scheduleSync(active);
+    const pIdx = projects.findIndex(p => p.id === activeProjectId);
+    if (pIdx === -1) return;
+    const updatedProject = {
+      ...projects[pIdx],
+      updatedAt: Date.now(),
+      chapters: projects[pIdx].chapters.filter(c => c.id !== chapterId),
+    };
+    const updated = projects.map((p, i) => i === pIdx ? updatedProject : p);
+    const AUTO_IDS = new Set(['title_page', 'toc']);
+    const nextId =
+      updatedProject.chapters[0]?.id ??
+      updatedProject.frontMatter.find(s => !AUTO_IDS.has(s.id))?.id ??
+      null;
+    set({ projects: updated, activeChapterId: activeChapterId === chapterId ? nextId : activeChapterId });
+    scheduleSync(updatedProject);
   },
 
   renameChapter: (chapterId, newTitle) => {
     const { projects, activeProjectId } = get();
-    const updated = projects.map(p => {
-      if (p.id !== activeProjectId) return p;
-      return {
-        ...p,
-        updatedAt: Date.now(),
-        chapters: p.chapters.map(c => c.id === chapterId ? { ...c, title: newTitle } : c),
-      };
-    });
+    const pIdx = projects.findIndex(p => p.id === activeProjectId);
+    if (pIdx === -1) return;
+    const updatedProject = {
+      ...projects[pIdx],
+      updatedAt: Date.now(),
+      chapters: projects[pIdx].chapters.map(c => c.id === chapterId ? { ...c, title: newTitle } : c),
+    };
+    const updated = projects.map((p, i) => i === pIdx ? updatedProject : p);
     set({ projects: updated });
-    const p = updated.find(x => x.id === activeProjectId);
-    if (p) scheduleSync(p);
+    scheduleSync(updatedProject);
   },
 
   setActiveChapter: (id) => set({ activeChapterId: id }),
 
   updateSectionContent: (sectionId, content) => {
     const { projects, activeProjectId } = get();
-    const updated = projects.map(p => {
-      if (p.id !== activeProjectId) return p;
-      return {
-        ...p,
-        updatedAt: Date.now(),
-        frontMatter: p.frontMatter.map(s => s.id === sectionId ? { ...s, content } : s),
-        chapters: p.chapters.map(c => c.id === sectionId ? { ...c, content } : c),
-      };
-    });
+    const pIdx = projects.findIndex(p => p.id === activeProjectId);
+    if (pIdx === -1) return;
+    const project = projects[pIdx];
+
+    // Targeted index lookup — only the changed section gets a new reference
+    const fIdx = project.frontMatter.findIndex(s => s.id === sectionId);
+    const cIdx = fIdx === -1 ? project.chapters.findIndex(c => c.id === sectionId) : -1;
+    if (fIdx === -1 && cIdx === -1) return;
+
+    const updatedProject: Project = {
+      ...project,
+      updatedAt: Date.now(),
+      frontMatter: fIdx !== -1
+        ? project.frontMatter.map((s, i) => i === fIdx ? { ...s, content } : s)
+        : project.frontMatter,
+      chapters: cIdx !== -1
+        ? project.chapters.map((c, i) => i === cIdx ? { ...c, content } : c)
+        : project.chapters,
+    };
+
+    // Only the active project gets a new reference in the array
+    const updated = projects.map((p, i) => i === pIdx ? updatedProject : p);
     set({ projects: updated });
-    const p = updated.find(x => x.id === activeProjectId);
-    if (p) scheduleSync(p);
+    scheduleSync(updatedProject);
   },
 
   updateMetadata: (fields) => {
     const { projects, activeProjectId } = get();
-    const updated = projects.map(p => {
-      if (p.id !== activeProjectId) return p;
-      return { ...p, updatedAt: Date.now(), metadata: { ...p.metadata, ...fields } };
-    });
+    const pIdx = projects.findIndex(p => p.id === activeProjectId);
+    if (pIdx === -1) return;
+    const updatedProject: Project = {
+      ...projects[pIdx],
+      updatedAt: Date.now(),
+      metadata: { ...projects[pIdx].metadata, ...fields },
+    };
+    const updated = projects.map((p, i) => i === pIdx ? updatedProject : p);
     set({ projects: updated });
-    const p = updated.find(x => x.id === activeProjectId);
-    if (p) scheduleSync(p);
+    scheduleSync(updatedProject);
   },
 }));

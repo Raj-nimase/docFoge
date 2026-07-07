@@ -1,121 +1,143 @@
-import { Platform } from 'react-native';
+/**
+ * AcaDoc Design Tokens — Japandi warm-minimalist theme
+ * Mirrors frontend/src/styles/japandi-theme.css exactly.
+ *
+ * Short-form exports (used by new files):  C, S, R, F, shadows
+ * Long-form exports (legacy aliases):      Colors, Brand, Space, FontSize, Radius
+ */
 
-// ── Brand palette ─────────────────────────────────────────────────────────────
-export const Brand = {
-  accent:       '#4F6BED',   // primary blue — matches web app
-  accentLight:  '#EEF1FD',
-  accentDark:   '#3651C9',
-  success:      '#10B981',
-  successLight: '#D1FAE5',
-  error:        '#EF4444',
-  errorLight:   '#FEE2E2',
-  warning:      '#F59E0B',
-  warningLight: '#FEF3C7',
+// ── Core palette ──────────────────────────────────────────────────────────────
+export const C = {
+  bg:           '#f3efe6',
+  surface:      '#faf8f3',
+  card:         '#fffcf7',
+  cardAlt:      '#f7f3ec',
+  border:       '#ddd6c8',
+  borderStrong: '#c4b9a8',
+  // Accent — forest green
+  accent:       '#3d4a3a',
+  accentLight:  '#6b7d62',
+  accentWarm:   '#9a7b5f',
+  accentGlow:   'rgba(61,74,58,0.08)',
+  accentMid:    'rgba(61,74,58,0.15)',
+  // Text
+  text:         '#2c2a26',
+  textMuted:    '#6b6560',
+  textFaint:    '#9c958c',
+  // Aliases used by legacy screens
+  textSubtle:   '#9c958c',
+  background:   '#f3efe6',
+  surfaceAlt:   '#f7f3ec',
+  // Status
+  success:      '#5a7d6e',
+  successBg:    '#eaf2ee',
+  successLight: '#eaf2ee',
+  error:        '#a64d4d',
+  errorBg:      '#f9eeee',
+  errorLight:   '#f9eeee',
+  warning:      '#b8860b',
+  warningBg:    '#fdf6e3',
+  white:        '#ffffff',
+  black:        '#000000',
+  // Editor paper
+  editorPaper:  '#ffffff',
+  // Tab bar
+  tabIconDefault:  '#9c958c',
+  tabIconSelected: '#3d4a3a',
+  tint:            '#3d4a3a',
+  // Sheet
+  sheetBg:      '#faf8f3',
+  overlay:      'rgba(44,42,38,0.55)',
 };
 
-// ── Full colour tokens (light + dark) ─────────────────────────────────────────
-export const Colors = {
-  light: {
-    // navigation / tabs (used by expo-router)
-    text:           '#0F172A',
-    background:     '#F8FAFC',
-    tint:           Brand.accent,
-    icon:           '#64748B',
-    tabIconDefault: '#94A3B8',
-    tabIconSelected: Brand.accent,
-
-    // surfaces
-    surface:        '#FFFFFF',
-    surfaceAlt:     '#F1F5F9',
-    border:         '#E2E8F0',
-    borderStrong:   '#CBD5E1',
-
-    // text
-    textMuted:      '#64748B',
-    textSubtle:     '#94A3B8',
-
-    // brand shortcuts
-    accent:         Brand.accent,
-    accentLight:    Brand.accentLight,
-    error:          Brand.error,
-    errorLight:     Brand.errorLight,
-    success:        Brand.success,
-    successLight:   Brand.successLight,
-  },
-  dark: {
-    text:           '#F1F5F9',
-    background:     '#0F172A',
-    tint:           '#818CF8',
-    icon:           '#94A3B8',
-    tabIconDefault: '#475569',
-    tabIconSelected: '#818CF8',
-
-    surface:        '#1E293B',
-    surfaceAlt:     '#0F172A',
-    border:         '#1E293B',
-    borderStrong:   '#334155',
-
-    textMuted:      '#94A3B8',
-    textSubtle:     '#475569',
-
-    accent:         '#818CF8',
-    accentLight:    '#1E254A',
-    error:          '#F87171',
-    errorLight:     '#3B1515',
-    success:        '#34D399',
-    successLight:   '#064E3B',
-  },
-};
-
-// ── Spacing scale ─────────────────────────────────────────────────────────────
-export const Space = {
-  xs:  4,
-  sm:  8,
-  md:  12,
-  lg:  16,
-  xl:  24,
+// ── Spacing ───────────────────────────────────────────────────────────────────
+export const S = {
+  xs:    4,
+  sm:    8,
+  md:    12,
+  lg:    16,
+  xl:    24,
   '2xl': 32,
   '3xl': 48,
+  '4xl': 64,
 };
 
-// ── Border radii ──────────────────────────────────────────────────────────────
-export const Radius = {
-  sm:  6,
-  md:  10,
-  lg:  14,
-  xl:  20,
-  full: 999,
+// ── Radii ─────────────────────────────────────────────────────────────────────
+export const R = {
+  sm:    4,
+  md:    8,
+  lg:    12,
+  xl:    16,
+  '2xl': 24,
+  full:  999,
 };
 
-// ── Typography ────────────────────────────────────────────────────────────────
-export const Fonts = Platform.select({
-  ios: {
-    sans:    'system-ui',
-    serif:   'ui-serif',
-    rounded: 'ui-rounded',
-    mono:    'ui-monospace',
-  },
-  default: {
-    sans:    'normal',
-    serif:   'serif',
-    rounded: 'normal',
-    mono:    'monospace',
-  },
-  web: {
-    sans:    "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-    serif:   "Georgia, 'Times New Roman', serif",
-    rounded: "normal",
-    mono:    "SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-  },
-});
-
-export const FontSize = {
-  xs:   11,
-  sm:   13,
-  base: 15,
-  md:   16,
-  lg:   18,
-  xl:   22,
-  '2xl': 26,
-  '3xl': 32,
+// ── Font sizes ────────────────────────────────────────────────────────────────
+export const F = {
+  xs:    11,
+  sm:    13,
+  base:  15,
+  md:    16,
+  lg:    18,
+  xl:    22,
+  '2xl': 28,
+  '3xl': 36,
 };
+
+// ── Animation durations ───────────────────────────────────────────────────────
+export const Timing = {
+  fast:   150,
+  normal: 250,
+  slow:   350,
+};
+
+// ── Shadows ───────────────────────────────────────────────────────────────────
+export const shadows = {
+  card: {
+    shadowColor: '#2c2a26',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  strong: {
+    shadowColor: '#2c2a26',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.10,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  sheet: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    elevation: 24,
+  },
+  toolbar: {
+    shadowColor: '#2c2a26',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+};
+
+// ── Legacy aliases (keeps old imports working without touching those files) ───
+export const Colors = {
+  light: C,
+  dark:  C,   // same palette — no dark mode yet
+};
+
+export const Brand = {
+  accent:      C.accent,
+  accentLight: C.accentLight,
+  accentWarm:  C.accentWarm,
+  success:     C.success,
+  error:       C.error,
+  warning:     C.warning,
+};
+
+export const Space  = S;
+export const FontSize = F;
+export const Radius   = R;

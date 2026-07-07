@@ -3,6 +3,7 @@ import { LogOut, HelpCircle } from 'lucide-react';
 import useAcaStore from '@/contexts/projectStore/projectStore';
 import useAuthStore from '@/contexts/authStore/authStore';
 import { compileProject, pollUntilDone, fetchCompiledPdf } from '@/services/api';
+import { setCompileActive } from '@/contexts/projectStore/projectStore';
 
 export default function TopBar({ onGoToDashboard, onLogout, onStartTour }) {
   const signedIn = useAuthStore(s => s.status === 'authenticated');
@@ -18,6 +19,7 @@ export default function TopBar({ onGoToDashboard, onLogout, onStartTour }) {
     if (!currentProject || isCompiling) return;
 
     setCompileJob({ status: 'pending', jobId: null, blobUrl: null, error: null });
+    setCompileActive(true);   // pause background project sync while compiling
 
     try {
       console.log(`[${new Date().toISOString()}] Step 1: Initiating compileProject for project ID: ${currentProject.id}`);
@@ -47,6 +49,8 @@ export default function TopBar({ onGoToDashboard, onLogout, onStartTour }) {
       console.log(`[${new Date().toISOString()}] Compile error caught: ${err.message}`);
       setCompileJob({ status: 'failed', error: err.message });
       showToast('error', `Compile error: ${err.message}`);
+    } finally {
+      setCompileActive(false);  // resume background sync after compile finishes
     }
   }, [currentProject, isCompiling, setCompileJob, showToast]);
 

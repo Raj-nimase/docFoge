@@ -1,12 +1,21 @@
 /** Single source of truth for the backend URL. Change this one line to switch environments. */
-export const API_BASE_URL ='https://docfoge.onrender.com/api'
-
-//`http://localhost:3001/api`;
+export const API_BASE_URL = 'https://docfoge.onrender.com/api';
+// export const API_BASE_URL = `http://localhost:3001/api`;
 
 /** @internal used by all api functions in this file */
 const BASE = API_BASE_URL;
 
 const TOKEN_KEY = 'acadoc_token';
+
+// ── Per-path timeout overrides ────────────────────────────────────────────────
+// Render free tier can be slow under load. These are tuned per operation type.
+const TIMEOUT_MS = {
+  default:  15_000,   // 15s — generous default for Render cold paths
+  projects:  20_000,  // 20s — /projects fetch can be slow after spin-down
+  upsert:   20_000,   // 20s — /projects/item upsert; fired during compile too
+  compile:  25_000,   // 25s — compile POST itself
+  auth:     15_000,   // 15s — login/register
+};
 
 export function getStoredToken() {
   try {
@@ -14,6 +23,14 @@ export function getStoredToken() {
   } catch {
     return null;
   }
+}
+
+function getTimeoutForPath(path) {
+  if (path.startsWith('/auth'))     return TIMEOUT_MS.auth;
+  if (path === '/projects/item')    return TIMEOUT_MS.upsert;
+  if (path.startsWith('/projects')) return TIMEOUT_MS.projects;
+  if (path.startsWith('/compile'))  return TIMEOUT_MS.compile;
+  return TIMEOUT_MS.default;
 }
 
 async function parseJson(res) {
@@ -25,7 +42,11 @@ async function parseJson(res) {
 }
 
 export async function authFetch(path, options = {}) {
-  const { token: _token, body, headers: extraHeaders, timeoutMs = 7000, ...fetchOptions } = options;
+  const {
+    token: _token, body, headers: extraHeaders,
+    timeoutMs = getTimeoutForPath(path),
+    ...fetchOptions
+  } = options;
   const token = _token ?? getStoredToken();
   const headers = {
     'Content-Type': 'application/json',

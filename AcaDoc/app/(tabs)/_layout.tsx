@@ -1,50 +1,31 @@
-import React from 'react';
 import { Tabs } from 'expo-router';
-import { Platform, View } from 'react-native';
+import { Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors, Brand } from '@/constants/theme';
-
-function TabIcon({ name, focused, color }: { name: any; focused: boolean; color: string }) {
-  return (
-    <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-      <Ionicons
-        name={focused ? name : `${name}-outline` as any}
-        size={24}
-        color={color}
-      />
-    </View>
-  );
-}
+import { C, F, shadows } from '@/constants/theme';
 
 export default function TabLayout() {
-  const scheme = useColorScheme() ?? 'light';
-  const C      = Colors[scheme];
   const insets = useSafeAreaInsets();
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: C.accent,
-        tabBarInactiveTintColor: C.tabIconDefault,
+        tabBarActiveTintColor:   C.accent,
+        tabBarInactiveTintColor: C.textFaint,
         tabBarStyle: {
-          backgroundColor: C.surface,
-          borderTopColor: C.border,
-          borderTopWidth: 1,
+          backgroundColor: C.card,
+          borderTopColor:  C.border,
+          borderTopWidth:  1,
           paddingBottom: Platform.OS === 'ios' ? insets.bottom : 8,
           paddingTop: 8,
-          height: Platform.OS === 'ios' ? 60 + insets.bottom : 68,
-          elevation: 8,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.06,
-          shadowRadius: 8,
+          height: Platform.OS === 'ios' ? 60 + insets.bottom : 64,
+          ...shadows.card,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: F.xs,
           fontWeight: '600',
+          letterSpacing: 0.2,
           marginTop: 2,
         },
       }}
@@ -54,7 +35,7 @@ export default function TabLayout() {
         options={{
           title: 'Projects',
           tabBarIcon: ({ focused, color }) => (
-            <TabIcon name="folder" focused={focused} color={color} />
+            <Ionicons name={focused ? 'folder' : 'folder-outline'} size={22} color={color} />
           ),
         }}
       />
@@ -63,15 +44,11 @@ export default function TabLayout() {
         options={{
           title: 'Profile',
           tabBarIcon: ({ focused, color }) => (
-            <TabIcon name="person" focused={focused} color={color} />
+            <Ionicons name={focused ? 'person' : 'person-outline'} size={22} color={color} />
           ),
         }}
       />
-      {/* Hide the default explore tab */}
-      <Tabs.Screen
-        name="explore"
-        options={{ href: null }}
-      />
+      <Tabs.Screen name="explore" options={{ href: null }} />
     </Tabs>
   );
 }

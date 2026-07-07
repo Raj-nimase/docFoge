@@ -1,3 +1,7 @@
+/**
+ * CompileScreen — Polish pass with premium UI + "Preview PDF" button
+ * and a "Back to Editor" flow that preserves the project state.
+ */
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
@@ -8,11 +12,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
 import { File, Paths } from 'expo-file-system';
-import * as Sharing from 'expo-sharing';import { useProjectStore } from '@/stores/projectStore';
-import { useAuthStore } from '@/stores/authStore';
+import * as Sharing from 'expo-sharing';
+import { useProjectStore } from '@/stores/projectStore';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { C, F, S, R, shadows } from '@/constants/theme';
 import { Colors, Brand, Space, FontSize, Radius } from '@/constants/theme';
 import {
   apiStartCompile, apiPollUntilDone, pdfUrl,
@@ -29,8 +34,17 @@ const STAGES = [
   { after: 6, label: 'Finalising PDF…' },
 ];
 
-// ── Spinning ring ─────────────────────────────────────────────────────────────
-function Spinner({ color }: { color: string }) {
+const TEMPLATE_LABELS: Record<string, string> = {
+  'diploma-project-report': 'Diploma / Project Report',
+  'ieee-paper':             'IEEE Paper',
+  'thesis':                 'Thesis',
+  'assignment':             'Assignment',
+  'blank':                  'Blank Document',
+};
+
+// ── Spinner ────────────────────────────────────────────────────────────────────
+
+function Spinner() {
   const rot = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.loop(
@@ -39,57 +53,50 @@ function Spinner({ color }: { color: string }) {
   }, []);
   const rotate = rot.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
   return (
-    <Animated.View style={[styles.spinner, { borderTopColor: color, transform: [{ rotate }] }]} />
+    <Animated.View style={[cs.spinner, { transform: [{ rotate }] }]} />
   );
 }
 
-// ── Progress bar ──────────────────────────────────────────────────────────────
-function ProgressBar({ pct, color }: { pct: number; color: string }) {
+// ── Progress bar ───────────────────────────────────────────────────────────────
+
+function ProgressBar({ pct }: { pct: number }) {
   const width = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(width, {
-      toValue: pct,
-      duration: 600,
-      easing: Easing.out(Easing.quad),
-      useNativeDriver: false,
+      toValue: pct, duration: 600, easing: Easing.out(Easing.quad), useNativeDriver: false,
     }).start();
   }, [pct]);
   return (
-    <View style={styles.progressTrack}>
-      <Animated.View style={[styles.progressFill, { backgroundColor: color, width: width.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }) }]} />
+    <View style={cs.progressTrack}>
+      <Animated.View style={[
+        cs.progressFill,
+        { width: width.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }) },
+      ]} />
     </View>
   );
 }
 
 // ── Main screen ───────────────────────────────────────────────────────────────
+
 export default function CompileScreen() {
   const { projectId } = useLocalSearchParams<{ projectId: string }>();
   const router  = useRouter();
   const insets  = useSafeAreaInsets();
-  const scheme  = useColorScheme() ?? 'light';
-  const C       = Colors[scheme];
 
   const { getActiveProject, openProject } = useProjectStore();
-
-  React.useEffect(() => {
-    if (projectId) openProject(projectId as string);
-  }, [projectId]);
-
+  useEffect(() => { if (projectId) openProject(projectId as string); }, [projectId]);
   const project = getActiveProject();
 
-  const [jobState, setJobState]   = useState<JobState>('idle');
-  const [pollCount, setPollCount] = useState(0);
-  const [elapsed, setElapsed]     = useState(0);
-  const [error, setError]         = useState('');
-  const [jobId, setJobId]         = useState('');
-  const [localPdf, setLocalPdf]   = useState<string | null>(null); // local file URI after download
+  const [jobState,    setJobState]    = useState<JobState>('idle');
+  const [pollCount,   setPollCount]   = useState(0);
+  const [elapsed,     setElapsed]     = useState(0);
+  const [error,       setError]       = useState('');
+  const [jobId,       setJobId]       = useState('');
   const [downloading, setDownloading] = useState(false);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
   const isCompiling = jobState === 'pending' || jobState === 'processing';
 
-  // elapsed timer
   useEffect(() => {
     if (isCompiling) {
       timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
@@ -113,7 +120,6 @@ export default function CompileScreen() {
     setElapsed(0);
     setPollCount(0);
     setError('');
-    setLocalPdf(null);
 
     try {
       const { jobId: id } = await apiStartCompile(project);
@@ -146,12 +152,9 @@ export default function CompileScreen() {
       const safeName = (project?.metadata?.title ?? 'document').replace(/[^a-z0-9]/gi, '_');
       const destFile = new File(Paths.document, `${safeName}.pdf`);
 
-      // expo-file-system v2: File.downloadFileAsync(url, destination, options)
       await File.downloadFileAsync(url, destFile, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       } as any);
-
-      setLocalPdf(destFile.uri);
 
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) {
@@ -172,130 +175,163 @@ export default function CompileScreen() {
 
   if (!project) {
     return (
-      <View style={[styles.screen, styles.center, { backgroundColor: C.background }]}>
+      <View style={[cs.screen, cs.center, { backgroundColor: C.bg }]}>
         <Text style={{ color: C.textMuted }}>Project not found</Text>
       </View>
     );
   }
 
   return (
-    <View style={[styles.screen, { backgroundColor: C.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + Space.sm, backgroundColor: C.surface, borderBottomColor: C.border }]}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={8}>
+    <View style={[cs.screen, { backgroundColor: C.bg }]}>
+
+      {/* ── Header ── */}
+      <View style={[cs.header, { paddingTop: insets.top + S.sm }]}>
+        <TouchableOpacity onPress={() => router.back()} hitSlop={8} style={cs.headerBack}>
           <Ionicons name="arrow-back" size={22} color={C.text} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: C.text }]} numberOfLines={1}>
-          {project.metadata?.title || 'Compile'}
-        </Text>
-        <View style={{ width: 30 }} />
+        <View style={cs.headerCenter}>
+          <Text style={cs.headerTitle} numberOfLines={1}>
+            {project.metadata?.title || 'Compile'}
+          </Text>
+          <Text style={cs.headerSub}>
+            {TEMPLATE_LABELS[project.templateId] ?? project.templateId}
+          </Text>
+        </View>
+        <View style={{ width: 36 }} />
       </View>
 
       <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + Space.xl }]}
+        contentContainerStyle={[cs.scroll, { paddingBottom: insets.bottom + S.xl }]}
         alwaysBounceVertical={false}
       >
+
         {/* ── Idle ── */}
         {jobState === 'idle' && (
-          <View style={styles.idleWrap}>
-            <View style={[styles.idleIconWrap, { backgroundColor: C.accentLight }]}>
-              <Text style={styles.idleIcon}>📄</Text>
+          <View style={cs.idleWrap}>
+            {/* Hero icon */}
+            <View style={cs.heroWrap}>
+              <View style={cs.heroOuter}>
+                <View style={cs.heroInner}>
+                  <Text style={cs.heroEmoji}>📄</Text>
+                </View>
+              </View>
             </View>
-            <Text style={[styles.idleTitle, { color: C.text }]}>Ready to compile</Text>
-            <Text style={[styles.idleSub, { color: C.textMuted }]}>
+
+            <Text style={cs.idleTitle}>Ready to compile</Text>
+            <Text style={cs.idleSub}>
               Your document will be compiled to a professional PDF using LaTeX.
               {'\n'}This usually takes 6–12 seconds.
             </Text>
 
-            {/* Project summary */}
-            <Card style={styles.summaryCard}>
-              <SummaryRow icon="document-text-outline" label="Title" value={project.metadata?.title || 'Untitled'} C={C} />
-              <SummaryRow icon="person-outline" label="Authors" value={project.metadata?.authors || '—'} C={C} />
-              <SummaryRow icon="library-outline" label="Template" value={project.templateId} C={C} />
-              <SummaryRow icon="layers-outline" label="Chapters" value={String(project.chapters.length)} C={C} />
-            </Card>
+            {/* Summary card */}
+            <View style={cs.summaryCard}>
+              <SummaryRow icon="document-text-outline" label="Title"    value={project.metadata?.title || 'Untitled'} />
+              <SummaryRow icon="person-outline"        label="Authors"  value={project.metadata?.authors || '—'} />
+              <SummaryRow icon="library-outline"       label="Template" value={TEMPLATE_LABELS[project.templateId] ?? project.templateId} />
+              <SummaryRow icon="layers-outline"        label="Chapters" value={String(project.chapters.length)} />
+            </View>
 
-            <Button label="Compile to PDF" onPress={startCompile} size="lg" style={styles.compileBtn} />
+            <TouchableOpacity onPress={startCompile} style={cs.compileBtn} activeOpacity={0.85}>
+              <Ionicons name="play" size={16} color="#fff" />
+              <Text style={cs.compileBtnText}>Compile to PDF</Text>
+            </TouchableOpacity>
           </View>
         )}
 
         {/* ── Compiling ── */}
         {isCompiling && (
-          <View style={styles.compilingWrap}>
-            <Spinner color={Brand.accent} />
-            <Text style={[styles.compilingTitle, { color: C.text }]}>Compiling…</Text>
-            <Text style={[styles.stageLabel, { color: C.textMuted }]}>{stageLabel}</Text>
+          <View style={cs.compilingWrap}>
+            <Spinner />
+            <Text style={cs.compilingTitle}>Compiling…</Text>
+            <Text style={cs.stageLabel}>{stageLabel}</Text>
 
-            <View style={styles.progressWrap}>
-              <ProgressBar pct={progressPct} color={Brand.accent} />
-              <Text style={[styles.progressPct, { color: C.textMuted }]}>{Math.round(progressPct)}%</Text>
+            <View style={cs.progressWrap}>
+              <ProgressBar pct={progressPct} />
+              <Text style={cs.progressPct}>{Math.round(progressPct)}%</Text>
             </View>
 
-            <Text style={[styles.elapsed, { color: C.textSubtle }]}>{elapsed}s elapsed</Text>
+            <Text style={cs.elapsed}>{elapsed}s elapsed</Text>
 
-            <Text style={[styles.tip, { color: C.textSubtle }]}>
-              💡 First compile is slower — subsequent compiles use cache and are much faster.
-            </Text>
+            <View style={cs.tipCard}>
+              <Ionicons name="bulb-outline" size={16} color={C.warning} />
+              <Text style={cs.tipText}>
+                First compile is slower — subsequent compiles use cache and are much faster.
+              </Text>
+            </View>
           </View>
         )}
 
         {/* ── Done ── */}
         {jobState === 'done' && (
-          <View style={styles.doneWrap}>
-            <View style={[styles.doneIconWrap, { backgroundColor: Colors[scheme].successLight }]}>
-              <Ionicons name="checkmark-circle" size={52} color={Brand.success} />
+          <View style={cs.doneWrap}>
+            <View style={cs.doneIconWrap}>
+              <Ionicons name="checkmark-circle" size={56} color={C.success} />
             </View>
-            <Text style={[styles.doneTitle, { color: C.text }]}>PDF compiled!</Text>
-            <Text style={[styles.doneSub, { color: C.textMuted }]}>
-              Your document is ready. Download and share it or compile again after making changes.
+            <Text style={cs.doneTitle}>PDF compiled!</Text>
+            <Text style={cs.doneSub}>
+              Your document is ready. Preview it, download, or compile again after making changes.
             </Text>
 
-            <View style={styles.doneActions}>
-              <Button
-                label={downloading ? 'Preparing…' : 'Download & Share'}
-                onPress={downloadAndShare}
-                loading={downloading}
-                size="lg"
-              />
-              <Button
-                label="Compile again"
-                onPress={startCompile}
-                variant="secondary"
-                size="md"
-              />
-              <Button
-                label="Back to editor"
-                onPress={() => router.back()}
-                variant="ghost"
-                size="md"
-              />
-            </View>
+            {/* Preview PDF */}
+            <TouchableOpacity
+              onPress={() => router.push({ pathname: '/pdf-preview/[projectId]', params: { projectId: project.id } })}
+              style={cs.previewBtn}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="eye-outline" size={18} color={C.accent} />
+              <Text style={cs.previewBtnText}>Preview PDF</Text>
+            </TouchableOpacity>
+
+            {/* Download & Share */}
+            <TouchableOpacity
+              onPress={downloadAndShare}
+              style={cs.compileBtn}
+              activeOpacity={0.85}
+              disabled={downloading}
+            >
+              <Ionicons name="download-outline" size={16} color="#fff" />
+              <Text style={cs.compileBtnText}>
+                {downloading ? 'Preparing…' : 'Download & Share'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={startCompile} style={cs.ghostBtn} activeOpacity={0.7}>
+              <Text style={cs.ghostBtnText}>Compile again</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => router.back()} style={cs.ghostBtn} activeOpacity={0.7}>
+              <Text style={cs.ghostBtnText}>Back to editor</Text>
+            </TouchableOpacity>
           </View>
         )}
 
         {/* ── Failed ── */}
         {jobState === 'failed' && (
-          <View style={styles.failedWrap}>
-            <View style={[styles.failedIconWrap, { backgroundColor: Colors[scheme].errorLight }]}>
-              <Ionicons name="close-circle" size={52} color={Brand.error} />
+          <View style={cs.failedWrap}>
+            <View style={cs.failedIconWrap}>
+              <Ionicons name="close-circle" size={56} color={C.error} />
             </View>
-            <Text style={[styles.failedTitle, { color: C.text }]}>Compilation failed</Text>
-            <Text style={[styles.failedSub, { color: C.textMuted }]}>
+            <Text style={cs.failedTitle}>Compilation failed</Text>
+            <Text style={cs.failedSub}>
               The LaTeX compiler returned an error. Check your content for special characters or formatting issues.
             </Text>
 
             {error ? (
-              <Card style={styles.errorCard} padding={Space.md}>
-                <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled>
-                  <Text style={styles.errorLog}>{error}</Text>
+              <View style={cs.errorCard}>
+                <ScrollView style={{ maxHeight: 180 }} nestedScrollEnabled>
+                  <Text style={cs.errorLog}>{error}</Text>
                 </ScrollView>
-              </Card>
+              </View>
             ) : null}
 
-            <View style={styles.doneActions}>
-              <Button label="Try again" onPress={startCompile} size="lg" />
-              <Button label="Back to editor" onPress={() => router.back()} variant="ghost" size="md" />
-            </View>
+            <TouchableOpacity onPress={startCompile} style={cs.compileBtn} activeOpacity={0.85}>
+              <Ionicons name="refresh-outline" size={16} color="#fff" />
+              <Text style={cs.compileBtnText}>Try again</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => router.back()} style={cs.ghostBtn} activeOpacity={0.7}>
+              <Text style={cs.ghostBtnText}>Back to editor</Text>
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
@@ -303,69 +339,168 @@ export default function CompileScreen() {
   );
 }
 
-function SummaryRow({ icon, label, value, C }: { icon: any; label: string; value: string; C: any }) {
+// ── Summary row ────────────────────────────────────────────────────────────────
+
+function SummaryRow({ icon, label, value }: { icon: any; label: string; value: string }) {
   return (
-    <View style={summaryStyles.row}>
-      <Ionicons name={icon} size={16} color={C.textMuted} />
-      <Text style={[summaryStyles.label, { color: C.textMuted }]}>{label}</Text>
-      <Text style={[summaryStyles.value, { color: C.text }]} numberOfLines={1}>{value}</Text>
+    <View style={cs.summaryRow}>
+      <View style={cs.summaryIcon}>
+        <Ionicons name={icon} size={15} color={C.accent} />
+      </View>
+      <Text style={cs.summaryLabel}>{label}</Text>
+      <Text style={cs.summaryValue} numberOfLines={1}>{value}</Text>
     </View>
   );
 }
 
-const summaryStyles = StyleSheet.create({
-  row:   { flexDirection: 'row', alignItems: 'center', gap: Space.sm, paddingVertical: Space.xs },
-  label: { fontSize: FontSize.sm, width: 70 },
-  value: { fontSize: FontSize.sm, fontWeight: '500', flex: 1 },
-});
+// ── Styles ─────────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const cs = StyleSheet.create({
   screen: { flex: 1 },
-  center: { alignItems: 'center', justifyContent: 'center' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+
   header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: Space.lg, paddingBottom: Space.md, borderBottomWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: S.lg,
+    paddingBottom: S.md,
+    backgroundColor: C.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+    ...shadows.card,
   },
-  headerTitle: { fontSize: FontSize.md, fontWeight: '700', flex: 1, textAlign: 'center' },
-  scroll: { padding: Space.xl },
+  headerBack:   { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  headerCenter: { flex: 1, alignItems: 'center' },
+  headerTitle:  { fontSize: F.base, fontWeight: '700', color: C.text },
+  headerSub:    { fontSize: F.xs, color: C.textMuted, marginTop: 1 },
+
+  scroll: { padding: S.xl },
 
   // Idle
-  idleWrap:     { alignItems: 'center', gap: Space.lg },
-  idleIconWrap: { width: 88, height: 88, borderRadius: 44, alignItems: 'center', justifyContent: 'center' },
-  idleIcon:     { fontSize: 40 },
-  idleTitle:    { fontSize: FontSize.xl, fontWeight: '800' },
-  idleSub:      { fontSize: FontSize.base, textAlign: 'center', lineHeight: 22 },
-  summaryCard:  { width: '100%', gap: Space.xs },
-  compileBtn:   { width: '100%' },
+  idleWrap:  { alignItems: 'center', gap: S.lg },
+  heroWrap:  { marginBottom: S.sm },
+  heroOuter: {
+    width: 100, height: 100, borderRadius: 50,
+    backgroundColor: C.accentGlow, borderWidth: 2, borderColor: C.accentMid,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  heroInner: {
+    width: 76, height: 76, borderRadius: 38,
+    backgroundColor: C.cardAlt, alignItems: 'center', justifyContent: 'center',
+  },
+  heroEmoji:  { fontSize: 36 },
+  idleTitle:  { fontSize: F.xl, fontWeight: '800', color: C.text },
+  idleSub:    { fontSize: F.base, textAlign: 'center', lineHeight: 22, color: C.textMuted },
+
+  summaryCard: {
+    width: '100%',
+    backgroundColor: C.card,
+    borderRadius: R.xl,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: S.md,
+    gap: S.xs,
+    ...shadows.card,
+  },
+  summaryRow:   { flexDirection: 'row', alignItems: 'center', gap: S.sm, paddingVertical: 4 },
+  summaryIcon:  { width: 28, height: 28, borderRadius: R.md, backgroundColor: C.accentGlow, alignItems: 'center', justifyContent: 'center' },
+  summaryLabel: { fontSize: F.sm, color: C.textMuted, width: 72 },
+  summaryValue: { fontSize: F.sm, fontWeight: '600', color: C.text, flex: 1 },
+
+  compileBtn: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: S.sm,
+    backgroundColor: C.accent,
+    paddingVertical: S.md + 2,
+    borderRadius: R.lg,
+    ...shadows.card,
+  },
+  compileBtnText: { fontSize: F.base, fontWeight: '700', color: '#fff' },
+
+  previewBtn: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: S.sm,
+    backgroundColor: C.accentGlow,
+    borderWidth: 1.5,
+    borderColor: C.accentMid,
+    paddingVertical: S.md,
+    borderRadius: R.lg,
+  },
+  previewBtnText: { fontSize: F.base, fontWeight: '700', color: C.accent },
+
+  ghostBtn: {
+    width: '100%',
+    alignItems: 'center',
+    paddingVertical: S.sm,
+  },
+  ghostBtnText: { fontSize: F.base, color: C.textMuted, fontWeight: '500' },
 
   // Compiling
-  compilingWrap:  { alignItems: 'center', gap: Space.lg, paddingTop: Space['2xl'] },
-  compilingTitle: { fontSize: FontSize.xl, fontWeight: '700' },
-  stageLabel:     { fontSize: FontSize.base, textAlign: 'center' },
-  progressWrap:   { width: '100%', flexDirection: 'row', alignItems: 'center', gap: Space.sm },
-  progressTrack:  { flex: 1, height: 6, backgroundColor: '#E2E8F0', borderRadius: Radius.full, overflow: 'hidden' },
-  progressFill:   { height: '100%', borderRadius: Radius.full },
-  progressPct:    { fontSize: FontSize.xs, width: 36, textAlign: 'right' },
-  elapsed:        { fontSize: FontSize.sm },
-  tip:            { fontSize: FontSize.xs, textAlign: 'center', lineHeight: 18, paddingTop: Space.lg },
+  compilingWrap:  { alignItems: 'center', gap: S.lg, paddingTop: S['2xl'] },
+  compilingTitle: { fontSize: F.xl, fontWeight: '700', color: C.text },
+  stageLabel:     { fontSize: F.base, textAlign: 'center', color: C.textMuted },
+  progressWrap:   { width: '100%', flexDirection: 'row', alignItems: 'center', gap: S.sm },
+  progressTrack:  { flex: 1, height: 6, backgroundColor: C.border, borderRadius: R.full, overflow: 'hidden' },
+  progressFill:   { height: '100%', backgroundColor: C.accent, borderRadius: R.full },
+  progressPct:    { fontSize: F.xs, width: 36, textAlign: 'right', color: C.textMuted },
+  elapsed:        { fontSize: F.sm, color: C.textSubtle },
+  tipCard: {
+    flexDirection: 'row',
+    gap: S.sm,
+    alignItems: 'flex-start',
+    backgroundColor: C.warningBg,
+    borderRadius: R.lg,
+    padding: S.md,
+    borderWidth: 1,
+    borderColor: C.warning + '33',
+    marginTop: S.sm,
+  },
+  tipText: { flex: 1, fontSize: F.xs, color: C.textMuted, lineHeight: 18 },
 
   spinner: {
-    width: 48, height: 48, borderRadius: 24,
-    borderWidth: 3, borderColor: 'rgba(79,107,237,0.15)',
+    width: 52, height: 52, borderRadius: 26,
+    borderWidth: 3,
+    borderColor: C.border,
+    borderTopColor: C.accent,
   },
 
   // Done
-  doneWrap:      { alignItems: 'center', gap: Space.lg },
-  doneIconWrap:  { width: 100, height: 100, borderRadius: 50, alignItems: 'center', justifyContent: 'center' },
-  doneTitle:     { fontSize: FontSize.xl, fontWeight: '800' },
-  doneSub:       { fontSize: FontSize.base, textAlign: 'center', lineHeight: 22 },
-  doneActions:   { width: '100%', gap: Space.md, marginTop: Space.sm },
+  doneWrap:     { alignItems: 'center', gap: S.md },
+  doneIconWrap: {
+    width: 100, height: 100, borderRadius: 50,
+    backgroundColor: C.successBg,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: S.sm,
+  },
+  doneTitle: { fontSize: F.xl, fontWeight: '800', color: C.text },
+  doneSub:   { fontSize: F.base, textAlign: 'center', lineHeight: 22, color: C.textMuted, marginBottom: S.sm },
 
   // Failed
-  failedWrap:    { alignItems: 'center', gap: Space.lg },
-  failedIconWrap:{ width: 100, height: 100, borderRadius: 50, alignItems: 'center', justifyContent: 'center' },
-  failedTitle:   { fontSize: FontSize.xl, fontWeight: '800' },
-  failedSub:     { fontSize: FontSize.base, textAlign: 'center', lineHeight: 22 },
-  errorCard:     { width: '100%' },
-  errorLog:      { fontSize: FontSize.xs, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', color: '#EF4444', lineHeight: 18 },
+  failedWrap:     { alignItems: 'center', gap: S.md },
+  failedIconWrap: {
+    width: 100, height: 100, borderRadius: 50,
+    backgroundColor: C.errorBg,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: S.sm,
+  },
+  failedTitle: { fontSize: F.xl, fontWeight: '800', color: C.text },
+  failedSub:   { fontSize: F.base, textAlign: 'center', lineHeight: 22, color: C.textMuted, marginBottom: S.sm },
+  errorCard: {
+    width: '100%',
+    backgroundColor: '#1e1e1e',
+    borderRadius: R.lg,
+    padding: S.md,
+  },
+  errorLog: {
+    fontSize: F.xs,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    color: '#ef4444',
+    lineHeight: 18,
+  },
 });

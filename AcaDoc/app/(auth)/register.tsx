@@ -9,18 +9,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/stores/authStore';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors, Brand, Space, FontSize, Radius } from '@/constants/theme';
+import { C, S, R, F } from '@/constants/theme';
 
 export default function RegisterScreen() {
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const scheme = useColorScheme() ?? 'light';
-  const C = Colors[scheme];
+  const router   = useRouter();
+  const insets   = useSafeAreaInsets();
   const register = useAuthStore(s => s.register);
 
   const [form, setForm] = useState({
-    name: '', email: '', password: '', confirmPassword: '',
+    name: '', email: '', password: '', confirm: '',
     role: 'Student', institution: '', department: '',
   });
   const [showPwd, setShowPwd]   = useState(false);
@@ -28,31 +25,29 @@ export default function RegisterScreen() {
   const [error, setError]       = useState('');
   const [fieldErr, setFieldErr] = useState<Record<string, string>>({});
 
-  function set(field: string, value: string) {
-    setForm(f => ({ ...f, [field]: value }));
-    setFieldErr(e => ({ ...e, [field]: '' }));
+  function upd(k: string, v: string) {
+    setForm(f => ({ ...f, [k]: v }));
+    setFieldErr(e => ({ ...e, [k]: '' }));
   }
 
   function validate() {
-    const errs: Record<string, string> = {};
-    if (!form.name.trim())    errs.name = 'Name is required';
-    if (!form.email.trim())   errs.email = 'Email is required';
-    else if (!/\S+@\S+\.\S+/.test(form.email)) errs.email = 'Enter a valid email';
-    if (!form.password)       errs.password = 'Password is required';
-    else if (form.password.length < 8) errs.password = 'At least 8 characters';
-    if (form.password !== form.confirmPassword) errs.confirmPassword = 'Passwords do not match';
-    setFieldErr(errs);
-    return Object.keys(errs).length === 0;
+    const e: Record<string, string> = {};
+    if (!form.name.trim())                       e.name    = 'Name is required';
+    if (!form.email.trim())                       e.email   = 'Email is required';
+    else if (!/\S+@\S+\.\S+/.test(form.email))   e.email   = 'Enter a valid email';
+    if (!form.password)                           e.password = 'Password is required';
+    else if (form.password.length < 8)            e.password = 'At least 8 characters';
+    if (form.password !== form.confirm)            e.confirm = 'Passwords do not match';
+    setFieldErr(e);
+    return !Object.keys(e).length;
   }
 
   async function handleRegister() {
     if (!validate()) return;
-    setError('');
-    setLoading(true);
+    setError(''); setLoading(true);
     try {
       await register({
-        name: form.name.trim(),
-        email: form.email.trim(),
+        name: form.name.trim(), email: form.email.trim(),
         password: form.password,
         role: form.role.trim() || 'Student',
         institution: form.institution.trim(),
@@ -60,86 +55,74 @@ export default function RegisterScreen() {
       });
     } catch (err: any) {
       setError(err.message || 'Registration failed');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: C.background }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <KeyboardAvoidingView style={[st.screen, { backgroundColor: C.bg }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined} enabled={Platform.OS === 'ios'}>
       <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + Space.lg, paddingBottom: insets.bottom + Space.xl }]}
-        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[st.scroll, { paddingTop: insets.top + S.lg, paddingBottom: insets.bottom + S['2xl'] }]}
+        showsVerticalScrollIndicator={false}
       >
-        {/* Back */}
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => router.back()} style={st.back}>
           <Ionicons name="arrow-back" size={22} color={C.text} />
         </TouchableOpacity>
 
-        <Text style={[styles.heading, { color: C.text }]}>Create account</Text>
-        <Text style={[styles.sub, { color: C.textMuted }]}>Start generating professional PDFs</Text>
+        <Text style={st.heading}>Create account</Text>
+        <Text style={st.sub}>Join thousands of students and researchers</Text>
 
-        {error ? (
-          <View style={[styles.errorBanner, { backgroundColor: Colors[scheme].errorLight }]}>
-            <Ionicons name="alert-circle-outline" size={16} color={Brand.error} />
-            <Text style={[styles.errorText, { color: Brand.error }]}>{error}</Text>
+        {!!error && (
+          <View style={st.errBanner}>
+            <Ionicons name="alert-circle-outline" size={15} color={C.error} />
+            <Text style={st.errText}>{error}</Text>
           </View>
-        ) : null}
+        )}
 
-        <View style={styles.form}>
+        <View style={st.form}>
           <Input label="Full name" placeholder="Your name" value={form.name}
-            onChangeText={v => set('name', v)} error={fieldErr.name} autoComplete="name" />
+            onChangeText={v => upd('name', v)} error={fieldErr.name} autoCapitalize="words" autoComplete="name" />
           <Input label="Email" placeholder="you@example.com" value={form.email}
-            onChangeText={v => set('email', v)} keyboardType="email-address"
-            error={fieldErr.email} autoComplete="email" />
+            onChangeText={v => upd('email', v)} keyboardType="email-address" error={fieldErr.email} autoComplete="email" />
           <Input label="Password" placeholder="Min 8 characters" value={form.password}
-            onChangeText={v => set('password', v)} secureTextEntry={!showPwd}
-            error={fieldErr.password}
-            rightIcon={<Ionicons name={showPwd ? 'eye-off-outline' : 'eye-outline'} size={20} color={C.textMuted} />}
+            onChangeText={v => upd('password', v)} secureTextEntry={!showPwd} error={fieldErr.password}
+            rightIcon={<Ionicons name={showPwd ? 'eye-off-outline' : 'eye-outline'} size={18} color={C.textFaint} />}
             onRightIconPress={() => setShowPwd(v => !v)} />
-          <Input label="Confirm password" placeholder="Repeat password" value={form.confirmPassword}
-            onChangeText={v => set('confirmPassword', v)} secureTextEntry={!showPwd}
-            error={fieldErr.confirmPassword} />
+          <Input label="Confirm password" placeholder="Repeat password" value={form.confirm}
+            onChangeText={v => upd('confirm', v)} secureTextEntry={!showPwd} error={fieldErr.confirm} />
 
-          {/* Optional fields */}
-          <Text style={[styles.sectionLabel, { color: C.textMuted }]}>Optional details</Text>
-          <Input label="Role" placeholder="e.g. Student, Researcher" value={form.role}
-            onChangeText={v => set('role', v)} />
+          <View style={st.divider}><View style={st.dividerLine} /><Text style={st.dividerText}>Optional details</Text><View style={st.dividerLine} /></View>
+
+          <Input label="Role" placeholder="Student / Researcher / Faculty" value={form.role}
+            onChangeText={v => upd('role', v)} autoCapitalize="words" />
           <Input label="Institution" placeholder="College / University" value={form.institution}
-            onChangeText={v => set('institution', v)} autoCapitalize="words" />
+            onChangeText={v => upd('institution', v)} autoCapitalize="words" />
           <Input label="Department" placeholder="e.g. Computer Engineering" value={form.department}
-            onChangeText={v => set('department', v)} autoCapitalize="words" />
+            onChangeText={v => upd('department', v)} autoCapitalize="words" />
 
-          <Button label="Create account" onPress={handleRegister} loading={loading} size="lg" />
+          <Button label="Create account" onPress={handleRegister} loading={loading} size="lg" style={{ marginTop: S.sm }} />
         </View>
 
-        <View style={styles.bottomRow}>
-          <Text style={[styles.bottomText, { color: C.textMuted }]}>Already have an account?</Text>
-          <TouchableOpacity onPress={() => router.push('/(auth)/login')}>
-            <Text style={[styles.bottomLink, { color: Brand.accent }]}> Sign in</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity onPress={() => router.back()} style={st.signinBtn}>
+          <Text style={st.signinText}>Already have an account? <Text style={st.signinLink}>Sign in</Text></Text>
+        </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  scroll: { flexGrow: 1, paddingHorizontal: Space.xl },
-  backBtn: { marginBottom: Space.lg },
-  heading: { fontSize: FontSize['2xl'], fontWeight: '800', marginBottom: Space.xs },
-  sub: { fontSize: FontSize.base, marginBottom: Space.xl },
-  errorBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: Space.xs,
-    padding: Space.md, borderRadius: Radius.md, marginBottom: Space.md,
-  },
-  errorText: { fontSize: FontSize.sm, flex: 1 },
-  form: { gap: Space.md },
-  sectionLabel: { fontSize: FontSize.xs, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8, marginTop: Space.sm },
-  bottomRow: { flexDirection: 'row', justifyContent: 'center', marginTop: Space.xl },
-  bottomText: { fontSize: FontSize.base },
-  bottomLink: { fontSize: FontSize.base, fontWeight: '600' },
+const st = StyleSheet.create({
+  screen:      { flex: 1 },
+  scroll:      { flexGrow: 1, paddingHorizontal: S.xl },
+  back:        { marginBottom: S.xl },
+  heading:     { fontSize: F['2xl'], fontWeight: '800', color: C.text, letterSpacing: -0.5, marginBottom: S.xs },
+  sub:         { fontSize: F.base, color: C.textMuted, marginBottom: S['2xl'], lineHeight: 22 },
+  errBanner:   { flexDirection: 'row', alignItems: 'center', gap: S.sm, backgroundColor: C.errorBg, borderRadius: R.md, padding: S.md, marginBottom: S.md, borderLeftWidth: 3, borderLeftColor: C.error },
+  errText:     { fontSize: F.sm, color: C.error, flex: 1, fontWeight: '500' },
+  form:        { gap: S.md },
+  divider:     { flexDirection: 'row', alignItems: 'center', gap: S.sm, marginVertical: S.xs },
+  dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: C.border },
+  dividerText: { fontSize: F.xs, color: C.textFaint, fontWeight: '600', letterSpacing: 0.5 },
+  signinBtn:   { alignItems: 'center', paddingVertical: S.md, marginTop: S.lg },
+  signinText:  { fontSize: F.base, color: C.textMuted },
+  signinLink:  { color: C.accent, fontWeight: '700' },
 });

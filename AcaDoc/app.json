@@ -19,7 +19,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.rajnimase.AcaDoc"
     },
     "web": {
       "output": "static",
@@ -39,7 +40,14 @@
           }
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "AcaDoc needs access to your photos to insert images into documents.",
+          "cameraPermission": "AcaDoc needs camera access to take photos for your documents."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

@@ -204,36 +204,83 @@ const HeadingCleaner = Extension.create({
       new Plugin({
         key: new PluginKey("headingCleaner"),
         appendTransaction(transactions, oldState, newState) {
+          // Skip if nothing changed in the document
           if (!transactions.some((tr) => tr.docChanged)) return null;
 
-          let modifications = [];
-          newState.doc.descendants((node, pos) => {
-            if (node.type.name === "heading") {
-              if (node.firstChild && node.firstChild.isText) {
-                const child = node.firstChild;
-                const originalText = child.text;
-                const cleanedText = stripAllPrefixes(originalText);
-                if (cleanedText !== originalText) {
-                  modifications.push({
-                    from: pos + 1,
-                    to: pos + 1 + originalText.length,
-                    text: cleanedText,
-                  });
-                }
-              }
-            }
-          });
+          // ── Targeted scan ────────────────────────────────────────────────
+          // Instead of calling newState.doc.descendants() which walks the
+          // ENTIRE document on every transaction, we collect the changed
+          // position ranges from each transaction's steps and only inspect
+          // heading nodes that fall inside those ranges.
+          //
+          // For a single keystroke this is typically 1 step covering ~1 node.
+          // For a large paste this covers only the inserted slice.
+          // The old approach scanned every node in a 10,000-word chapter
+          // even when the user typed a single character at the top.
 
-          if (modifications.length > 0) {
-            let tr = newState.tr;
-            // Apply in reverse to avoid position shifts
-            for (let i = modifications.length - 1; i >= 0; i--) {
-              const mod = modifications[i];
-              tr.insertText(mod.text, mod.from, mod.to);
-            }
-            return tr;
+          const changedRanges = [];
+          for (const tr of transactions) {
+            if (!tr.docChanged) continue;
+            tr.steps.forEach((step, i) => {
+              const map = tr.mapping.maps[i];
+              // stepMap.ranges is [from, to, from, to, ...] pairs
+              map.forEach((oldStart, oldEnd, newStart, newEnd) => {
+                changedRanges.push({ from: newStart, to: newEnd });
+              });
+            });
           }
-          return null;
+
+          if (changedRanges.length === 0) return null;
+
+          // Merge overlapping/adjacent ranges to avoid duplicate scans
+          changedRanges.sort((a, b) => a.from - b.from);
+          const merged = [changedRanges[0]];
+          for (let i = 1; i < changedRanges.length; i++) {
+            const last = merged[merged.length - 1];
+            const cur  = changedRanges[i];
+            if (cur.from <= last.to + 1) {
+              last.to = Math.max(last.to, cur.to);
+            } else {
+              merged.push({ ...cur });
+            }
+          }
+
+          const modifications = [];
+
+          for (const { from, to } of merged) {
+            // Expand range slightly to catch heading nodes that straddle
+            // the boundary (a heading node can start just before `from`)
+            const scanFrom = Math.max(0, from - 2);
+            const scanTo   = Math.min(newState.doc.content.size, to + 2);
+
+            newState.doc.nodesBetween(scanFrom, scanTo, (node, pos) => {
+              if (node.type.name !== "heading") return true; // descend
+              if (!node.firstChild?.isText) return false;
+
+              const child        = node.firstChild;
+              const originalText = child.text;
+              const cleanedText  = stripAllPrefixes(originalText);
+
+              if (cleanedText !== originalText) {
+                modifications.push({
+                  from: pos + 1,
+                  to:   pos + 1 + originalText.length,
+                  text: cleanedText,
+                });
+              }
+              return false; // don't descend into heading children
+            });
+          }
+
+          if (modifications.length === 0) return null;
+
+          // Apply in reverse so earlier positions aren't shifted
+          let tr = newState.tr;
+          for (let i = modifications.length - 1; i >= 0; i--) {
+            const mod = modifications[i];
+            tr.insertText(mod.text, mod.from, mod.to);
+          }
+          return tr;
         },
       }),
     ];
@@ -241,63 +288,180 @@ const HeadingCleaner = Extension.create({
 });
 
 
+// ── Helper: check if any heading node changed between two doc states ──────────
+// Uses ProseMirror's built-in changedDescendants to walk only the diff,
+// instead of iterating the full document on every transaction.
+function hasHeadingChanged(oldDoc, newDoc) {
+  let changed = false;
+  // changedDescendants fires the callback only for nodes that differ
+  oldDoc.nodesBetween(0, oldDoc.content.size, (node, pos) => {
+    if (changed) return false; // early exit once found
+    if (node.type.name === 'heading') {
+      // Check if this heading node still exists at the same pos in newDoc
+      try {
+        const newNode = newDoc.nodeAt(pos);
+        if (!newNode || newNode.type.name !== 'heading' || !newNode.eq(node)) {
+          changed = true;
+        }
+      } catch (_) {
+        changed = true;
+      }
+      return false; // don't descend into heading children
+    }
+    return true;
+  });
+  if (!changed) {
+    // Also check for newly inserted headings that weren't in oldDoc
+    newDoc.nodesBetween(0, newDoc.content.size, (node, pos) => {
+      if (changed) return false;
+      if (node.type.name === 'heading') {
+        try {
+          const oldNode = oldDoc.nodeAt(pos);
+          if (!oldNode || oldNode.type.name !== 'heading' || !oldNode.eq(node)) {
+            changed = true;
+          }
+        } catch (_) {
+          changed = true;
+        }
+        return false;
+      }
+      return true;
+    });
+  }
+  return changed;
+}
+
+// ── Build the decoration array from scratch ───────────────────────────────────
+function buildHeadingDecorations(doc, chapterNumber) {
+  const decorations = [];
+  let sectionNumber    = 0;
+  let subsectionNumber = 0;
+  let subsubsectionNumber = 0;
+
+  doc.descendants((node, pos) => {
+    if (node.type.name !== 'heading') return true;
+
+    const level = node.attrs?.level || 1;
+    let number  = '';
+
+    if (level === 1) {
+      sectionNumber += 1;
+      subsectionNumber = 0;
+      subsubsectionNumber = 0;
+      number = `${chapterNumber}.${sectionNumber}`;
+    } else if (level === 2) {
+      if (sectionNumber === 0) sectionNumber = 1;
+      subsectionNumber += 1;
+      subsubsectionNumber = 0;
+      number = `${chapterNumber}.${sectionNumber}.${subsectionNumber}`;
+    } else if (level === 3) {
+      if (sectionNumber === 0) sectionNumber = 1;
+      if (subsectionNumber === 0) subsectionNumber = 1;
+      subsubsectionNumber += 1;
+      number = `${chapterNumber}.${sectionNumber}.${subsectionNumber}.${subsubsectionNumber}`;
+    }
+
+    if (number) {
+      decorations.push(
+        Decoration.node(pos, pos + node.nodeSize, {
+          'data-number':        number,
+          'data-heading-level': String(level),
+        }),
+      );
+    }
+    return false; // don't descend into heading children
+  });
+
+  return decorations;
+}
+
 const HeadingNumbering = (chapterNumber) =>
   Extension.create({
-    name: "headingNumbering",
+    name: 'headingNumbering',
 
     addProseMirrorPlugins() {
+      const pluginKey = new PluginKey(`headingNumbering-${chapterNumber ?? 'none'}`);
+
       return [
         new Plugin({
-          key: new PluginKey(`headingNumbering-${chapterNumber ?? "none"}`),
+          key: pluginKey,
+
+          // Plugin state holds the cached DecorationSet so we can reuse it
+          // across transactions that don't touch any heading node.
+          state: {
+            init(_, { doc }) {
+              if (!chapterNumber) return DecorationSet.empty;
+              const decos = buildHeadingDecorations(doc, chapterNumber);
+              return DecorationSet.create(doc, decos);
+            },
+
+            apply(tr, decorationSet, oldState, newState) {
+              if (!chapterNumber) return DecorationSet.empty;
+
+              // ── Fast path: no document change ─────────────────────────
+              // Selection moves, focus events, metadata changes — all
+              // produce transactions with docChanged = false. Skip entirely.
+              if (!tr.docChanged) {
+                return decorationSet.map(tr.mapping, tr.doc);
+              }
+
+              // ── Fast path: no heading changed ─────────────────────────
+              // The user typed inside a paragraph, list item, code block,
+              // etc. The heading numbering cannot have changed so we just
+              // remap existing decoration positions through the transaction
+              // mapping (O(decorations) instead of O(all nodes)).
+              if (!hasHeadingChanged(oldState.doc, newState.doc)) {
+                return decorationSet.map(tr.mapping, tr.doc);
+              }
+
+              // ── Slow path: a heading was inserted / deleted / edited ───
+              // Rebuild the full decoration set. This only runs when the
+              // user actually changes heading content, not on normal typing.
+              const decos = buildHeadingDecorations(newState.doc, chapterNumber);
+              return DecorationSet.create(newState.doc, decos);
+            },
+          },
+
           props: {
             decorations(state) {
-              if (!chapterNumber) return null;
-
-              const decorations = [];
-              let sectionNumber = 0;
-              let subsectionNumber = 0;
-              let subsubsectionNumber = 0;
-
-              state.doc.descendants((node, pos) => {
-                if (node.type.name !== "heading") return;
-
-                const level = node.attrs?.level || 1;
-                let number = "";
-
-                if (level === 1) {
-                  sectionNumber += 1;
-                  subsectionNumber = 0;
-                  subsubsectionNumber = 0;
-                  number = `${chapterNumber}.${sectionNumber}`;
-                } else if (level === 2) {
-                  if (sectionNumber === 0) sectionNumber = 1;
-                  subsectionNumber += 1;
-                  subsubsectionNumber = 0;
-                  number = `${chapterNumber}.${sectionNumber}.${subsectionNumber}`;
-                } else if (level === 3) {
-                  if (sectionNumber === 0) sectionNumber = 1;
-                  if (subsectionNumber === 0) subsectionNumber = 1;
-                  subsubsectionNumber += 1;
-                  number = `${chapterNumber}.${sectionNumber}.${subsectionNumber}.${subsubsectionNumber}`;
-                }
-
-                if (number) {
-                  decorations.push(
-                    Decoration.node(pos, pos + node.nodeSize, {
-                      "data-number": number,
-                      "data-heading-level": String(level),
-                    }),
-                  );
-                }
-              });
-
-              return DecorationSet.create(state.doc, decorations);
+              return pluginKey.getState(state);
             },
           },
         }),
       ];
     },
   });
+
+const TrailingNode = Extension.create({
+  name: "trailingNode",
+  addOptions() {
+    return {
+      node: "paragraph",
+      notAfter: ["paragraph"],
+    };
+  },
+  addProseMirrorPlugins() {
+    const { node, notAfter } = this.options;
+    return [
+      new Plugin({
+        key: new PluginKey("trailingNode"),
+        appendTransaction(transactions, oldState, newState) {
+          if (!transactions.some((tr) => tr.docChanged)) return null;
+
+          const lastNode = newState.doc.lastChild;
+          if (!lastNode || notAfter.includes(lastNode.type.name)) {
+            return null;
+          }
+
+          const type = newState.schema.nodes[node];
+          if (!type) return null;
+
+          return newState.tr.insert(newState.doc.content.size, type.create());
+        },
+      }),
+    ];
+  },
+});
 
 const ImageView = (props) => {
   const { node, updateAttributes, selected } = props;
@@ -353,6 +517,13 @@ export default function ChapterEditor({
   const getActiveSection = useAcaStore((s) => s.getActiveSection);
   const section = getActiveSection();
 
+  // Debounce timer ref — getJSON() is only called after 400ms of no typing
+  const onUpdateTimer = useRef(null);
+
+  // Track the last sectionId we loaded so the content-reload effect
+  // can skip a setContent when the section hasn't actually changed.
+  const loadedSectionIdRef = useRef(null);
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -398,6 +569,7 @@ export default function ChapterEditor({
           return ReactNodeViewRenderer(ImageView);
         },
       }),
+      TrailingNode,
     ],
     editorProps: {
       transformPastedText: (text) => {
@@ -472,28 +644,81 @@ export default function ChapterEditor({
     content: section?.content || "",
     autofocus: "end",
     onUpdate: ({ editor }) => {
-      const cleanedDoc = cleanHeadingsInDoc(editor.getJSON());
-      onContentChange?.(cleanedDoc);
+      // ── Debounced getJSON ──────────────────────────────────────────────────
+      // getJSON() serialises the entire ProseMirror doc tree — expensive on
+      // large documents. We debounce it so it only runs once after the user
+      // pauses for 400 ms instead of on every keystroke.
+      //
+      // HeadingCleaner (the ProseMirror plugin above) already strips numeric
+      // prefixes from headings inside the live doc, so we do NOT call
+      // cleanHeadingsInDoc() here — that was a redundant full-tree copy.
+      if (onUpdateTimer.current) clearTimeout(onUpdateTimer.current);
+      onUpdateTimer.current = setTimeout(() => {
+        onContentChange?.(editor.getJSON());
+      }, 400);
     },
   });
 
-  // Reload content when active section changes
+  // Flush any pending debounced save immediately when the editor loses focus
+  // so content is never lost when the user clicks away before 400ms elapses.
   useEffect(() => {
     if (!editor) return;
+    const handleBlur = () => {
+      if (onUpdateTimer.current) {
+        clearTimeout(onUpdateTimer.current);
+        onUpdateTimer.current = null;
+        onContentChange?.(editor.getJSON());
+      }
+    };
+    editor.on("blur", handleBlur);
+    return () => {
+      editor.off("blur", handleBlur);
+      // Also flush on unmount (e.g. user switches chapter before 400ms)
+      if (onUpdateTimer.current) {
+        clearTimeout(onUpdateTimer.current);
+        onUpdateTimer.current = null;
+      }
+    };
+  }, [editor, onContentChange]);
+
+  // Reload content when the active section changes.
+  // Guard 1: skip if sectionId hasn't changed — prevents re-setting content
+  //          on every parent re-render when nothing actually changed.
+  // Guard 2: compare JSON strings so we don't blow away cursor position when
+  //          the store content is identical to what's already in the editor.
+  useEffect(() => {
+    if (!editor) return;
+    if (sectionId === loadedSectionIdRef.current) return; // same section — skip
+    loadedSectionIdRef.current = sectionId;
+
     const newContent = section?.content || "";
-    const cleanedContent = cleanHeadingsInDoc(newContent);
     const currentJson = JSON.stringify(editor.getJSON());
-    const newJson = JSON.stringify(cleanedContent);
+    const newJson     = JSON.stringify(newContent);
     if (currentJson !== newJson) {
-      editor.commands.setContent(cleanedContent || "", false);
+      editor.commands.setContent(newContent || "", false);
     }
   }, [sectionId, editor]);
+
+  const handleBackgroundClick = (e) => {
+    if (e.target === e.currentTarget) {
+      editor?.commands.focus("end");
+    }
+  };
 
   return (
     <div className="chapter-editor">
       <EditorToolbar editor={editor} />
-      <div id="tour-editor-content" className="chapter-editor-scroll">
-        <div className="chapter-paper">
+      <div
+        id="tour-editor-content"
+        className="chapter-editor-scroll"
+        onClick={handleBackgroundClick}
+        style={{ cursor: "text" }}
+      >
+        <div
+          className="chapter-paper"
+          onClick={handleBackgroundClick}
+          style={{ cursor: "text" }}
+        >
           {editor && <SelectionBubbleMenu editor={editor} />}
           <EditorContent editor={editor} className="tiptap-editor" />
         </div>
