@@ -2,9 +2,9 @@
  * DocumentDrawer — Full-screen slide-in drawer for chapter / section navigation.
  * Matches the mockup: FRONT MATTER + CHAPTERS tree, Add Chapter button, close X.
  */
-import React, { useRef, useEffect, memo, useCallback } from 'react';
+import React, { useRef, useEffect, memo, useCallback, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Modal,
+  View, Text, TouchableOpacity, StyleSheet, BackHandler,
   ScrollView, Animated, Easing, Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -52,6 +52,19 @@ export function DocumentDrawer({
     }
   }, [visible]);
 
+  useEffect(() => {
+    if (visible) {
+      const onBackPress = () => {
+        onClose();
+        return true;
+      };
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      return () => {
+        subscription.remove();
+      };
+    }
+  }, [visible, onClose]);
+
   // Stable callbacks so DrawerItem memo is not bypassed by new arrow functions
   const handleSelectAndClose = useCallback((id: string) => {
     onSelect(id);
@@ -66,7 +79,7 @@ export function DocumentDrawer({
   const visibleFront = frontMatter.filter(s => !AUTO_SECTION_IDS.has(s.id));
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+    <View style={styles.container} pointerEvents={visible ? 'auto' : 'none'}>
       {/* Scrim */}
       <Animated.View style={[styles.scrim, { opacity }]}>
         <TouchableOpacity style={StyleSheet.absoluteFill} onPress={onClose} activeOpacity={1} />
@@ -126,7 +139,7 @@ export function DocumentDrawer({
           </TouchableOpacity>
         </ScrollView>
       </Animated.View>
-    </Modal>
+    </View>
   );
 }
 
@@ -190,6 +203,10 @@ function SectionGroupLabel({ label, style }: { label: string; style?: object }) 
 // ── Styles ─────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
+  container: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 999,
+  },
   scrim: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(44,42,38,0.5)',

@@ -18,8 +18,7 @@ export type FormatAction =
   | 'bold' | 'italic' | 'underline' | 'strike'
   | 'h1' | 'h2' | 'h3'
   | 'bulletList' | 'orderedList'
-  | 'image' | 'table' | 'codeBlock' | 'blockquote'
-  | 'formula' | 'code' | 'divider' | 'link' | 'imageCaption';
+  | 'blockquote' | 'code' | 'link';
 
 interface Props {
   visible: boolean;
@@ -28,14 +27,7 @@ interface Props {
   activeFormats?: FormatAction[];
 }
 
-// ── Section data ───────────────────────────────────────────────────────────────
 
-const TEXT_ACTIONS: Array<{ id: FormatAction; label: string; iconName: string; bold?: boolean }> = [
-  { id: 'bold',      label: 'Bold',      iconName: 'text',           bold: true },
-  { id: 'italic',    label: 'Italic',    iconName: 'text' },
-  { id: 'underline', label: 'Underline', iconName: 'remove-outline' },
-  { id: 'strike',    label: 'Strike',    iconName: 'cut-outline' },
-];
 
 const HEADING_ACTIONS = [
   { id: 'h1' as FormatAction, label: 'H₁', sub: 'Section' },
@@ -48,14 +40,9 @@ const LIST_ACTIONS = [
   { id: 'orderedList' as FormatAction, label: 'Numbered List', icon: 'list-circle-outline' },
 ];
 
-const INSERT_ACTIONS: Array<{ id: FormatAction; label: string; icon: string }> = [
-  { id: 'image',      label: 'Image',      icon: 'image-outline' },
-  { id: 'table',      label: 'Table',      icon: 'grid-outline' },
-  { id: 'codeBlock',  label: 'Code Block', icon: 'code-slash-outline' },
+const INSERT_ACTIONS: { id: FormatAction; label: string; icon: string }[] = [
   { id: 'blockquote', label: 'Quote',      icon: 'chatbox-outline' },
-  { id: 'formula',    label: 'Formula',    icon: 'calculator-outline' },
   { id: 'code',       label: 'Code',       icon: 'terminal-outline' },
-  { id: 'divider',    label: 'Divider',    icon: 'remove-outline' },
   { id: 'link',       label: 'Link',       icon: 'link-outline' },
 ];
 

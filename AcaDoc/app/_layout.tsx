@@ -7,6 +7,8 @@ import 'react-native-reanimated';
 
 import { useAuthStore } from '@/stores/authStore';
 import { C } from '@/constants/theme';
+import { GlobalEditor } from '@/components/GlobalEditor';
+import { GlobalDrawer } from '@/components/GlobalDrawer';
 
 function AuthGate() {
   const router   = useRouter();
@@ -44,7 +46,7 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <AuthGate />
-      <Stack screenOptions={{ headerShown: false }}>
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="editor/[projectId]" options={{ animation: 'slide_from_right', gestureEnabled: false }} />
@@ -52,6 +54,8 @@ export default function RootLayout() {
         <Stack.Screen name="pdf-preview/[projectId]" options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal' }} />
         <Stack.Screen name="new-project" options={{ animation: 'slide_from_bottom', presentation: 'modal' }} />
       </Stack>
+      <GlobalEditor />
+      <GlobalDrawer />
       <StatusBar style="dark" backgroundColor={C.surface} />
     </SafeAreaProvider>
   );

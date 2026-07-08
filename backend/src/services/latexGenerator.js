@@ -453,7 +453,7 @@ function convertNode(node, templateId) {
         const base64Data = src.split(",")[1];
         extractedImages.push({ filename, base64: base64Data });
         
-        return `\\begin{figure}[htbp]\n  \\centering\n  \\includegraphics[width=0.8\\textwidth]{${filename}}\n  \\caption{${caption}}\n\\end{figure}`;
+        return `\\begin{figure}[htbp]\n  \\centering\n  \\includegraphics[width=0.6\\textwidth,height=0.4\\textheight,keepaspectratio]{${filename}}\n  \\caption{${caption}}\n\\end{figure}`;
       } else if (src.startsWith("http")) {
         imageCounter++;
         let extension = "png";
@@ -466,7 +466,7 @@ function convertNode(node, templateId) {
         const filename = `${prefix}img_${imageCounter}.${extension}`;
         extractedImages.push({ filename, url: src });
         
-        return `\\begin{figure}[htbp]\n  \\centering\n  \\includegraphics[width=0.8\\textwidth]{${filename}}\n  \\caption{${caption}}\n\\end{figure}`;
+        return `\\begin{figure}[htbp]\n  \\centering\n  \\includegraphics[width=0.6\\textwidth,height=0.4\\textheight,keepaspectratio]{${filename}}\n  \\caption{${caption}}\n\\end{figure}`;
       }
       return "";
     }

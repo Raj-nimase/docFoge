@@ -250,3 +250,35 @@ export async function apiFetchTemplates(): Promise<any[]> {
 export async function apiHealth(): Promise<{ status: string }> {
   return apiFetch('/health', { timeoutMs: 5_000 });
 }
+
+// ── Images ────────────────────────────────────────────────────────────────────
+
+export async function apiUploadImage(fileUri: string): Promise<string> {
+  const token = getToken();
+  const formData = new FormData();
+
+  const filename = fileUri.split('/').pop() || 'upload.jpg';
+  const match = /\.(\w+)$/.exec(filename);
+  const type = match ? `image/${match[1]}` : `image/jpeg`;
+
+  formData.append('file', {
+    uri: fileUri,
+    name: filename,
+    type,
+  } as any);
+
+  const res = await fetch(`${API_BASE}/images/upload`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    body: formData,
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'Image upload failed');
+  }
+  return data.url;
+}
+
