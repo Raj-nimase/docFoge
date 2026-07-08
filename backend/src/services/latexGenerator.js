@@ -81,6 +81,7 @@ function buildPreamble(templateId, metadata) {
     "\\usepackage[normalem]{ulem}",
     "\\usepackage{hyperref}",
     "\\usepackage{enumitem}",
+    "\\usepackage{float}",
     "\\setlist{noitemsep, topsep=0.5em, parsep=0pt, partopsep=0pt}",
     "",
     isIEEE ? "\\renewcommand{\\arraystretch}{1.2}" : "\\renewcommand{\\arraystretch}{1.6}",
@@ -453,7 +454,7 @@ function convertNode(node, templateId) {
         const base64Data = src.split(",")[1];
         extractedImages.push({ filename, base64: base64Data });
         
-        return `\\begin{figure}[htbp]\n  \\centering\n  \\includegraphics[width=0.6\\textwidth,height=0.4\\textheight,keepaspectratio]{${filename}}\n  \\caption{${caption}}\n\\end{figure}`;
+        return `\\begin{figure}[H]\n  \\centering\n  \\includegraphics[width=0.6\\textwidth,height=0.4\\textheight,keepaspectratio]{${filename}}\n  \\caption{${caption}}\n\\end{figure}`;
       } else if (src.startsWith("http")) {
         imageCounter++;
         let extension = "png";
@@ -466,7 +467,7 @@ function convertNode(node, templateId) {
         const filename = `${prefix}img_${imageCounter}.${extension}`;
         extractedImages.push({ filename, url: src });
         
-        return `\\begin{figure}[htbp]\n  \\centering\n  \\includegraphics[width=0.6\\textwidth,height=0.4\\textheight,keepaspectratio]{${filename}}\n  \\caption{${caption}}\n\\end{figure}`;
+        return `\\begin{figure}[H]\n  \\centering\n  \\includegraphics[width=0.6\\textwidth,height=0.4\\textheight,keepaspectratio]{${filename}}\n  \\caption{${caption}}\n\\end{figure}`;
       }
       return "";
     }

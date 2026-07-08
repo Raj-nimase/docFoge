@@ -229,6 +229,7 @@ async function warmUp() {
 \\usepackage[normalem]{ulem}
 \\usepackage{hyperref}
 \\usepackage{enumitem}
+\\usepackage{float}
 \\usepackage{fancyhdr}
 \\begin{document}
 Warm-up compile.
