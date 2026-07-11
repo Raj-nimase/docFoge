@@ -270,6 +270,12 @@ export default function EditorScreen() {
   const updateSectionContent = useProjectStore(s => s.updateSectionContent);
   const updateMetadata     = useProjectStore(s => s.updateMetadata);
   const addChapter         = useProjectStore(s => s.addChapter);
+
+  const saveSectionContent = useCallback((sectionId: string, json: any) => {
+    if (!json) return;
+    const processed = mapTextToMath(json);
+    updateSectionContent(sectionId, processed);
+  }, [updateSectionContent]);
   const deleteChapter      = useProjectStore(s => s.deleteChapter);
   const renameChapter      = useProjectStore(s => s.renameChapter);
   const openProject        = useProjectStore(s => s.openProject);
@@ -421,9 +427,10 @@ export default function EditorScreen() {
     // Flush cached JSON for the outgoing chapter
     if (prevChapterIdRef.current && prevChapterIdRef.current !== activeChapterId) {
       if (cachedJsonRef.current) {
+        const processed = mapTextToMath(cachedJsonRef.current);
         useProjectStore.getState().updateSectionContent(
           prevChapterIdRef.current,
-          cachedJsonRef.current,
+          processed,
         );
         setSavedFlash(f => !f);
       }
@@ -437,7 +444,14 @@ export default function EditorScreen() {
       loadedChapterIdRef.current = activeChapterId;
       cachedJsonRef.current = null;
       const incoming = activeSection?.content;
-      editor?.setContent(incoming ?? '');
+      let processedIncoming: any = '';
+      try {
+        processedIncoming = incoming ? mapMathToText(incoming) : '';
+      } catch (e: any) {
+        console.error('mapMathToText failed on incoming:', e.message, e.stack);
+        processedIncoming = incoming;
+      }
+      editor?.setContent(processedIncoming);
     }
   }, [activeChapterId, editorState?.isReady, chapterNumber, editor]);
 
@@ -453,9 +467,9 @@ export default function EditorScreen() {
     if (!activeSection) return;
     // Use cached ref if available — avoids an extra bridge round-trip
     const json = cachedJsonRef.current ?? (await editor?.getJSON() as TiptapDoc);
-    updateSectionContent(activeSection.id, json);
+    saveSectionContent(activeSection.id, json);
     setSavedFlash(f => !f);
-  }, [activeSection, editor, updateSectionContent]);
+  }, [activeSection, editor, saveSectionContent]);
 
   useEffect(() => {
     setOnBlurCallback(handleEditorBlur);
@@ -477,6 +491,26 @@ export default function EditorScreen() {
       case 'orderedList': editor?.toggleOrderedList();      break;
       case 'blockquote':  editor?.toggleBlockquote();       break;
       case 'code':        editor?.toggleCode();             break;
+
+      case 'table':
+        if (editor) {
+          const defaultTable = createDefaultTableJSON();
+          const insertTableJS = `
+            (function() {
+              var pm = document.querySelector('.ProseMirror');
+              if (pm && pm.editor) {
+                pm.editor.chain().focus().setImage({
+                  src: '${TABLE_SRC}',
+                  alt: ${JSON.stringify(JSON.stringify(defaultTable))},
+                  title: 'Table Caption'
+                }).run();
+              }
+            })();
+            true;
+          `;
+          editor.injectJS(insertTableJS);
+        }
+        break;
 
       case 'link':
         Alert.prompt('Insert link', 'Enter URL', (url) => {
@@ -536,7 +570,7 @@ export default function EditorScreen() {
     if (activeSection) {
       // Use cached ref — no bridge round-trip needed before compile
       const json = cachedJsonRef.current ?? (await editor?.getJSON() as TiptapDoc);
-      updateSectionContent(activeSection.id, json);
+      saveSectionContent(activeSection.id, json);
     }
 
     // Read fresh project from store (avoids stale closure)
@@ -583,7 +617,7 @@ export default function EditorScreen() {
   // then switch immediately — no bridge round-trip before the ID changes.
   function switchToChapter(id: string) {
     if (activeSection && cachedJsonRef.current) {
-      updateSectionContent(activeSection.id, cachedJsonRef.current);
+      saveSectionContent(activeSection.id, cachedJsonRef.current);
     }
     setActiveChapter(id);
   }
@@ -674,8 +708,6 @@ export default function EditorScreen() {
                     label="U" active={editorState?.isUnderlineActive} />
                   <ToolbarBtn onPress={() => handleFormat('strike')}
                     label="S" active={editorState?.isStrikeActive} />
-                  <ToolbarBtn onPress={() => handleFormat('code')}
-                    iconName="terminal-outline" active={editorState?.isCodeActive} />
 
                   <View style={es.topToolbarDivider} />
 
@@ -919,3 +951,180 @@ const ms = StyleSheet.create({
   sheetScroll: { padding: S.lg },
   metaForm:    { gap: S.md },
 });
+
+// ── Math <-> image-carrier bridge ─────────────────────────────────────────────
+// TenTapStartKit's schema has no `math`/`codeBlock` node, so the editor can't hold
+// those types. We render formulas in the editor on the schema-valid `image` node
+// (src='katexmath', alt=<latex>, title='display'|'inline') — GlobalEditor's
+// imageNodeView draws KaTeX. Storage / the PDF backend keep real `math` nodes, so
+// we translate math<->image on load/save.
+const KATEX_SRC = 'katexmath';
+const TABLE_SRC = 'tiptaptable';
+
+function cleanMathLatex(latex: string): string {
+  let clean = (latex || '').trim();
+  while (true) {
+    const start = clean;
+    if (clean.startsWith('$$') && clean.endsWith('$$')) {
+      clean = clean.slice(2, -2).trim();
+    } else if (clean.startsWith('$') && clean.endsWith('$')) {
+      clean = clean.slice(1, -1).trim();
+    } else if (clean.startsWith('\\[') && clean.endsWith('\\]')) {
+      clean = clean.slice(2, -2).trim();
+    } else if (clean.startsWith('\\(') && clean.endsWith('\\)')) {
+      clean = clean.slice(2, -2).trim();
+    }
+    if (clean === start) break;
+  }
+  return clean;
+}
+
+function mathToImageNode(attrs: any): any {
+  const latex = cleanMathLatex(attrs?.latex || '');
+  return { type: 'image', attrs: { src: KATEX_SRC, alt: latex, title: attrs?.display ? 'display' : 'inline' } };
+}
+
+export function createDefaultTableJSON(rowsCount: number = 3, colsCount: number = 3): any {
+  const rows = [];
+  for (let r = 0; r < rowsCount; r++) {
+    const cells = [];
+    for (let c = 0; c < colsCount; c++) {
+      cells.push({
+        type: r === 0 ? 'tableHeader' : 'tableCell',
+        content: [
+          {
+            type: 'paragraph',
+            content: [
+              {
+                type: 'text',
+                text: r === 0 ? `Header ${c + 1}` : ''
+              }
+            ]
+          }
+        ]
+      });
+    }
+    rows.push({
+      type: 'tableRow',
+      content: cells
+    });
+  }
+  return {
+    type: 'table',
+    attrs: { caption: '' },
+    content: rows
+  };
+}
+
+function tableToImageNode(tableNode: any): any {
+  const caption = tableNode.attrs?.caption || '';
+  return {
+    type: 'image',
+    attrs: {
+      src: TABLE_SRC,
+      alt: JSON.stringify(tableNode),
+      title: caption
+    }
+  };
+}
+
+// Store → editor: math nodes become image-carrier nodes; any math inside a
+// paragraph is pulled out into its own block (image is block-level). Legacy
+// codeBlock nodes (from the earlier broken attempt) degrade to plain text.
+function storeToEditorContent(content: any[]): any[] {
+  if (!content || !Array.isArray(content)) return content;
+
+  const result: any[] = [];
+  for (const node of content) {
+    if (node.type === 'math') {
+      result.push(mathToImageNode(node.attrs));
+      continue;
+    }
+    if (node.type === 'table') {
+      result.push(tableToImageNode(node));
+      continue;
+    }
+    if (node.type === 'codeBlock') {
+      const text = (node.content || []).map((c: any) => c.text || '').join('\n');
+      result.push({ type: 'paragraph', content: text ? [{ type: 'text', text }] : [] });
+      continue;
+    }
+    if (node.type === 'listItem') {
+      let inner = storeToEditorContent(node.content || []);
+      // listItem schema is "paragraph block*" — must start with a paragraph.
+      if (!inner.length || inner[0].type !== 'paragraph') inner = [{ type: 'paragraph', content: [] }, ...inner];
+      result.push({ ...node, content: inner });
+      continue;
+    }
+    if (node.type === 'paragraph' || node.type === 'heading') {
+      const pc = node.content || [];
+      let run: any[] = [];
+      for (const child of pc) {
+        if (child.type === 'math') {
+          if (run.length) { result.push({ ...node, content: run }); run = []; }
+          result.push(mathToImageNode(child.attrs));
+        } else {
+          run.push(child);
+        }
+      }
+      if (run.length || !pc.length) result.push({ ...node, content: run });
+      continue;
+    }
+    if (node.content && Array.isArray(node.content)) {
+      result.push({ ...node, content: storeToEditorContent(node.content) });
+    } else {
+      result.push(node);
+    }
+  }
+  return result;
+}
+
+function mapMathToText(node: any): any {
+  if (!node) return node;
+  if (node.content && Array.isArray(node.content)) {
+    return { ...node, content: storeToEditorContent(node.content) };
+  }
+  return node;
+}
+
+// Editor → store: image-carrier math nodes convert back to real `math` nodes so
+// the LaTeX backend keeps working. Everything else passes through untouched.
+function editorToStoreContent(content: any[]): any[] {
+  if (!content || !Array.isArray(content)) return content;
+  return content.map((node: any) => {
+    if (node.type === 'image' && node.attrs?.src === KATEX_SRC) {
+      const cleanLatex = cleanMathLatex(node.attrs.alt || '');
+      return { type: 'math', attrs: { latex: cleanLatex, display: node.attrs.title === 'display' } };
+    }
+    if (node.type === 'image' && node.attrs?.src === TABLE_SRC) {
+      try {
+        const tableNode = JSON.parse(node.attrs.alt);
+        if (tableNode.attrs) {
+          tableNode.attrs.caption = node.attrs.title || '';
+        } else {
+          tableNode.attrs = { caption: node.attrs.title || '' };
+        }
+        return tableNode;
+      } catch (e) {
+        return {
+          type: 'table',
+          attrs: { caption: node.attrs.title || '' },
+          content: []
+        };
+      }
+    }
+    if (node.content && Array.isArray(node.content)) {
+      return { ...node, content: editorToStoreContent(node.content) };
+    }
+    return node;
+  });
+}
+
+function mapTextToMath(node: any): any {
+  if (!node) return node;
+  if (node.content && Array.isArray(node.content)) {
+    return { ...node, content: editorToStoreContent(node.content) };
+  }
+  return node;
+}
+

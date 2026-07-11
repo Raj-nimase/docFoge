@@ -19,6 +19,9 @@ import {
   isSingleFormula,
   handleRichPaste,
   transformMathHtml,
+  sanitizeLatex,
+  convUnicodeMath,
+  stripUnknownChars,
 } from "@/hooks/useMathPaste/useMathPaste";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
@@ -37,31 +40,40 @@ import SelectionBubbleMenu from "@/features/Editor/components/SelectionBubbleMen
 const MathView = ({ node, updateAttributes, selected }) => {
   const containerRef = useRef(null);
   const rawLatex = node.attrs.latex || "";
+  const display = node.attrs.display;
 
-  // Auto-convert common symbols to LaTeX for rendering
-  const latex = rawLatex
-    .replace(/²/g, "^2")
-    .replace(/³/g, "^3")
-    .replace(/θ/g, "\\theta ")
-    .replace(/π/g, "\\pi ")
-    .replace(/α/g, "\\alpha ")
-    .replace(/β/g, "\\beta ")
-    .replace(/γ/g, "\\gamma ")
-    .replace(/δ/g, "\\delta ")
-    .replace(/λ/g, "\\lambda ");
-
+  // Render with throwOnError:true so a bad glyph throws instead of drawing a red
+  // error; retry with progressively-cleaned input — strip invisible junk, then
+  // convert known Unicode math symbols to LaTeX (θ→\theta, ×→\times), then strip
+  // whatever non-ASCII remains. A stray character (the middle dot in "N·m", a
+  // U+FFFD '?') can therefore never leave a red KaTeX error in the document.
   useEffect(() => {
-    if (containerRef.current) {
-      try {
-        katex.render(latex || "formula", containerRef.current, {
-          throwOnError: false,
-          displayMode: node.attrs.display,
-        });
-      } catch (e) {
-        containerRef.current.textContent = latex;
-      }
+    const el = containerRef.current;
+    if (!el) return;
+
+    if (!rawLatex.trim()) {
+      try { katex.render("\\text{formula}", el, { throwOnError: false, displayMode: display }); }
+      catch (e) { el.textContent = ""; }
+      return;
     }
-  }, [latex, node.attrs.display]);
+
+    const s1 = sanitizeLatex(rawLatex);
+    const s2 = convUnicodeMath(s1);
+    const s3 = stripUnknownChars(s2);
+    const candidates = [rawLatex, s1, s2, s3];
+    let prev = null;
+    for (const cand of candidates) {
+      if (cand === prev) continue; // no change ⇒ same result, skip
+      prev = cand;
+      try {
+        katex.render(cand, el, { throwOnError: true, displayMode: display });
+        return;
+      } catch (e) { /* try the next, more-aggressively-cleaned candidate */ }
+    }
+    // Everything failed to parse — show the cleaned source without a red error.
+    try { katex.render(s3, el, { throwOnError: false, displayMode: display }); }
+    catch (e2) { el.textContent = s3; }
+  }, [rawLatex, display]);
 
   return (
     <NodeViewWrapper
@@ -95,17 +107,16 @@ const MathExtension = Node.create({
         tag: "span[data-latex]",
         getAttrs: (element) => ({
           latex: element.getAttribute("data-latex") || "",
+          display: element.getAttribute("data-display") === "true",
         }),
       },
     ];
   },
 
   renderHTML({ HTMLAttributes }) {
-    return [
-      "span",
-      mergeAttributes(HTMLAttributes, { "data-latex": HTMLAttributes.latex }),
-      0,
-    ];
+    const extra = { "data-latex": HTMLAttributes.latex };
+    if (HTMLAttributes.display) extra["data-display"] = "true";
+    return ["span", mergeAttributes(HTMLAttributes, extra), 0];
   },
 
   addNodeView() {
@@ -573,7 +584,8 @@ export default function ChapterEditor({
     ],
     editorProps: {
       transformPastedText: (text) => {
-        return text.replace(/^[-*_]{3,}\s*$/gm, "");
+        // Strip horizontal line markdown and trailing newlines so blank lines don't accumulate
+        return text.replace(/^[^\S\n]*[-*_]{3,}[^\S\n]*\n?/gm, "");
       },
       transformPastedHTML: (html) => {
         return transformMathHtml(html);

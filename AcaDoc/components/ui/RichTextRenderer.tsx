@@ -11,6 +11,7 @@
 import React from 'react';
 import { View, Text, Image, ScrollView, StyleSheet, ImageErrorEventData, NativeSyntheticEvent } from 'react-native';
 import { C, F, S, R } from '@/constants/theme';
+import { MathWebView } from './MathWebView';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -31,6 +32,24 @@ interface Props {
   textColor?: string;
 }
 
+function cleanMathLatex(latex: string): string {
+  let clean = (latex || '').trim();
+  while (true) {
+    const start = clean;
+    if (clean.startsWith('$$') && clean.endsWith('$$')) {
+      clean = clean.slice(2, -2).trim();
+    } else if (clean.startsWith('$') && clean.endsWith('$')) {
+      clean = clean.slice(1, -1).trim();
+    } else if (clean.startsWith('\\[') && clean.endsWith('\\]')) {
+      clean = clean.slice(2, -2).trim();
+    } else if (clean.startsWith('\\(') && clean.endsWith('\\)')) {
+      clean = clean.slice(2, -2).trim();
+    }
+    if (clean === start) break;
+  }
+  return clean;
+}
+
 // ── Inline text renderer ──────────────────────────────────────────────────────
 
 function InlineText({ nodes, baseStyle }: { nodes: TiptapNode[]; baseStyle?: object }) {
@@ -41,7 +60,8 @@ function InlineText({ nodes, baseStyle }: { nodes: TiptapNode[]; baseStyle?: obj
 
         // Math inline: render as styled text showing the LaTeX
         if (node.type === 'math') {
-          const latex = node.attrs?.latex ?? '';
+          const rawLatex = node.attrs?.latex ?? '';
+          const latex = cleanMathLatex(rawLatex);
           return (
             <Text key={i} style={st.mathInline}>
               {latex ? `$${latex}$` : '$…$'}
@@ -171,20 +191,18 @@ function ImageRenderer({ node }: { node: TiptapNode }) {
 }
 
 // ── Math display renderer ─────────────────────────────────────────────────────
-// We can't run KaTeX in React Native without a WebView.
-// Show the raw LaTeX in a styled code-like box so it's readable and
-// the user understands what will render in the final PDF.
+// We render display math equations inside a transparent native WebView with KaTeX.
 
 function MathDisplay({ node }: { node: TiptapNode }) {
-  const latex   = node.attrs?.latex ?? '';
+  const rawLatex = node.attrs?.latex ?? '';
+  const latex   = cleanMathLatex(rawLatex);
   const display = node.attrs?.display === true;
 
   if (display) {
     return (
       <View style={st.mathDisplayWrap}>
-        <View style={st.mathDisplayInner}>
-          <Text style={st.mathDisplayLabel}>∑ LaTeX formula</Text>
-          <Text style={st.mathDisplayCode}>{latex || '…'}</Text>
+        <View style={[st.mathDisplayInner, { backgroundColor: 'transparent', padding: 0, borderLeftWidth: 0 }]}>
+          <MathWebView latex={latex} display={true} color={C.text} />
         </View>
       </View>
     );

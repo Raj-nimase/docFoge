@@ -18,7 +18,7 @@ export type FormatAction =
   | 'bold' | 'italic' | 'underline' | 'strike'
   | 'h1' | 'h2' | 'h3'
   | 'bulletList' | 'orderedList'
-  | 'blockquote' | 'code' | 'link';
+  | 'blockquote' | 'code' | 'link' | 'table';
 
 interface Props {
   visible: boolean;
@@ -44,6 +44,7 @@ const INSERT_ACTIONS: { id: FormatAction; label: string; icon: string }[] = [
   { id: 'blockquote', label: 'Quote',      icon: 'chatbox-outline' },
   { id: 'code',       label: 'Code',       icon: 'terminal-outline' },
   { id: 'link',       label: 'Link',       icon: 'link-outline' },
+  { id: 'table',      label: 'Table',      icon: 'grid-outline' },
 ];
 
 // ── Sheet component ────────────────────────────────────────────────────────────

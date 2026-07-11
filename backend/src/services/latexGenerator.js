@@ -411,8 +411,24 @@ function convertNode(node, templateId) {
     case "math": {
       const latex = node.attrs && node.attrs.latex ? node.attrs.latex : "";
       const isDisplay = node.attrs && node.attrs.display === true;
+      
+      let clean = (latex || "").trim();
+      while (true) {
+        const start = clean;
+        if (clean.startsWith("$$") && clean.endsWith("$$")) {
+          clean = clean.slice(2, -2).trim();
+        } else if (clean.startsWith("$") && clean.endsWith("$")) {
+          clean = clean.slice(1, -1).trim();
+        } else if (clean.startsWith("\\[") && clean.endsWith("\\]")) {
+          clean = clean.slice(2, -2).trim();
+        } else if (clean.startsWith("\\(") && clean.endsWith("\\)")) {
+          clean = clean.slice(2, -2).trim();
+        }
+        if (clean === start) break;
+      }
+
       // Sanitize: strip emojis, unicode whitespace, then map symbols
-      const cleanLatex = (latex || "")
+      const cleanLatex = clean
         .replace(/[\u{1F000}-\u{1FFFF}]/gu, "")
         .replace(/[\u00A0\u2002-\u200A\u202F\u205F]/g, " ")
         .replace(/[\u200B\u200C\u200D\uFEFF]/g, "")
@@ -437,10 +453,12 @@ function convertNode(node, templateId) {
         .replace(/≠/g, "\\neq")
         .replace(/²/g, "^2")
         .replace(/³/g, "^3");
+      // Strip all unescaped $ signs from the clean LaTeX to prevent nested math mode compilation errors
+      const safeLatex = cleanLatex.replace(/\\\$|(\$)/g, (match, group1) => group1 ? '' : match);
       if (isDisplay) {
-        return `\\[ ${cleanLatex} \\]`;
+        return `\\[ ${safeLatex} \\]`;
       }
-      return `$${cleanLatex}$`;
+      return `$${safeLatex}$`;
     }
 
     case "image": {
