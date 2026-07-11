@@ -516,7 +516,7 @@ function convertTable(tableNode, templateId) {
   const isIEEE = templateId === "ieee-paper";
   const tableWidth = isIEEE ? "\\columnwidth" : "\\textwidth";
 
-  let tex = `\\begin{table}[htbp]\n\\centering\n`;
+  let tex = `\\begin{table}[H]\n\\centering\n`;
   tex += `\\begin{tabularx}{${tableWidth}}{| ${colSpec} |}\n\\hline\n`;
 
   for (const row of rows) {
