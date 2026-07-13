@@ -255,14 +255,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const cIdx = fIdx === -1 ? project.chapters.findIndex(c => c.id === sectionId) : -1;
     if (fIdx === -1 && cIdx === -1) return;
 
+    const processedContent = prepareStoreContent(content);
+
     const updatedProject: Project = {
       ...project,
       updatedAt: Date.now(),
       frontMatter: fIdx !== -1
-        ? project.frontMatter.map((s, i) => i === fIdx ? { ...s, content } : s)
+        ? project.frontMatter.map((s, i) => i === fIdx ? { ...s, content: processedContent } : s)
         : project.frontMatter,
       chapters: cIdx !== -1
-        ? project.chapters.map((c, i) => i === cIdx ? { ...c, content } : c)
+        ? project.chapters.map((c, i) => i === cIdx ? { ...c, content: processedContent } : c)
         : project.chapters,
     };
 
@@ -286,3 +288,65 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     scheduleSync(updatedProject);
   },
 }));
+
+// ── Store Content Converters (image carriers → real nodes) ─────────────────────
+const KATEX_SRC = 'katexmath';
+const TABLE_SRC = 'tiptaptable';
+
+function cleanMathLatex(latex: string): string {
+  let clean = (latex || '').trim();
+  while (true) {
+    const start = clean;
+    if (clean.startsWith('$$') && clean.endsWith('$$')) {
+      clean = clean.slice(2, -2).trim();
+    } else if (clean.startsWith('$') && clean.endsWith('$')) {
+      clean = clean.slice(1, -1).trim();
+    } else if (clean.startsWith('\\[') && clean.endsWith('\\]')) {
+      clean = clean.slice(2, -2).trim();
+    } else if (clean.startsWith('\\(') && clean.endsWith('\\)')) {
+      clean = clean.slice(2, -2).trim();
+    }
+    if (clean === start) break;
+  }
+  return clean;
+}
+
+function editorToStoreContent(content: any[]): any[] {
+  if (!content || !Array.isArray(content)) return content;
+  return content.map((node: any) => {
+    if (node.type === 'image' && node.attrs?.src === KATEX_SRC) {
+      const cleanLatex = cleanMathLatex(node.attrs.alt || '');
+      return { type: 'math', attrs: { latex: cleanLatex, display: node.attrs.title === 'display' } };
+    }
+    if (node.type === 'image' && node.attrs?.src === TABLE_SRC) {
+      try {
+        const tableNode = JSON.parse(node.attrs.alt);
+        if (tableNode.attrs) {
+          tableNode.attrs.caption = node.attrs.title || '';
+        } else {
+          tableNode.attrs = { caption: node.attrs.title || '' };
+        }
+        return tableNode;
+      } catch (e) {
+        return {
+          type: 'table',
+          attrs: { caption: node.attrs.title || '' },
+          content: []
+        };
+      }
+    }
+    if (node.content && Array.isArray(node.content)) {
+      return { ...node, content: editorToStoreContent(node.content) };
+    }
+    return node;
+  });
+}
+
+function prepareStoreContent(content: any): any {
+  if (!content) return content;
+  if (content.content && Array.isArray(content.content)) {
+    return { ...content, content: editorToStoreContent(content.content) };
+  }
+  return content;
+}
+

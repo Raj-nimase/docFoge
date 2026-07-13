@@ -2232,6 +2232,87 @@ body {
   border: 0;
 }
 
+/* ── Math Inline Editor ──────────────────────────────────────────────────────── */
+.math-view-wrapper.math-editing {
+  display: block;
+}
+
+.math-edit-panel {
+  border: 1px solid var(--border-strong, #c5c0b8);
+  border-radius: 6px;
+  background: var(--surface-alt, #faf9f6);
+  padding: 10px;
+  margin: 6px 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  min-width: 280px;
+}
+
+.math-edit-preview {
+  text-align: center;
+  padding: 8px 4px;
+  min-height: 28px;
+  border-bottom: 1px solid var(--border, #e8e4de);
+  margin-bottom: 8px;
+  font-family: KaTeX_Main, 'Times New Roman', serif;
+}
+
+.math-edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #e8e4de);
+  border-radius: 4px;
+  background: var(--bg, #fff);
+  color: var(--text, #2c2a26);
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.math-edit-input:focus {
+  border-color: var(--accent, #5d5a54);
+}
+
+.math-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.math-edit-btn {
+  font-size: 12px;
+  padding: 4px 14px;
+  border-radius: 4px;
+  border: 1px solid var(--border, #e8e4de);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.math-edit-cancel {
+  background: transparent;
+  color: var(--text-muted, #8a857c);
+}
+
+.math-edit-cancel:hover {
+  background: var(--surface-hover, #f0ede8);
+}
+
+.math-edit-save {
+  background: var(--accent, #5d5a54);
+  color: #fff;
+  border-color: var(--accent, #5d5a54);
+}
+
+.math-edit-save:hover {
+  background: var(--accent-hover, #4a4740);
+}
+
+
 .math-input-popover {
   position: absolute;
   top: 100%;

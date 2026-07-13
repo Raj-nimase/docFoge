@@ -4,11 +4,16 @@ import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
+import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
 
 import { useAuthStore } from '@/stores/authStore';
 import { C } from '@/constants/theme';
 import { GlobalEditor } from '@/components/GlobalEditor';
 import { GlobalDrawer } from '@/components/GlobalDrawer';
+
+// Prevent splash screen auto hide to allow fonts to load
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function AuthGate() {
   const router   = useRouter();
@@ -33,9 +38,27 @@ export default function RootLayout() {
   const bootstrap = useAuthStore(s => s.bootstrap);
   const status    = useAuthStore(s => s.status);
 
+  const [fontsLoaded] = useFonts({
+    'PlayfairDisplay-Bold': require('../assets/fonts/PlayfairDisplay-Bold.ttf'),
+    'HankenGrotesk-Regular': require('../assets/fonts/HankenGrotesk-Regular.ttf'),
+    'HankenGrotesk-Medium': require('../assets/fonts/HankenGrotesk-Medium.ttf'),
+    'HankenGrotesk-SemiBold': require('../assets/fonts/HankenGrotesk-SemiBold.ttf'),
+    'HankenGrotesk-Bold': require('../assets/fonts/HankenGrotesk-Bold.ttf'),
+    'Inter-Regular': require('../assets/fonts/Inter-Regular.ttf'),
+    'Inter-SemiBold': require('../assets/fonts/Inter-SemiBold.ttf'),
+    'JetBrainsMono-Medium': require('../assets/fonts/JetBrainsMono-Medium.ttf'),
+    'Merriweather-Bold': require('../assets/fonts/Merriweather-Bold.ttf'),
+  });
+
   useEffect(() => { bootstrap(); }, []);
 
-  if (status === 'loading') {
+  useEffect(() => {
+    if (fontsLoaded) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [fontsLoaded]);
+
+  if (status === 'loading' || !fontsLoaded) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg }}>
         <ActivityIndicator size="large" color={C.accent} />

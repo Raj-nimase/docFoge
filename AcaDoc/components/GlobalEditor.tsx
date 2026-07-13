@@ -603,9 +603,14 @@ const imageCaptionJS = `
 
         var L = blocks[i].latex.replace(/\\s+/g, ' ').trim();
         if (!L) continue;
+        if (/^[-*_]{3,}$/.test(L)) continue;
         var dfn = mmDefLine(L);
         if (dfn) { out.push(mmImageMath(dfn.lhs + ' = \\\\text{' + mmTextEscape(dfn.rhs) + '}', false)); continue; }
-        var isMath = mmMathScore(L) && (mmWordy(L) <= 5 || L.indexOf(':') !== -1);
+        // Word-count caps so a large prose block can never collapse into one
+        // formula: <=5 words normally, or <=8 for a "Label: formula" line (the
+        // colon case is split into label + math below). Without the cap, any long
+        // block containing a ':' plus a stray \\frac scored as a single math node.
+        var isMath = mmMathScore(L) && (mmWordy(L) <= 5 || (L.indexOf(':') !== -1 && mmWordy(L) <= 8));
         var hm = /^h([1-6])$/.exec(blocks[i].tag);
         if (hm && !isMath) { out.push({ type: 'heading', attrs: { level: Math.min(+hm[1], 3) }, content: [{ type: 'text', text: mmCleanText(L) }] }); continue; }
         if (isMath) {
@@ -652,8 +657,15 @@ const imageCaptionJS = `
       var out = [], list = null, headingSeen = false;
       function flushList() { if (list && list.content.length) out.push(list); list = null; }
 
-      var isTableRow = function(l) { return /^\\s*\\|.*\\|\\s*$/.test(l); };
-      var isTableSep = function(l) { return /^\\s*\\|?[\\s:|-]*-[\\s:|-]*\\|?\\s*$/.test(l) && l.indexOf('-') !== -1; };
+      function stripHeadingPrefix(text) {
+        var cleaned = mmCleanText(text);
+        cleaned = cleaned.replace(/^\s*\d+(?:\.\d+)*[.)]\s+/, "");
+        cleaned = cleaned.replace(/^\s*(?:[a-zA-Z]|[iI][vV]|[vV]?[iI]{1,3}|[iI][xX])\s*[.)]\s+/, "");
+        return cleaned.trim();
+      }
+
+      var isTableRow = function(l) { return l.indexOf('|') !== -1 && l.trim().length > 1; };
+      var isTableSep = function(l) { return /^\\s*\\|?[\\s:|\\-]*-[\\s:|\\-]*\\|?\\s*$/.test(l) && l.indexOf('-') !== -1; };
       var splitTableRow = function(l) {
         var s = l.trim();
         if (s.startsWith('|')) s = s.slice(1);
@@ -765,25 +777,36 @@ const imageCaptionJS = `
         }
 
         var hm = trimmed.match(/^(#{1,6})\\s+(.*)$/);
-        if (hm) { flushList(); out.push({ type: 'heading', attrs: { level: Math.min(hm[1].length, 3) }, content: [{ type: 'text', text: mmCleanText(hm[2]) }] }); i++; continue; }
+        if (hm) {
+          flushList();
+          var cleaned = stripHeadingPrefix(hm[2]);
+          out.push({ type: 'heading', attrs: { level: Math.min(hm[1].length, 3) }, content: [{ type: 'text', text: cleaned }] });
+          i++;
+          continue;
+        }
 
-        var bm = line.match(/^\\s*[*\\-+]\\s+(.*)$/);
-        if (bm) {
-          var bItem = bm[1].trim();
-          // A "- X = description" legend item (e.g. "- T = Torque (N·m)",
-          // "- \cos\phi = Power factor") reads as a definition, not a real list
-          // entry. Emit it as its own KaTeX line (X = \text{description}) like a
-          // standalone def line, ending the current bullet list. Without this the
-          // '=' legend under a "Where:" block stayed as raw bulleted text.
-          var bdef = mmDefLine(bItem);
+        var lm = line.match(/^(\s*)(?:([*\-+•◦▪])|(\d+)[.)]|([a-zA-Z])[.)])\s+(.*)$/);
+        if (lm) {
+          var type = lm[2] ? 'bulletList' : 'orderedList';
+          var content = lm[5].trim();
+
+          var bdef = mmDefLine(content);
           if (bdef) {
             flushList();
             out.push(mmImageMath(bdef.lhs + ' = \\\\text{' + mmTextEscape(bdef.rhs) + '}', false));
             i++; continue;
           }
-          if (!list) list = { type: 'bulletList', content: [] };
-          var itemNodes = mmInlineToNodes(bItem);
-          if (!itemNodes.length || itemNodes[0].type !== 'paragraph') { itemNodes.unshift({ type: 'paragraph', content: [] }); }
+
+          if (list && list.type !== type) {
+            flushList();
+          }
+          if (!list) {
+            list = { type: type, content: [] };
+          }
+          var itemNodes = mmInlineToNodes(content);
+          if (!itemNodes.length || itemNodes[0].type !== 'paragraph') {
+            itemNodes.unshift({ type: 'paragraph', content: [] });
+          }
           list.content.push({ type: 'listItem', content: itemNodes });
           i++; continue;
         }
@@ -799,13 +822,18 @@ const imageCaptionJS = `
         var numHead = trimmed.match(/^\\d+[.)]\\s+(.+)$/);
         var headText = (numHead ? numHead[1] : trimmed).trim();
         var headWords = headText.split(/\\s+/).length;
+        
+        var isExcludedWord = /^(where|or|and|given|hence|therefore|thus|then|but|so|if|let|with|for|to|now|here)$/i.test(headText);
+        var startsCorrectly = /^[A-Z0-9]/.test(headText);
+        
         if (prevBlank && nextBlank && headText.length <= 64 && headWords <= 8 &&
+            startsCorrectly && !isExcludedWord &&
             /[A-Za-z]/.test(headText) && !/[.:,;]$/.test(headText) &&
             !mmLooksMathy(headText) && !mmMathScore(headText) && !mmDefLine(trimmed)) {
           flushList();
           var lvl = numHead ? 3 : (headingSeen ? 2 : 1);
           headingSeen = true;
-          out.push({ type: 'heading', attrs: { level: lvl }, content: [{ type: 'text', text: mmCleanText(headText) }] });
+          out.push({ type: 'heading', attrs: { level: lvl }, content: [{ type: 'text', text: stripHeadingPrefix(headText) }] });
           i++; continue;
         }
 
@@ -821,9 +849,30 @@ const imageCaptionJS = `
           i++; continue;
         }
 
+        // Single-line square-bracket display math: "[ F_1 = 2\\times\\frac{..}{..} ]".
+        // Some sources wrap a whole display equation in bare [ ] on ONE line (not a
+        // fence). mmImageMath only strips \\[ \\], so bare brackets used to render
+        // literally around the formula — the F_1 failure. Strip them and render as
+        // centered display math. Guard on real LaTeX (\\, ^, _) so markdown links
+        // "[label](url)" and prose interval notation are left untouched.
+        var sq = trimmed.match(/^\\[\\s*([\\s\\S]+?)\\s*\\]$/);
+        if (sq && mmHasLatex(sq[1]) && trimmed.indexOf('](') === -1) {
+          flushList();
+          out.push(mmImageMath(mmConvUnicode(sq[1]).replace(/\\s+/g, ' ').trim(), true));
+          i++; continue;
+        }
+
         flushList();
         var convLine = mmConvUnicode(trimmed);
-        var hasExplicitLatex = /\\\\[a-zA-Z]+/.test(trimmed) && mmWordy(trimmed) <= 10;
+        var isFullyWrapped = 
+          (trimmed.startsWith('$$') && trimmed.endsWith('$$')) ||
+          (trimmed.startsWith('$') && trimmed.endsWith('$')) ||
+          (trimmed.startsWith('\\\\(') && trimmed.endsWith('\\\\)')) ||
+          (trimmed.startsWith('\\\\[') && trimmed.endsWith('\\\\]'));
+        var hasInlineDelim = trimmed.indexOf('$') !== -1 || trimmed.indexOf('\\\\(') !== -1 || trimmed.indexOf('\\\\[') !== -1;
+        var isMixedLine = hasInlineDelim && !isFullyWrapped;
+
+        var hasExplicitLatex = /\\\\[a-zA-Z]+/.test(trimmed) && mmWordy(trimmed) <= 10 && !isMixedLine;
         if (hasExplicitLatex || (convLine !== trimmed && mmMathScore(convLine) && mmWordy(convLine) <= 4)) {
           out.push(mmImageMath(convLine.replace(/\\s+/g, ' ').trim(), true));
           i++; continue;
@@ -837,7 +886,19 @@ const imageCaptionJS = `
     }
 
     function mmLooksMathy(text) {
-      return /[\\\\]/.test(text) || /[\\^_]\\s*[{0-9a-zA-Z]/.test(text) || /\\$\\$?[^$]+\\$\\$?/.test(text) || /[⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉]/.test(text) || /[√∑∏∫∞±≤≥≠×÷∈∂]/.test(text);
+      var hasTable = text && text.indexOf('|') !== -1 && /^\\s*\\|?[\\s:|\\-]*-[\\s:|\\-]*\\|?\\s*$/m.test(text);
+      return hasTable || /[\\\\]/.test(text) || /[\\^_]\\s*[{0-9a-zA-Z]/.test(text) || /\\$\\$?[^$]+\\$\\$?/.test(text) || /[⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉]/.test(text) || /[√∑∏∫∞±≤≥≠×÷∈∂]/.test(text);
+    }
+
+    // Should we prefer the rich-HTML path over the (more robust) text path? ONLY
+    // when the HTML carries STRUCTURAL math markup that text/plain would lose —
+    // real <sup>/<sub>, MathML (<math>, <mfrac>…), or a KaTeX/MathJax container.
+    // A bare unicode glyph (², ×, ≤ …) must NOT trigger it: those survive in
+    // text/plain and the text parser handles them, whereas routing a whole pasted
+    // markdown doc through mmParseHtml collapses it into one giant KaTeX node
+    // (the "everything became a formula" bug — a single "R²" was enough).
+    function mmHtmlHasMath(html) {
+      return !!html && /<sup[\\s>]|<sub[\\s>]|<math|<m(?:frac|sup|subsup|sub|sqrt|root|row)[\\s>]|katex|mathjax|mjx-/i.test(html);
     }
 
     // Read the pasted payload out of a paste event. The clipboard is only
@@ -852,8 +913,7 @@ const imageCaptionJS = `
     // gate in mmProcessPaste so the capture listener only takes over pastes we'd
     // actually transform, and lets ordinary prose fall through to the default.
     function mmWillConvert(html, text) {
-      return (html && /<sup|<sub|<math|[⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉√∑∫∞±≤≥≠×÷]/.test(html)) ||
-             (text && mmLooksMathy(text));
+      return mmHtmlHasMath(html) || (text && mmLooksMathy(text));
     }
 
     // Core: parse a pasted payload into nodes (paragraphs / headings / image-
@@ -862,9 +922,10 @@ const imageCaptionJS = `
     function mmProcessPaste(pmView, html, text) {
       try {
         var nodesJSON = null;
-        // Prefer rich HTML: it keeps <sup>/<sub>/MathML and real symbols that
-        // text/plain mangles (² drops to its own line, glyphs become '?').
-        if (html && /<sup|<sub|<math|[⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉√∑∫∞±≤≥≠×÷]/.test(html)) {
+        // Prefer rich HTML ONLY when it has structural math markup (see
+        // mmHtmlHasMath); otherwise the text path is more robust and won't collapse
+        // a whole markdown doc into a single formula.
+        if (mmHtmlHasMath(html)) {
           nodesJSON = mmParseHtml(html);
         }
         if (!nodesJSON || !nodesJSON.length) {

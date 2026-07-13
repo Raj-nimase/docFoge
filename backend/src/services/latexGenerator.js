@@ -464,6 +464,22 @@ function convertNode(node, templateId) {
     case "image": {
       const src = node.attrs && node.attrs.src ? node.attrs.src : "";
       const caption = node.attrs && node.attrs.title ? escapeLatex(node.attrs.title) : "Figure";
+      if (src === "katexmath") {
+        // Unconverted image carrier from mobile editor — render as math
+        const latex = node.attrs && node.attrs.alt ? node.attrs.alt : "";
+        const safeLatex = sanitizeLatex(latex);
+        const isDisplay = node.attrs && node.attrs.title === "display";
+        return isDisplay ? `\\[ ${safeLatex} \\]` : `$${safeLatex}$`;
+      }
+      if (src === "tiptaptable") {
+        // Unconverted table carrier — try to parse and render
+        try {
+          const tableNode = JSON.parse(node.attrs.alt || "{}");
+          return renderNode(tableNode);
+        } catch (e) {
+          return "";
+        }
+      }
       if (src.startsWith("data:image")) {
         imageCounter++;
         const extension = src.split(";")[0].split("/")[1] || "png";

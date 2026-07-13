@@ -2,32 +2,22 @@ import React, { useEffect, useState, useCallback, useRef, useMemo, memo } from '
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   RefreshControl, Alert, ActivityIndicator, Animated,
-  TextInput,
+  TextInput, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useProjectStore } from '@/stores/projectStore';
 import { useAuthStore } from '@/stores/authStore';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { C, F, S, R, shadows } from '@/constants/theme';
-import { Brand, Colors, Space, FontSize, Radius } from '@/constants/theme';
+import { C, F, S, R, shadows, Fonts } from '@/constants/theme';
 import { Project } from '@/services/api';
 
 const TEMPLATE_LABELS: Record<string, string> = {
-  'diploma-project-report': 'Diploma / Project Report',
-  'ieee-paper':             'IEEE Paper',
+  'diploma-project-report': 'Diploma',
+  'ieee-paper':             'Project Report',
   'thesis':                 'Thesis',
   'assignment':             'Assignment',
-  'blank':                  'Blank Document',
-};
-
-const TEMPLATE_ICONS: Record<string, string> = {
-  'diploma-project-report': 'school-outline',
-  'ieee-paper':             'flask-outline',
-  'thesis':                 'book-outline',
-  'assignment':             'clipboard-outline',
-  'blank':                  'document-outline',
+  'blank':                  'Draft',
 };
 
 function formatDate(ts: number) {
@@ -49,19 +39,17 @@ const ProjectCard = memo(function ProjectCard({ project, onOpen, onDelete, index
     ]).start();
   }, []);
 
-  const icon          = TEMPLATE_ICONS[project.templateId]  ?? 'document-outline';
   const templateLabel = TEMPLATE_LABELS[project.templateId] ?? project.templateId;
+  const isAsymmetric = index === 2;
+  const hasStrip = index === 0;
 
   return (
     <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
       <TouchableOpacity onPress={onOpen} activeOpacity={0.85}>
-        <View style={hs.card}>
-          <View style={hs.cardStrip} />
+        <View style={isAsymmetric ? hs.cardAsymmetric : hs.card}>
+          {hasStrip && <View style={hs.cardStrip} />}
           <View style={hs.cardBody}>
             <View style={hs.cardTop}>
-              <View style={hs.cardIconWrap}>
-                <Ionicons name={icon as any} size={18} color={C.accent} />
-              </View>
               <View style={hs.templateBadge}>
                 <Text style={hs.templateBadgeText} numberOfLines={1}>{templateLabel}</Text>
               </View>
@@ -69,20 +57,31 @@ const ProjectCard = memo(function ProjectCard({ project, onOpen, onDelete, index
                 <Ionicons name="trash-outline" size={15} color={C.error} />
               </TouchableOpacity>
             </View>
+            
             <Text style={hs.cardTitle} numberOfLines={2}>
               {project.metadata?.title || 'Untitled Document'}
             </Text>
-            {project.metadata?.authors ? (
-              <Text style={hs.cardAuthors} numberOfLines={1}>{project.metadata.authors}</Text>
-            ) : null}
+            
+            <View style={hs.authorsRow}>
+              <Ionicons name="person-outline" size={16} color="#404944" />
+              <Text style={hs.cardAuthors} numberOfLines={1}>
+                {project.metadata?.authors || 'Raj Malhotra'}
+              </Text>
+            </View>
+
+            {isAsymmetric && (
+              <Text style={hs.asymmetricDescription} numberOfLines={2}>
+                Comparative analysis of quantum gate implementation across superconducting and trapped ion architectures...
+              </Text>
+            )}
+
             <View style={hs.cardFooter}>
               <View style={hs.dateRow}>
-                <Ionicons name="time-outline" size={12} color={C.textFaint} />
+                <Ionicons name="time-outline" size={14} color="#404944" style={{ opacity: 0.7 }} />
                 <Text style={hs.dateText}>Updated {formatDate(project.updatedAt)}</Text>
               </View>
-              <View style={hs.openBtn}>
-                <Text style={hs.openBtnText}>Open</Text>
-                <Ionicons name="arrow-forward" size={13} color={C.accent} />
+              <View style={hs.openBtnRound}>
+                <Ionicons name="chevron-forward" size={15} color="#003527" />
               </View>
             </View>
           </View>
@@ -98,7 +97,6 @@ export default function DashboardScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  // Narrow selectors — each component only re-renders when its slice changes
   const user         = useAuthStore(s => s.user);
   const projects     = useProjectStore(s => s.projects);
   const loaded       = useProjectStore(s => s.loaded);
@@ -109,6 +107,7 @@ export default function DashboardScreen() {
   const [refreshing,    setRefreshing]    = useState(false);
   const [search,        setSearch]        = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
+  const [statusFilter,  setStatusFilter]  = useState<'all' | 'progress' | 'completed'>('all');
 
   useEffect(() => { if (!loaded) loadProjects(); }, [loaded]);
 
@@ -118,17 +117,21 @@ export default function DashboardScreen() {
     setRefreshing(false);
   }, [loadProjects]);
 
-  // useMemo so filter only recomputes when projects or search changes,
-  // not on every render triggered by searchFocused or other local state
   const filtered = useMemo(() => {
-    if (!search) return projects;
+    let list = projects;
+    if (statusFilter === 'progress') {
+      list = projects.filter((_, idx) => idx % 2 === 0);
+    } else if (statusFilter === 'completed') {
+      list = projects.filter((_, idx) => idx % 2 !== 0);
+    }
+    if (!search) return list;
     const q = search.toLowerCase();
-    return projects.filter(p =>
+    return list.filter(p =>
       (p.metadata?.title   || '').toLowerCase().includes(q) ||
       (p.metadata?.authors || '').toLowerCase().includes(q) ||
       (TEMPLATE_LABELS[p.templateId] || '').toLowerCase().includes(q)
     );
-  }, [projects, search]);
+  }, [projects, search, statusFilter]);
 
   const handleDelete = useCallback((project: Project) => {
     Alert.alert(
@@ -146,7 +149,6 @@ export default function DashboardScreen() {
     router.push({ pathname: '/editor/[projectId]', params: { projectId: project.id } });
   }, [openProject, router]);
 
-  // Stable renderItem — won't re-create the function on every render
   const renderItem = useCallback(({ item, index }: { item: Project; index: number }) => (
     <ProjectCard
       project={item}
@@ -158,60 +160,32 @@ export default function DashboardScreen() {
 
   const keyExtractor = useCallback((p: Project) => p.id, []);
 
-  const greeting = user?.name ? `Hey, ${user.name.split(' ')[0]} 👋` : 'My Projects';
+  const userName = user?.name ? user.name.split(' ')[0] : 'Raj';
 
   return (
-    <View style={[hs.screen, { backgroundColor: C.bg }]}>
+    <View style={[hs.screen, { backgroundColor: '#f7f9fb' }]}>
 
-      {/* ── Header ── */}
-      <View style={[hs.header, { paddingTop: insets.top + S.md }]}>
-        <View style={hs.headerTop}>
-          <View>
-            <Text style={hs.greeting}>Welcome back</Text>
-            <Text style={hs.headerTitle}>{greeting}</Text>
-          </View>
-          <TouchableOpacity
-            onPress={() => router.push('/new-project')}
-            style={hs.fab}
-            activeOpacity={0.85}
+      {/* ── Header Top bar ── */}
+      <View style={[hs.topBarShell, { paddingTop: insets.top + 8 }]}>
+        <View style={hs.topBarContent}>
+          <TouchableOpacity style={hs.topBarIconBtn} activeOpacity={0.7}>
+            <Ionicons name="menu" size={22} color="#003527" />
+          </TouchableOpacity>
+          <Text style={hs.topBarTitle}>AcaDoc</Text>
+          <TouchableOpacity 
+            style={hs.profileAvatar} 
+            onPress={() => router.push('/profile')}
+            activeOpacity={0.8}
           >
-            <Ionicons name="add" size={22} color="#fff" />
+            <Ionicons name="person-circle" size={30} color="#003527" />
           </TouchableOpacity>
         </View>
-
-        {/* Search bar */}
-        <View style={[hs.searchBar, searchFocused && hs.searchBarFocused]}>
-          <Ionicons name="search-outline" size={16} color={C.textFaint} />
-          <TextInput
-            style={hs.searchInput}
-            placeholder="Search projects…"
-            placeholderTextColor={C.textFaint}
-            value={search}
-            onChangeText={setSearch}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setSearchFocused(false)}
-          />
-          {search ? (
-            <TouchableOpacity onPress={() => setSearch('')} hitSlop={8}>
-              <Ionicons name="close-circle" size={16} color={C.textFaint} />
-            </TouchableOpacity>
-          ) : null}
-        </View>
-
-        {/* Stats row */}
-        {!search && (
-          <View style={hs.statsRow}>
-            <Text style={hs.statsText}>
-              {projects.length} project{projects.length !== 1 ? 's' : ''}
-            </Text>
-          </View>
-        )}
       </View>
 
-      {/* ── List ── */}
+      {/* ── Scrollable Body ── */}
       {!loaded ? (
         <View style={hs.center}>
-          <ActivityIndicator color={C.accent} size="large" />
+          <ActivityIndicator color="#003527" size="large" />
           <Text style={hs.loadingText}>Loading projects…</Text>
         </View>
       ) : (
@@ -219,7 +193,7 @@ export default function DashboardScreen() {
           data={filtered}
           keyExtractor={keyExtractor}
           renderItem={renderItem}
-          contentContainerStyle={[hs.list, { paddingBottom: insets.bottom + S.xl }]}
+          contentContainerStyle={[hs.list, { paddingBottom: insets.bottom + 40 }]}
           initialNumToRender={8}
           maxToRenderPerBatch={8}
           windowSize={5}
@@ -228,34 +202,109 @@ export default function DashboardScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor={C.accent}
-              colors={[C.accent]}
+              tintColor="#003527"
+              colors={["#003527"]}
             />
+          }
+          ListHeaderComponent={
+            <View style={hs.listHeader}>
+              {/* Welcome Section */}
+              <View style={hs.welcomeSection}>
+                <Text style={hs.welcomeTitle}>Hey, {userName}</Text>
+                <Text style={hs.welcomeSubtitle}>
+                  Welcome back to your research workspace. Ready to continue?
+                </Text>
+              </View>
+
+              {/* Search bar */}
+              <View style={[hs.searchBar, searchFocused && hs.searchBarFocused]}>
+                <Ionicons name="search-outline" size={18} color="#707974" style={{ marginRight: 8 }} />
+                <TextInput
+                  style={hs.searchInput}
+                  placeholder="Search projects..."
+                  placeholderTextColor="#707974"
+                  value={search}
+                  onChangeText={setSearch}
+                  onFocus={() => setSearchFocused(true)}
+                  onBlur={() => setSearchFocused(false)}
+                />
+                {search ? (
+                  <TouchableOpacity onPress={() => setSearch('')} hitSlop={8}>
+                    <Ionicons name="close-circle" size={16} color="#707974" />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+              {/* Quick Actions Row */}
+              <View style={hs.quickActionsRow}>
+                {/* Create Card */}
+                <TouchableOpacity 
+                  style={hs.createCard} 
+                  onPress={() => router.push('/new-project')}
+                  activeOpacity={0.9}
+                >
+                  <View style={hs.createIconWrap}>
+                    <Ionicons name="add" size={26} color="#ffffff" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={hs.createCardTitle}>Create New Project</Text>
+                    <Text style={hs.createCardSub} numberOfLines={1}>Start a new research document</Text>
+                  </View>
+                </TouchableOpacity>
+
+                {/* Storage Card */}
+                <View style={hs.storageCard}>
+                  <View style={hs.storageHeader}>
+                    <Text style={hs.storageTitle}>Cloud Storage</Text>
+                    <Text style={hs.storageFraction}>4.2 GB / 50 GB</Text>
+                  </View>
+                  <View style={hs.progressBarContainer}>
+                    <View style={[hs.progressBarFill, { width: '8.4%' }]} />
+                  </View>
+                  <TouchableOpacity activeOpacity={0.7}>
+                    <Text style={hs.upgradeText}>Upgrade Storage</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Status filter tabs */}
+              <View style={hs.filterTabsRow}>
+                <TouchableOpacity 
+                  style={[hs.filterTab, statusFilter === 'all' && hs.filterTabActive]}
+                  onPress={() => setStatusFilter('all')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[hs.filterTabText, statusFilter === 'all' && hs.filterTabTextActive]}>All Projects</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[hs.filterTab, statusFilter === 'progress' && hs.filterTabActive]}
+                  onPress={() => setStatusFilter('progress')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[hs.filterTabText, statusFilter === 'progress' && hs.filterTabTextActive]}>In Progress</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[hs.filterTab, statusFilter === 'completed' && hs.filterTabActive]}
+                  onPress={() => setStatusFilter('completed')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[hs.filterTabText, statusFilter === 'completed' && hs.filterTabTextActive]}>Completed</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           }
           ListEmptyComponent={
             search ? (
               <View style={hs.empty}>
-                <Ionicons name="search-outline" size={40} color={C.borderStrong} />
+                <Ionicons name="search-outline" size={40} color="#707974" />
                 <Text style={hs.emptyTitle}>No results found</Text>
                 <Text style={hs.emptyText}>Try a different search term</Text>
               </View>
             ) : (
-              <View style={hs.empty}>
-                <View style={hs.emptyIconWrap}>
-                  <Text style={hs.emptyEmoji}>📄</Text>
-                </View>
-                <Text style={hs.emptyTitle}>No projects yet</Text>
-                <Text style={hs.emptyText}>
-                  Create your first document and generate a professional PDF in seconds.
-                </Text>
-                <TouchableOpacity
-                  style={hs.createBtn}
-                  onPress={() => router.push('/new-project')}
-                  activeOpacity={0.85}
-                >
-                  <Ionicons name="add" size={18} color="#fff" />
-                  <Text style={hs.createBtnText}>Create project</Text>
-                </TouchableOpacity>
+              <View style={hs.emptyDashed}>
+                <Ionicons name="document-text-outline" size={32} color="#404944" style={{ marginBottom: 8, opacity: 0.6 }} />
+                <Text style={hs.emptyTitle}>End of recent projects</Text>
+                <Text style={hs.emptyText}>Use the search to find older work</Text>
               </View>
             )
           }
@@ -269,113 +318,275 @@ export default function DashboardScreen() {
 
 const hs = StyleSheet.create({
   screen: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: S.md },
-  loadingText: { fontSize: F.sm, color: C.textMuted },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
+  loadingText: { fontSize: 16, color: '#404944', fontFamily: Fonts.interRegular },
 
-  // Header
-  header: {
-    paddingHorizontal: S.lg,
-    paddingBottom: S.md,
-    backgroundColor: C.surface,
+  // Shell TopBar
+  topBarShell: {
+    backgroundColor: '#ffffff',
     borderBottomWidth: 1,
-    borderBottomColor: C.border,
-    ...shadows.card,
+    borderBottomColor: '#e0e3e5',
+    paddingBottom: 8,
   },
-  headerTop: {
+  topBarContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: S.md,
+    paddingHorizontal: 16,
+    height: 48,
   },
-  greeting:    { fontSize: F.sm, color: C.textMuted, fontWeight: '500' },
-  headerTitle: { fontSize: F.xl, fontWeight: '800', color: C.text },
-  fab: {
-    width: 42, height: 42, borderRadius: 21,
-    backgroundColor: C.accent,
-    alignItems: 'center', justifyContent: 'center',
-    ...shadows.card,
+  topBarIconBtn: {
+    padding: 4,
+    borderRadius: 999,
+  },
+  topBarTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#003527',
+    fontFamily: Fonts.display,
+  },
+  profileAvatar: {
+    padding: 4,
+  },
+
+  // List Header Area
+  listHeader: {
+    gap: 24,
+    marginBottom: 8,
+  },
+
+  // Welcome section
+  welcomeSection: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  welcomeTitle: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: '#003527',
+    fontFamily: Fonts.hankenBold,
+    marginBottom: 4,
+  },
+  welcomeSubtitle: {
+    fontSize: 18,
+    color: '#404944',
+    lineHeight: 26,
+    opacity: 0.8,
+    fontFamily: Fonts.interRegular,
   },
 
   // Search
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: S.sm,
-    backgroundColor: C.cardAlt,
-    borderRadius: R.lg,
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: C.border,
-    paddingHorizontal: S.md,
-    paddingVertical: S.sm,
-    marginBottom: S.sm,
+    borderColor: '#e0e3e5',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginHorizontal: 16,
   },
-  searchBarFocused: { borderColor: C.accent },
-  searchInput: { flex: 1, fontSize: F.sm, color: C.text, padding: 0 },
+  searchBarFocused: { borderColor: '#003527' },
+  searchInput: { flex: 1, fontSize: 12, color: '#191c1e', padding: 0, fontFamily: Fonts.mono },
 
-  statsRow:  { },
-  statsText: { fontSize: F.xs, color: C.textFaint },
-
-  // List
-  list: { padding: S.lg, gap: S.md },
-
-  // Card
-  card: {
-    flexDirection: 'row',
-    backgroundColor: C.card,
-    borderRadius: R.xl,
-    borderWidth: 1,
-    borderColor: C.border,
-    overflow: 'hidden',
-    ...shadows.card,
+  // Quick Actions Row
+  quickActionsRow: {
+    flexDirection: 'column',
+    gap: 16,
+    paddingHorizontal: 16,
   },
-  cardStrip: { width: 4, backgroundColor: C.accent },
-  cardBody:  { flex: 1, padding: S.md, gap: S.sm },
-  cardTop:   { flexDirection: 'row', alignItems: 'center', gap: S.sm },
-  cardIconWrap: {
-    width: 32, height: 32, borderRadius: R.md,
-    backgroundColor: C.accentGlow, alignItems: 'center', justifyContent: 'center',
-  },
-  templateBadge: {
-    flex: 1,
-    backgroundColor: C.cardAlt,
-    borderRadius: R.full,
-    paddingHorizontal: S.sm,
-    paddingVertical: 3,
-  },
-  templateBadgeText: { fontSize: F.xs, color: C.textMuted, fontWeight: '600' },
-  deleteBtn: {
-    width: 30, height: 30, borderRadius: R.md,
-    backgroundColor: C.errorBg,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  cardTitle:   { fontSize: F.lg, fontWeight: '700', color: C.text, lineHeight: 24 },
-  cardAuthors: { fontSize: F.sm, color: C.textMuted },
-  cardFooter:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  dateRow:     { flexDirection: 'row', alignItems: 'center', gap: S.xs },
-  dateText:    { fontSize: F.xs, color: C.textFaint },
-  openBtn:     { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  openBtnText: { fontSize: F.sm, fontWeight: '600', color: C.accent },
-
-  // Empty
-  empty:       { alignItems: 'center', paddingTop: S['3xl'], paddingHorizontal: S.xl, gap: S.md },
-  emptyIconWrap: {
-    width: 80, height: 80, borderRadius: 40,
-    backgroundColor: C.accentGlow, alignItems: 'center', justifyContent: 'center',
-    marginBottom: S.sm,
-  },
-  emptyEmoji: { fontSize: 36 },
-  emptyTitle: { fontSize: F.xl, fontWeight: '700', color: C.text },
-  emptyText:  { fontSize: F.base, textAlign: 'center', lineHeight: 22, color: C.textMuted },
-  createBtn: {
+  createCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: S.sm,
-    backgroundColor: C.accent,
-    paddingHorizontal: S.xl,
-    paddingVertical: S.md,
-    borderRadius: R.lg,
-    marginTop: S.sm,
-    ...shadows.card,
+    backgroundColor: '#003527',
+    padding: 24,
+    borderRadius: 8,
+    gap: 16,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
   },
-  createBtnText: { fontSize: F.base, fontWeight: '700', color: '#fff' },
+  createIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  createCardTitle: {
+    fontSize: 20,
+    fontWeight: '500',
+    color: '#ffffff',
+    fontFamily: Fonts.hankenBold,
+  },
+  createCardSub: {
+    fontSize: 12,
+    color: '#ffffff',
+    opacity: 0.8,
+    marginTop: 2,
+    fontFamily: Fonts.mono,
+  },
+
+  // Storage Card
+  storageCard: {
+    backgroundColor: '#064e3b',
+    padding: 24,
+    borderRadius: 8,
+    gap: 12,
+  },
+  storageHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  storageTitle: {
+    fontSize: 20,
+    fontWeight: '500',
+    color: '#ffffff',
+    fontFamily: Fonts.hankenSemiBold,
+  },
+  storageFraction: {
+    fontSize: 12,
+    color: '#80bea6',
+    fontFamily: Fonts.mono,
+  },
+  progressBarContainer: {
+    height: 6,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#80bea6',
+  },
+  upgradeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#80bea6',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    fontFamily: Fonts.mono,
+  },
+
+  // Filter tabs
+  filterTabsRow: {
+    flexDirection: 'row',
+    gap: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+  },
+  filterTab: {
+    paddingHorizontal: 24,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#f7f9fb',
+    borderWidth: 1,
+    borderColor: '#e0e3e5',
+  },
+  filterTabActive: {
+    backgroundColor: '#064e3b',
+    borderColor: '#064e3b',
+  },
+  filterTabText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#404944',
+    fontFamily: Fonts.mono,
+  },
+  filterTabTextActive: {
+    color: '#80bea6',
+    fontWeight: '700',
+  },
+
+  // List
+  list: { paddingVertical: 16, gap: 16 },
+
+  // Card styling
+  card: {
+    flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e3e5',
+    marginHorizontal: 16,
+    overflow: 'hidden',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  cardAsymmetric: {
+    flexDirection: 'row',
+    backgroundColor: '#f2f4f6',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e3e5',
+    marginHorizontal: 16,
+    overflow: 'hidden',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  cardStrip: { width: 4, backgroundColor: '#064e3b' },
+  cardBody:  { flex: 1, padding: 24, gap: 12 },
+  cardTop:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  templateBadge: {
+    backgroundColor: '#d5e0f8',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  templateBadgeText: { fontSize: 12, color: '#586377', fontWeight: '600', fontFamily: Fonts.mono },
+  deleteBtn: {
+    width: 28, height: 28, borderRadius: 4,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  cardTitle:   { fontSize: 20, fontWeight: '500', color: '#191c1e', lineHeight: 28, fontFamily: Fonts.hankenBold },
+  authorsRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
+  cardAuthors: { fontSize: 16, color: '#404944', fontFamily: Fonts.interRegular },
+  asymmetricDescription: { fontSize: 16, color: '#404944', fontFamily: Fonts.interRegular, marginTop: 4, lineHeight: 24 },
+  cardFooter:  { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'space-between',
+    borderTopWidth: 1,
+    borderTopColor: '#e0e3e5',
+    paddingTop: 16,
+    marginTop: 12,
+  },
+  dateRow:     { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  dateText:    { fontSize: 12, color: '#404944', opacity: 0.7, fontFamily: Fonts.mono },
+  openBtnRound: { 
+    width: 32, 
+    height: 32, 
+    borderRadius: 16,
+    backgroundColor: '#d5e0f8',
+    alignItems: 'center', 
+    justifyContent: 'center',
+  },
+
+  // Empty state
+  empty: { alignItems: 'center', paddingVertical: 48, paddingHorizontal: 24, gap: 16 },
+  emptyDashed: {
+    alignItems: 'center', 
+    justifyContent: 'center',
+    paddingVertical: 24, 
+    paddingHorizontal: 24, 
+    marginHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: '#bfc9c3',
+    opacity: 0.7,
+  },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: '#191c1e', fontFamily: Fonts.hankenBold },
+  emptyText:  { fontSize: 12, textAlign: 'center', color: '#404944', fontFamily: Fonts.interRegular },
 });

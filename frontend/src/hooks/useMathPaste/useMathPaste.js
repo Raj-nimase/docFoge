@@ -411,9 +411,10 @@ export function looksLikeList(text) {
   return lines.some((line) => {
     return (
       /^[^\S\n]*[•◦▪*\-][^\S\n]+/.test(line) ||
-      /^[^\S\n]*\d+\.[^\S\n]+/.test(line) ||
+      /^[^\S\n]*\d+[.)][^\S\n]+/.test(line) ||
       /^[^\S\n]*\d+\.[a-zA-Z]/.test(line) ||
-      /^[^\S\n]*\d+(?:\.\d+)+[^\S\n]+/.test(line)
+      /^[^\S\n]*\d+(?:\.\d+)+[^\S\n]+/.test(line) ||
+      /^[^\S\n]*[a-zA-Z][.)][^\S\n]+/.test(line)
     );
   });
 }
@@ -583,23 +584,31 @@ function mmInlineToHtml(raw) {
 // Does this plain text read like a markdown-with-math formula sheet worth
 // parsing with parseMarkdownMathToHtml? (Has a display fence, or is multi-line
 // LaTeX with a legend line.)
+function stripHeadingPrefix(text) {
+  let cleaned = mmCleanText(text);
+  // Strip digit prefixes followed by dot/paren and space: e.g. "1. ", "4.1. ", "10.2) "
+  cleaned = cleaned.replace(/^\s*\d+(?:\.\d+)*[.)]\s+/, "");
+  // Strip letter/roman prefixes followed by dot/paren and space: e.g. "a) ", "A. ", "ix) ", "IV. "
+  cleaned = cleaned.replace(/^\s*(?:[a-zA-Z]|[iI][vV]|[vV]?[iI]{1,3}|[iI][xX])\s*[.)]\s+/, "");
+  return cleaned.trim();
+}
+
 export function looksLikeMarkdownMath(text) {
   if (!text) return false;
   const hasFence = /^[ \t]*(\[|\\\[|\$\$)[ \t]*$/m.test(text);
-  const multiline = /\n/.test(text);
+  const hasHeading = /^[ \t]*#+\s+/m.test(text);
+  const hasList = /^[\s]*[•◦▪*\-]\s|^\s*\d+[.)]\s|^\s*[a-zA-Z][.)]\s/m.test(text);
   const hasLatexCmd = /\\[a-zA-Z]/.test(text);
-  const hasDef = /^[ \t]*[-*]?[ \t]*[^\n=]{1,24}=[^\n]{1,80}$/m.test(text);
-  // A markdown pipe table (row + dashed separator) is also worth structured
-  // parsing so it renders as a real <table> rather than raw "| … |" text.
-  const hasTable = /^\s*\|.*\|\s*$/m.test(text) && /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/m.test(text);
-  return hasFence || hasTable || (multiline && hasLatexCmd && hasDef);
+  const hasInlineMath = /\$[^\n$]+\$/m.test(text) || /\\\(.+\\\)/m.test(text);
+  const hasTable = text.includes('|') && /^\s*\|?[\s:|\\-]*-[\s:|\\-]*\|?\s*$/m.test(text);
+  return hasFence || hasTable || hasHeading || ((hasList || hasInlineMath || hasLatexCmd) && text.includes("="));
 }
 
 // ── Markdown pipe-table helpers ──────────────────────────────────────────────
-// A table row is "| … | … |"; the separator row is only dashes/colons/pipes/
+// A table row contains at least one pipe character; the separator row is only dashes/colons/pipes/
 // spaces and contains at least one dash ("| --- | :--: |").
-function isTableRow(l) { return /^\s*\|.*\|\s*$/.test(l); }
-function isTableSep(l) { return /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(l) && l.includes("-"); }
+function isTableRow(l) { return l.includes('|') && l.trim().length > 1; }
+function isTableSep(l) { return /^\s*\|?[\s:|\\-]*-[\s:|\\-]*\|?\s*$/.test(l) && l.includes("-"); }
 // Split "| a | b |" into ["a", "b"] (drop the leading/trailing pipe).
 function splitTableRow(l) {
   let s = l.trim();
@@ -612,14 +621,15 @@ function splitTableRow(l) {
 export function parseMarkdownMathToHtml(text) {
   const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
   let html = "";
-  let listItems = null;
   let headingSeen = false;
 
+  // Stack tracks open lists: { type: 'ul' | 'ol', indent: number }
+  const listStack = [];
+
   const flushList = () => {
-    if (listItems && listItems.length) {
-      html += "<ul>" + listItems.map((li) => `<li><p>${li || ""}</p></li>`).join("") + "</ul>";
+    while (listStack.length > 0) {
+      html += `</li></${listStack.pop().type}>`;
     }
-    listItems = null;
   };
 
   let i = 0;
@@ -678,17 +688,54 @@ export function parseMarkdownMathToHtml(text) {
 
     // Markdown heading
     const hm = trimmed.match(/^(#{1,6})\s+(.*)$/);
-    if (hm) { flushList(); const lvl = Math.min(hm[1].length, 3); html += `<h${lvl}>${escapeHtml(mmCleanText(hm[2]))}</h${lvl}>`; i++; continue; }
+    if (hm) {
+      flushList();
+      const lvl = Math.min(hm[1].length, 3);
+      const cleaned = stripHeadingPrefix(hm[2]);
+      html += `<h${lvl}>${escapeHtml(cleaned)}</h${lvl}>`;
+      i++;
+      continue;
+    }
 
-    // Bullet — a "- X = description" item becomes its own math line
-    const bm = line.match(/^\s*[*\-+]\s+(.*)$/);
-    if (bm) {
-      const bItem = bm[1].trim();
-      const bdef = mmDefLine(bItem);
-      if (bdef) { flushList(); html += `<p>${mathSpan(bdef.lhs + " = \\text{" + mmTextEscape(bdef.rhs) + "}", false)}</p>`; i++; continue; }
-      if (!listItems) listItems = [];
-      listItems.push(mmInlineToHtml(bItem));
-      i++; continue;
+    // List item check (bullet, number, or letter/roman list)
+    const lm = line.match(/^(\s*)(?:([*\-+•◦▪])|(\d+)[.)]|([a-zA-Z])[.)])\s+(.*)$/);
+    if (lm) {
+      const indent = lm[1].replace(/\t/g, "    ").length;
+      const type = lm[2] ? "ul" : "ol";
+      const content = lm[5].trim();
+
+      const bdef = mmDefLine(content);
+      if (bdef) {
+        flushList();
+        html += `<p>${mathSpan(bdef.lhs + " = \\text{" + mmTextEscape(bdef.rhs) + "}", false)}</p>`;
+        i++;
+        continue;
+      }
+
+      // Close deeper lists
+      while (listStack.length > 0 && indent < listStack[listStack.length - 1].indent) {
+        html += `</li></${listStack.pop().type}>`;
+      }
+
+      if (listStack.length === 0 || indent > listStack[listStack.length - 1].indent) {
+        // Open new list
+        listStack.push({ type, indent });
+        html += `<${type}>`;
+      } else if (indent === listStack[listStack.length - 1].indent) {
+        if (listStack[listStack.length - 1].type !== type) {
+          // Different type at same level: close old list, open new
+          html += `</li></${listStack.pop().type}>`;
+          listStack.push({ type, indent });
+          html += `<${type}>`;
+        } else {
+          // Same list, close the previous item
+          html += `</li>`;
+        }
+      }
+
+      html += `<li><p>${mmInlineToHtml(content)}</p>`;
+      i++;
+      continue;
     }
 
     // Plain-text heading detection (stands alone, short, no sentence ending)
@@ -697,13 +744,18 @@ export function parseMarkdownMathToHtml(text) {
     const numHead = trimmed.match(/^\d+[.)]\s+(.+)$/);
     const headText = (numHead ? numHead[1] : trimmed).trim();
     const headWords = headText.split(/\s+/).length;
+    
+    const isExcludedWord = /^(where|or|and|given|hence|therefore|thus|then|but|so|if|let|with|for|to|now|here)$/i.test(headText);
+    const startsCorrectly = /^[A-Z0-9]/.test(headText);
+    
     if (prevBlank && nextBlank && headText.length <= 64 && headWords <= 8 &&
+      startsCorrectly && !isExcludedWord &&
       /[A-Za-z]/.test(headText) && !/[.:,;]$/.test(headText) &&
       !mmLooksMathy(headText) && !mmMathScore(headText) && !mmDefLine(trimmed)) {
       flushList();
       const lvl = numHead ? 3 : headingSeen ? 2 : 1;
       headingSeen = true;
-      html += `<h${lvl}>${escapeHtml(mmCleanText(headText))}</h${lvl}>`;
+      html += `<h${lvl}>${escapeHtml(stripHeadingPrefix(headText))}</h${lvl}>`;
       i++; continue;
     }
 
@@ -714,7 +766,15 @@ export function parseMarkdownMathToHtml(text) {
     // Explicit-LaTeX line → display math
     flushList();
     const convLine = convUnicodeMath(trimmed);
-    const hasExplicitLatex = /\\[a-zA-Z]+/.test(trimmed) && mmWordy(trimmed) <= 10;
+    const isFullyWrapped = 
+      (trimmed.startsWith('$$') && trimmed.endsWith('$$')) ||
+      (trimmed.startsWith('$') && trimmed.endsWith('$')) ||
+      (trimmed.startsWith('\\(') && trimmed.endsWith('\\)')) ||
+      (trimmed.startsWith('\\[') && trimmed.endsWith('\\]'));
+    const hasInlineDelim = trimmed.includes('$') || trimmed.includes('\\(') || trimmed.includes('\\[');
+    const isMixedLine = hasInlineDelim && !isFullyWrapped;
+
+    const hasExplicitLatex = /\\[a-zA-Z]+/.test(trimmed) && mmWordy(trimmed) <= 10 && !isMixedLine;
     if (hasExplicitLatex || (convLine !== trimmed && mmMathScore(convLine) && mmWordy(convLine) <= 4)) {
       html += `<p>${mathSpan(convLine.replace(/\s+/g, " ").trim(), true)}</p>`;
       i++; continue;
@@ -734,17 +794,13 @@ export function handleRichPaste(view, event, editor) {
 
   // ── Fast exit: nothing to intercept ───────────────────────────────────
   // If the plain text contains no math indicators (backslash, dollar sign,
-  // <math tag) AND no list indicators (bullets or "1. "-style prefixes),
-  // skip all detection and let TipTap's default paste handle it.
-  // This is the single highest-leverage optimisation for the common case
-  // of pasting plain paragraphs with zero LaTeX or list structure.
   const looksLikeMath = /[\\$]|<math/.test(plainText);
-  const looksLikeListContent = /^[\s]*[•◦▪*\-]\s|^\s*\d+\.\s/m.test(plainText);
-  if (!looksLikeMath && !looksLikeListContent) {
+  const looksLikeListContent = /^[\s]*[•◦▪*\-]\s|^\s*\d+[.)]\s|^\s*[a-zA-Z][.)]\s/m.test(plainText);
+  const looksLikeTable = plainText.includes('|') && /^\s*\|?[\s:|\\-]*-[\s:|\\-]*\|?\s*$/m.test(plainText);
+  if (!looksLikeMath && !looksLikeListContent && !looksLikeTable) {
     return false;
   }
 
-  // Priority 1: structured markdown-with-math (formula sheets — e.g. a report
   // with "[ … ]" display fences, "X = Torque (N·m)" legend lines and markdown
   // headings/bullets). Parse the plain text into headings / lists / math spans.
   //

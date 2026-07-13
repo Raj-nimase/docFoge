@@ -8,80 +8,84 @@
 
 // ── Core palette ──────────────────────────────────────────────────────────────
 export const C = {
-  bg:           '#f3efe6',
-  surface:      '#faf8f3',
-  card:         '#fffcf7',
-  cardAlt:      '#f7f3ec',
-  border:       '#ddd6c8',
-  borderStrong: '#c4b9a8',
-  // Accent — forest green
-  accent:       '#3d4a3a',
-  accentLight:  '#6b7d62',
-  accentWarm:   '#9a7b5f',
-  accentGlow:   'rgba(61,74,58,0.08)',
-  accentMid:    'rgba(61,74,58,0.15)',
+  bg:           '#f7f9fb',
+  surface:      '#f7f9fb',
+  card:         '#ffffff',
+  cardAlt:      '#eceef0',
+  border:       '#bfc9c3',
+  borderStrong: '#707974',
+  // Accent — scholarly dark green
+  accent:       '#003527',
+  accentLight:  '#2b6954',
+  accentWarm:   '#d5e0f8',
+  accentGlow:   'rgba(0,53,39,0.06)',
+  accentMid:    'rgba(0,53,39,0.12)',
+  // AI Accent — Indigo
+  aiAccent:     '#6366F1',
+  aiAccentGlow: 'rgba(99,102,241,0.08)',
+  aiAccentMid:  'rgba(99,102,241,0.15)',
   // Text
-  text:         '#2c2a26',
-  textMuted:    '#6b6560',
-  textFaint:    '#9c958c',
+  text:         '#191c1e',
+  textMuted:    '#404944',
+  textFaint:    '#707974',
   // Aliases used by legacy screens
-  textSubtle:   '#9c958c',
-  background:   '#f3efe6',
-  surfaceAlt:   '#f7f3ec',
+  textSubtle:   '#707974',
+  background:   '#f7f9fb',
+  surfaceAlt:   '#eceef0',
   // Status
-  success:      '#5a7d6e',
-  successBg:    '#eaf2ee',
-  successLight: '#eaf2ee',
-  error:        '#a64d4d',
-  errorBg:      '#f9eeee',
-  errorLight:   '#f9eeee',
-  warning:      '#b8860b',
-  warningBg:    '#fdf6e3',
+  success:      '#2b6954',
+  successBg:    '#b0f0d6',
+  successLight: '#b0f0d6',
+  error:        '#ba1a1a',
+  errorBg:      '#ffdad6',
+  errorLight:   '#ffdad6',
+  warning:      '#ff9f0d',
+  warningBg:    '#ffddb8',
   white:        '#ffffff',
   black:        '#000000',
   // Editor paper
   editorPaper:  '#ffffff',
   // Tab bar
-  tabIconDefault:  '#9c958c',
-  tabIconSelected: '#3d4a3a',
-  tint:            '#3d4a3a',
+  tabIconDefault:  '#707974',
+  tabIconSelected: '#003527',
+  tint:            '#003527',
   // Sheet
-  sheetBg:      '#faf8f3',
-  overlay:      'rgba(44,42,38,0.55)',
+  sheetBg:      '#f7f9fb',
+  overlay:      'rgba(25,28,30,0.4)',
 };
 
 // ── Spacing ───────────────────────────────────────────────────────────────────
 export const S = {
   xs:    4,
   sm:    8,
-  md:    12,
-  lg:    16,
-  xl:    24,
-  '2xl': 32,
-  '3xl': 48,
-  '4xl': 64,
+  md:    16,
+  lg:    24,
+  xl:    40,
+  '2xl': 48,
+  '3xl': 64,
+  '4xl': 80,
 };
 
 // ── Radii ─────────────────────────────────────────────────────────────────────
 export const R = {
-  sm:    4,
-  md:    8,
-  lg:    12,
-  xl:    16,
-  '2xl': 24,
+  sm:    2,
+  md:    4,
+  lg:    8,
+  xl:    12,
+  '2xl': 16,
   full:  999,
 };
 
 // ── Font sizes ────────────────────────────────────────────────────────────────
 export const F = {
-  xs:    11,
-  sm:    13,
-  base:  15,
+  xs:    12,
+  sm:    14,
+  base:  16,
   md:    16,
   lg:    18,
-  xl:    22,
-  '2xl': 28,
-  '3xl': 36,
+  xl:    20,
+  '2xl': 24,
+  '3xl': 32,
 };
 
 // ── Animation durations ───────────────────────────────────────────────────────
@@ -121,6 +125,19 @@ export const shadows = {
     shadowRadius: 8,
     elevation: 10,
   },
+};
+
+// ── Font Families ─────────────────────────────────────────────────────────────
+export const Fonts = {
+  display:        'Merriweather-Bold',
+  playfair:       'PlayfairDisplay-Bold',
+  hankenRegular:  'HankenGrotesk-Regular',
+  hankenMedium:   'HankenGrotesk-Medium',
+  hankenSemiBold: 'HankenGrotesk-SemiBold',
+  hankenBold:     'HankenGrotesk-Bold',
+  interRegular:   'Inter-Regular',
+  interSemiBold:  'Inter-SemiBold',
+  mono:           'JetBrainsMono-Medium',
 };
 
 // ── Legacy aliases (keeps old imports working without touching those files) ───

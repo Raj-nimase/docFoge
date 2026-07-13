@@ -31,7 +31,7 @@ import TableRow from "@tiptap/extension-table-row";
 import TableHeader from "@tiptap/extension-table-header";
 import TableCell from "@tiptap/extension-table-cell";
 import Image from "@tiptap/extension-image";
-import { useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import katex from "katex";
 import useAcaStore from "@/contexts/projectStore/projectStore";
 import EditorToolbar from "@/features/Editor/components/Toolbar/Toolbar";
@@ -39,50 +39,114 @@ import SelectionBubbleMenu from "@/features/Editor/components/SelectionBubbleMen
 
 const MathView = ({ node, updateAttributes, selected }) => {
   const containerRef = useRef(null);
+  const previewRef = useRef(null);
+  const inputRef = useRef(null);
   const rawLatex = node.attrs.latex || "";
   const display = node.attrs.display;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(rawLatex);
 
-  // Render with throwOnError:true so a bad glyph throws instead of drawing a red
-  // error; retry with progressively-cleaned input — strip invisible junk, then
-  // convert known Unicode math symbols to LaTeX (θ→\theta, ×→\times), then strip
-  // whatever non-ASCII remains. A stray character (the middle dot in "N·m", a
-  // U+FFFD '?') can therefore never leave a red KaTeX error in the document.
-  useEffect(() => {
-    const el = containerRef.current;
+  // Render KaTeX into an element with progressive fallback
+  const renderKatex = useCallback((el, latex, displayMode) => {
     if (!el) return;
-
-    if (!rawLatex.trim()) {
-      try { katex.render("\\text{formula}", el, { throwOnError: false, displayMode: display }); }
+    if (!latex.trim()) {
+      try { katex.render("\\text{formula}", el, { throwOnError: false, displayMode }); }
       catch (e) { el.textContent = ""; }
       return;
     }
-
-    const s1 = sanitizeLatex(rawLatex);
+    const s1 = sanitizeLatex(latex);
     const s2 = convUnicodeMath(s1);
     const s3 = stripUnknownChars(s2);
-    const candidates = [rawLatex, s1, s2, s3];
+    const candidates = [latex, s1, s2, s3];
     let prev = null;
     for (const cand of candidates) {
-      if (cand === prev) continue; // no change ⇒ same result, skip
+      if (cand === prev) continue;
       prev = cand;
       try {
-        katex.render(cand, el, { throwOnError: true, displayMode: display });
+        katex.render(cand, el, { throwOnError: true, displayMode });
         return;
-      } catch (e) { /* try the next, more-aggressively-cleaned candidate */ }
+      } catch (e) { /* try next */ }
     }
-    // Everything failed to parse — show the cleaned source without a red error.
-    try { katex.render(s3, el, { throwOnError: false, displayMode: display }); }
+    try { katex.render(s3, el, { throwOnError: false, displayMode }); }
     catch (e2) { el.textContent = s3; }
-  }, [rawLatex, display]);
+  }, []);
+
+  // Main formula render
+  useEffect(() => {
+    if (!editing) renderKatex(containerRef.current, rawLatex, display);
+  }, [rawLatex, display, editing, renderKatex]);
+
+  // Live preview in edit mode
+  useEffect(() => {
+    if (editing) renderKatex(previewRef.current, draft, display);
+  }, [draft, display, editing, renderKatex]);
+
+  // Auto-focus textarea when entering edit mode
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  const handleClick = () => {
+    if (!editing) {
+      setDraft(rawLatex);
+      setEditing(true);
+    }
+  };
+
+  const handleSave = () => {
+    updateAttributes({ latex: draft });
+    setEditing(false);
+  };
+
+  const handleCancel = () => {
+    setDraft(rawLatex);
+    setEditing(false);
+  };
+
+  const handleKeyDown = (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSave();
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      handleCancel();
+    }
+  };
 
   return (
     <NodeViewWrapper
-      className={`math-view-wrapper ${selected ? "selected" : ""}`}
+      className={`math-view-wrapper ${selected ? "selected" : ""} ${editing ? "math-editing" : ""}`}
       style={{ display: node.attrs.display ? "block" : "inline-block" }}
     >
-      <div className="math-container">
-        <span ref={containerRef} className="math-render-area" />
-      </div>
+      {editing ? (
+        <div className="math-edit-panel" onClick={(e) => e.stopPropagation()}>
+          <div className="math-edit-preview">
+            <span ref={previewRef} />
+          </div>
+          <textarea
+            ref={inputRef}
+            className="math-edit-input"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={handleKeyDown}
+            rows={Math.min(draft.split("\n").length + 1, 6)}
+            spellCheck={false}
+          />
+          <div className="math-edit-actions">
+            <button type="button" className="math-edit-btn math-edit-cancel" onClick={handleCancel}>Cancel</button>
+            <button type="button" className="math-edit-btn math-edit-save" onClick={handleSave}>Save</button>
+          </div>
+        </div>
+      ) : (
+        <div className="math-container" onClick={handleClick} title="Click to edit formula">
+          <span ref={containerRef} className="math-render-area" />
+        </div>
+      )}
     </NodeViewWrapper>
   );
 };
@@ -206,6 +270,35 @@ function cleanHeadingsInDoc(doc) {
     });
   };
   return { ...doc, content: walk(doc.content) };
+}
+
+// Wrap bare inline nodes (e.g. math) at the doc top level in their own paragraph.
+// The mobile editor stores math as block-level image carriers that become top-level
+// math nodes after editorToStoreContent. The web's math is inline, so ProseMirror
+// would merge consecutive bare math nodes into one paragraph — this prevents that.
+const INLINE_TYPES = new Set(["math", "text"]);
+function normalizeContent(content) {
+  if (!content || !content.content || !Array.isArray(content.content)) return content;
+  const out = [];
+  let pendingInlines = [];
+  const flushInlines = () => {
+    if (!pendingInlines.length) return;
+    // Each inline gets its own paragraph (definition lines, legend lines)
+    for (const node of pendingInlines) {
+      out.push({ type: "paragraph", content: [node] });
+    }
+    pendingInlines = [];
+  };
+  for (const node of content.content) {
+    if (INLINE_TYPES.has(node.type)) {
+      pendingInlines.push(node);
+    } else {
+      flushInlines();
+      out.push(node);
+    }
+  }
+  flushInlines();
+  return { ...content, content: out };
 }
 
 const HeadingCleaner = Extension.create({
@@ -653,7 +746,7 @@ export default function ChapterEditor({
         return false;
       },
     },
-    content: section?.content || "",
+    content: normalizeContent(section?.content || ""),
     autofocus: "end",
     onUpdate: ({ editor }) => {
       // ── Debounced getJSON ──────────────────────────────────────────────────
@@ -703,7 +796,7 @@ export default function ChapterEditor({
     if (sectionId === loadedSectionIdRef.current) return; // same section — skip
     loadedSectionIdRef.current = sectionId;
 
-    const newContent = section?.content || "";
+    const newContent = normalizeContent(section?.content || "");
     const currentJson = JSON.stringify(editor.getJSON());
     const newJson     = JSON.stringify(newContent);
     if (currentJson !== newJson) {
