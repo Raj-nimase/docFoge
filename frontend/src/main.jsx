@@ -21,3 +21,12 @@ if ("serviceWorker" in navigator) {
   });
 }
 
+// Detect PWA standalone mode and apply class to html element
+if (
+  window.matchMedia("(display-mode: standalone)").matches ||
+  window.navigator.standalone
+) {
+  document.documentElement.classList.add("pwa-standalone");
+}
+
+
