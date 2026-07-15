@@ -334,7 +334,9 @@ const imageCaptionJS = `
     function mmSanitizeLatex(latex) {
       var cleaned = (latex || '')
         .replace(/[\\uFFFD\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F\\u200B-\\u200F\\u202A-\\u202E\\u2060\\uFEFF]/g, '')
-        .replace(/(^|[^\\\\])%/g, '$1\\\\%');
+        .replace(/(^|[^\\\\])%/g, '$1\\\\%')
+        .replace(/\\\\\\\\\\\\(|\\\\\\\\\\\\)/g, '')
+        .replace(/\\\\\\\\\\\\\\[|\\\\\\\\\\\\\\]/g, '');
       cleaned = cleaned.split('\\\\$').map(function(part) {
         return part.replace(/\\$/g, '');
       }).join('\\\\$');
@@ -402,6 +404,7 @@ const imageCaptionJS = `
     // "\\cos\\phi = Power factor". Returns { lhs, rhs } (lhs as LaTeX) or null.
     // One layer of wrapping parens on the LHS — "(S)" — is stripped.
     function mmDefLine(s) {
+      s = (s || '').replace(/^\\s*(?:[*\\-+•◦▪]|\\d+[.)]|[a-zA-Z][.)])\\s+/, '').trim();
       var eq = s.indexOf('=');
       if (eq <= 0) return null;
       if (s.charAt(eq + 1) === '=' || '<>!'.indexOf(s.charAt(eq - 1)) !== -1) return null; // ==, <=, >=, !=
@@ -581,6 +584,34 @@ const imageCaptionJS = `
       var hasOps = /[=+×÷±√]|[-](?=[0-9a-zA-Z(])/.test(L);
       return hasStruct || (hasOps && mmWordy(L) <= 3);
     }
+    function mmIsPureMathLine(s) {
+      var clean = (s || '').trim();
+      if (!clean) return false;
+      
+      var eqIdx = clean.indexOf('=');
+      if (eqIdx > 0 && clean.indexOf('=', eqIdx + 1) === -1) {
+        var lhs = clean.slice(0, eqIdx).trim();
+        var rhs = clean.slice(eqIdx + 1).trim();
+        if (lhs && rhs) {
+          var cleanLhs = lhs.replace(/\\\\\\\\[A-Za-z]+/g, '');
+          if (mmIsPureMathLine(rhs) && mmWordy(cleanLhs) <= 1) {
+            return true;
+          }
+        }
+      }
+      
+      clean = clean.replace(/\\\\\\\\\\\\(.*?\\\\\\\\\\\\)/g, '');
+      clean = clean.replace(/\\\\\\\\\\\\\\\[.*?\\\\\\\\\\\\\\\]/g, '');
+      clean = clean.replace(/\\\\$\\$\\$\\$/g, '');
+      clean = clean.replace(/\\\\$/g, '');
+      while (/\\{[^{}]*\\}/.test(clean)) {
+        clean = clean.replace(/\\{[^{}]*\\}/g, '');
+      }
+      clean = clean.replace(/\\\\\\\\[A-Za-z]+/g, '');
+      clean = clean.replace(/[0-9=+*/()_.,:\\-\\\[\\\]\\s]+/g, '');
+      var remaining = clean.replace(/[^A-Za-z]/g, '');
+      return remaining.length < 3;
+    }
     function mmTopColon(s) { var d = 0; for (var i = 0; i < s.length; i++) { var c = s[i]; if (c === '{') d++; else if (c === '}') d--; else if (c === ':' && d === 0) return i; } return -1; }
 
     // Pasted HTML → node JSON (paragraphs / headings / image-carrier math).
@@ -605,7 +636,13 @@ const imageCaptionJS = `
         if (!L) continue;
         if (/^[-*_]{3,}$/.test(L)) continue;
         var dfn = mmDefLine(L);
-        if (dfn) { out.push(mmImageMath(dfn.lhs + ' = \\\\text{' + mmTextEscape(dfn.rhs) + '}', false)); continue; }
+        if (dfn) {
+          out.push({
+            type: 'paragraph',
+            content: [mmImageMath(dfn.lhs + ' = \\\\text{' + mmTextEscape(dfn.rhs) + '}', false)]
+          });
+          continue;
+        }
         // Word-count caps so a large prose block can never collapse into one
         // formula: <=5 words normally, or <=8 for a "Label: formula" line (the
         // colon case is split into label + math below). Without the cap, any long
@@ -637,19 +674,21 @@ const imageCaptionJS = `
     // become image-carrier math nodes (image is block-level, so each renders
     // on its own line — acceptable for formula sheets).
     function mmInlineToNodes(raw) {
-      var tokens = mmScanInline(raw), nodes = [], textRuns = [];
-      function flushText() {
-        var joined = textRuns.join('').trim(); textRuns = [];
-        if (joined) nodes.push({ type: 'paragraph', content: [{ type: 'text', text: mmCleanText(joined) }] });
-      }
+      var tokens = mmScanInline(raw), inlineContent = [];
       for (var k = 0; k < tokens.length; k++) {
         var tk = tokens[k];
-        if (tk.t === 'math') { flushText(); if (tk.v) nodes.push(mmImageMath(tk.v, false)); }
-        else textRuns.push(tk.v);
+        if (tk.t === 'math') {
+          if (tk.v) {
+            inlineContent.push(mmImageMath(tk.v, false));
+          }
+        } else {
+          var cleanText = mmCleanText(tk.v);
+          if (cleanText) {
+            inlineContent.push({ type: 'text', text: cleanText });
+          }
+        }
       }
-      flushText();
-      if (nodes.length === 0) nodes.push({ type: 'paragraph', content: [] });
-      return nodes;
+      return [{ type: 'paragraph', content: inlineContent }];
     }
 
     function mmParse(text) {
@@ -666,6 +705,7 @@ const imageCaptionJS = `
 
       var isTableRow = function(l) { return l.indexOf('|') !== -1 && l.trim().length > 1; };
       var isTableSep = function(l) { return /^\\s*\\|?[\\s:|\\-]*-[\\s:|\\-]*\\|?\\s*$/.test(l) && l.indexOf('-') !== -1; };
+      var isTabRow = function(l) { return l.indexOf('\\t') !== -1 && l.trim().length > 1; };
       var splitTableRow = function(l) {
         var s = l.trim();
         if (s.startsWith('|')) s = s.slice(1);
@@ -748,6 +788,97 @@ const imageCaptionJS = `
           continue;
         }
 
+        if (isTabRow(line)) {
+          flushList();
+          var header = line.split('\\t').map(function(c) { return c.trim(); });
+          var cols = header.length;
+          i++;
+          
+          var body = [];
+          while (i < lines.length) {
+            var nextLine = lines[i], nextTrimmed = nextLine.trim();
+            if (nextTrimmed === '') {
+              var lookAhead = i + 1;
+              while (lookAhead < lines.length && lines[lookAhead].trim() === '') lookAhead++;
+              if (lookAhead < lines.length && isTabRow(lines[lookAhead])) {
+                i = lookAhead;
+                continue;
+              }
+              break;
+            }
+            if (isTabRow(nextLine)) {
+              body.push(nextLine.split('\\t').map(function(c) { return c.trim(); }));
+              i++;
+            } else {
+              break;
+            }
+          }
+          
+          var fit = function(row) {
+            var r = row.slice(0, cols);
+            while (r.length < cols) r.push('');
+            return r;
+          };
+          
+          var makeCell = function(contentText, cellType) {
+            return {
+              type: cellType,
+              content: [
+                {
+                  type: 'paragraph',
+                  content: contentText ? [{ type: 'text', text: contentText }] : []
+                }
+              ]
+            };
+          };
+
+          var headerRowCells = fit(header).map(function(c) {
+            return makeCell(c, 'tableHeader');
+          });
+          
+          var rows = [{
+            type: 'tableRow',
+            content: headerRowCells
+          }];
+          
+          for (var rIndex = 0; rIndex < body.length; rIndex++) {
+            var bodyRowCells = fit(body[rIndex]).map(function(c) {
+              return makeCell(c, 'tableCell');
+            });
+            rows.push({
+              type: 'tableRow',
+              content: bodyRowCells
+            });
+          }
+          
+          var tableJSON = {
+            type: 'table',
+            attrs: { caption: '' },
+            content: rows
+          };
+          
+          out.push({
+            type: 'image',
+            attrs: {
+              src: 'tiptaptable',
+              alt: JSON.stringify(tableJSON),
+              title: ''
+            }
+          });
+          continue;
+        }
+
+        var bq = trimmed.match(/^>\\s+(.*)$/);
+        if (bq) {
+          flushList();
+          var quoteContent = bq[1].trim();
+          out.push({
+            type: 'blockquote',
+            content: mmInlineToNodes(quoteContent)
+          });
+          i++; continue;
+        }
+
         // Display-math fence, opened by a line that is just  [ , \[ or $$ . The
         // close delimiter may sit mid-line — e.g. "][" (next block) or "]text"
         // (trailing prose) — so we scan for it and reprocess any remainder.
@@ -790,11 +921,28 @@ const imageCaptionJS = `
           var type = lm[2] ? 'bulletList' : 'orderedList';
           var content = lm[5].trim();
 
-          var bdef = mmDefLine(content);
-          if (bdef) {
-            flushList();
-            out.push(mmImageMath(bdef.lhs + ' = \\\\text{' + mmTextEscape(bdef.rhs) + '}', false));
-            i++; continue;
+          var itemNodes;
+          if (mmIsPureMathLine(content)) {
+            var stripped = content
+              .replace(/\\\\\\\\\\\\(|\\\\\\\\\\\\)/g, '')
+              .replace(/\\\\\\\\\\\\\\[|\\\\\\\\\\\\\\]/g, '')
+              .replace(/\\\\$\\$\\$\\$/g, '')
+              .replace(/\\\\$/g, '')
+              .trim();
+            itemNodes = [{
+              type: 'paragraph',
+              content: [mmImageMath(stripped, false)]
+            }];
+          } else {
+            var bdef = mmDefLine(content);
+            if (bdef) {
+              itemNodes = [{
+                type: 'paragraph',
+                content: [mmImageMath(bdef.lhs + ' = \\\\text{' + mmTextEscape(bdef.rhs) + '}', false)]
+              }];
+            } else {
+              itemNodes = mmInlineToNodes(content);
+            }
           }
 
           if (list && list.type !== type) {
@@ -803,11 +951,23 @@ const imageCaptionJS = `
           if (!list) {
             list = { type: type, content: [] };
           }
-          var itemNodes = mmInlineToNodes(content);
           if (!itemNodes.length || itemNodes[0].type !== 'paragraph') {
             itemNodes.unshift({ type: 'paragraph', content: [] });
           }
           list.content.push({ type: 'listItem', content: itemNodes });
+          i++; continue;
+        }
+
+        // Standalone pure math line
+        if (mmIsPureMathLine(trimmed)) {
+          flushList();
+          var stripped = trimmed
+            .replace(/\\\\\\\\\\\\(|\\\\\\\\\\\\)/g, '')
+            .replace(/\\\\\\\\\\\\\\[|\\\\\\\\\\\\\\]/g, '')
+            .replace(/\\\\$\\$\\$\\$/g, '')
+            .replace(/\\\\$/g, '')
+            .trim();
+          out.push(mmImageMath(stripped, true));
           i++; continue;
         }
 
@@ -819,7 +979,7 @@ const imageCaptionJS = `
         // (h1); later plain headings are h2; numbered ones are h3.
         var prevBlank = (i === 0) || (lines[i - 1].trim() === '');
         var nextBlank = (i === lines.length - 1) || (lines[i + 1].trim() === '');
-        var numHead = trimmed.match(/^\\d+[.)]\\s+(.+)$/);
+        var numHead = trimmed.match(/^\\d+(?:\\.\\d+)*[.)]\\s+(.+)$/);
         var headText = (numHead ? numHead[1] : trimmed).trim();
         var headWords = headText.split(/\\s+/).length;
         
@@ -827,7 +987,7 @@ const imageCaptionJS = `
         var startsCorrectly = /^[A-Z0-9]/.test(headText);
         
         if (prevBlank && nextBlank && headText.length <= 64 && headWords <= 8 &&
-            startsCorrectly && !isExcludedWord &&
+            startsCorrectly && !isExcludedWord && line.indexOf('\\t') === -1 &&
             /[A-Za-z]/.test(headText) && !/[.:,;]$/.test(headText) &&
             !mmLooksMathy(headText) && !mmMathScore(headText) && !mmDefLine(trimmed)) {
           flushList();
@@ -845,7 +1005,10 @@ const imageCaptionJS = `
         var defn = mmDefLine(trimmed);
         if (defn) {
           flushList();
-          out.push(mmImageMath(defn.lhs + ' = \\\\text{' + mmTextEscape(defn.rhs) + '}', false));
+          out.push({
+            type: 'paragraph',
+            content: [mmImageMath(defn.lhs + ' = \\\\text{' + mmTextEscape(defn.rhs) + '}', false)]
+          });
           i++; continue;
         }
 
@@ -873,7 +1036,8 @@ const imageCaptionJS = `
         var isMixedLine = hasInlineDelim && !isFullyWrapped;
 
         var hasExplicitLatex = /\\\\[a-zA-Z]+/.test(trimmed) && mmWordy(trimmed) <= 10 && !isMixedLine;
-        if (hasExplicitLatex || (convLine !== trimmed && mmMathScore(convLine) && mmWordy(convLine) <= 4)) {
+        var isEmptyLhsDef = trimmed.startsWith('= ') && mmWordy(trimmed) >= 2 && !/\\\\[a-zA-Z]+/.test(trimmed);
+        if (!isEmptyLhsDef && (hasExplicitLatex || (convLine !== trimmed && mmMathScore(convLine) && mmWordy(convLine) <= 4))) {
           out.push(mmImageMath(convLine.replace(/\\s+/g, ' ').trim(), true));
           i++; continue;
         }
@@ -1014,14 +1178,22 @@ const imageCaptionJS = `
     function mathNodeView(node, view, getPos) {
       var isDisplay = node.attrs.title === 'display';
       var latex = node.attrs.alt || '';
-      var dom = document.createElement('div');
+      var dom = document.createElement(isDisplay ? 'div' : 'span');
       dom.className = 'katex-math-node';
       dom.setAttribute('contenteditable', 'false');
-      dom.style.textAlign = isDisplay ? 'center' : 'left';
-      dom.style.margin = '0.5rem 0';
-      dom.style.padding = '4px 2px';
       dom.style.cursor = 'pointer';
-      dom.style.overflowX = 'auto';
+      if (isDisplay) {
+        dom.style.display = 'block';
+        dom.style.textAlign = 'center';
+        dom.style.margin = '0.5rem 0';
+        dom.style.padding = '4px 2px';
+        dom.style.overflowX = 'auto';
+      } else {
+        dom.style.display = 'inline-block';
+        dom.style.verticalAlign = 'middle';
+        dom.style.margin = '0 2px';
+        dom.style.padding = '2px 4px';
+      }
 
       // Render with throwOnError:true so a bad glyph throws instead of drawing a
       // red error; on failure retry with progressively-cleaned input: strip

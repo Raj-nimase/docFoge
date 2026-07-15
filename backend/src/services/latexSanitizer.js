@@ -82,4 +82,71 @@ function auditLatexSource(latexSource) {
   return { safe: true };
 }
 
-module.exports = { escapeLatex, auditLatexSource };
+/**
+ * Sanitize LaTeX formula input: strip invalid characters and unescaped $ signs,
+ * and translate common Unicode symbols to LaTeX commands.
+ * @param {string} latex
+ * @returns {string}
+ */
+function sanitizeLatex(latex) {
+  if (!latex || typeof latex !== 'string') return '';
+
+  let clean = latex.trim();
+  
+  // Strip math delimiters: $$, $, \[, \], \(, \)
+  while (true) {
+    const start = clean;
+    if (clean.startsWith("$$") && clean.endsWith("$$")) {
+      clean = clean.slice(2, -2).trim();
+    } else if (clean.startsWith("$") && clean.endsWith("$")) {
+      clean = clean.slice(1, -1).trim();
+    } else if (clean.startsWith("\\[") && clean.endsWith("\\]")) {
+      clean = clean.slice(2, -2).trim();
+    } else if (clean.startsWith("\\(") && clean.endsWith("\\)")) {
+      clean = clean.slice(2, -2).trim();
+    }
+    if (clean === start) break;
+  }
+
+  // 1. Strip emojis and other control/invisible/BOM characters
+  let cleaned = clean
+    .replace(/[\u{1F000}-\u{1FFFF}]/gu, '')
+    .replace(/[\u{2600}-\u{27BF}]/gu, '')
+    .replace(/[\uFFFD\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, '')
+    .replace(/(^|[^\\])%/g, '$1\\%');
+
+  // 2. Normalize unicode whitespace to regular spaces
+  cleaned = cleaned.replace(/[\u00A0\u2002-\u200A\u202F\u205F]/g, ' ');
+
+  // 3. Map common unicode mathematical and greek symbols to their LaTeX commands
+  cleaned = cleaned
+    .replace(/θ/g, "\\theta")
+    .replace(/π/g, "\\pi")
+    .replace(/α/g, "\\alpha")
+    .replace(/β/g, "\\beta")
+    .replace(/γ/g, "\\gamma")
+    .replace(/δ/g, "\\delta")
+    .replace(/σ/g, "\\sigma")
+    .replace(/μ/g, "\\mu")
+    .replace(/λ/g, "\\lambda")
+    .replace(/φ/g, "\\phi")
+    .replace(/ψ/g, "\\psi")
+    .replace(/ω/g, "\\omega")
+    .replace(/∞/g, "\\infty")
+    .replace(/±/g, "\\pm")
+    .replace(/×/g, "\\times")
+    .replace(/÷/g, "\\div")
+    .replace(/≤/g, "\\leq")
+    .replace(/≥/g, "\\geq")
+    .replace(/≠/g, "\\neq")
+    .replace(/²/g, "^2")
+    .replace(/³/g, "^3");
+
+  // 4. Strip any nested LaTeX math delimiters (\(, \), \[, \]) to prevent compilation errors
+  cleaned = cleaned.replace(/\\\(|\\\)|\\\[|\\\]/g, '');
+
+  // 5. Strip all unescaped $ signs to prevent nested math mode compilation errors
+  return cleaned.replace(/\\\$|(\$)/g, (match, group1) => group1 ? '' : match);
+}
+
+module.exports = { escapeLatex, auditLatexSource, sanitizeLatex };

@@ -40,14 +40,14 @@ function cleanMathLatex(latex: string): string {
       clean = clean.slice(2, -2).trim();
     } else if (clean.startsWith('$') && clean.endsWith('$')) {
       clean = clean.slice(1, -1).trim();
-    } else if (clean.startsWith('\\[') && clean.endsWith('\\]')) {
+    } else if (clean.startsWith('\\\\\[') && clean.endsWith('\\\\\]')) {
       clean = clean.slice(2, -2).trim();
-    } else if (clean.startsWith('\\(') && clean.endsWith('\\)')) {
+    } else if (clean.startsWith('\\\\(') && clean.endsWith('\\\\)')) {
       clean = clean.slice(2, -2).trim();
     }
     if (clean === start) break;
   }
-  return clean;
+  return clean.replace(/\\\(|\\\)|\\\[|\\\]/g, '');
 }
 
 // ── Inline text renderer ──────────────────────────────────────────────────────
