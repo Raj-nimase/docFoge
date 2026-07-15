@@ -428,29 +428,29 @@
 /* Floating tab switcher for PWA standalone mode */
 .pwa-tab-switcher {
   position: fixed;
-  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(255, 252, 247, 0.85); /* matches --card */
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: rgba(255, 252, 247, 0.88); /* matches --card */
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border);
-  border-radius: 30px;
-  padding: 4px;
+  border-radius: 40px;
+  padding: 6px;
   display: flex;
-  gap: 4px;
+  gap: 6px;
   z-index: 999;
-  box-shadow: 0 8px 32px rgba(61, 74, 58, 0.15);
+  box-shadow: 0 10px 35px rgba(61, 74, 58, 0.18);
 }
 
 .pwa-tab-button {
   border: none;
   background: transparent;
-  padding: 8px 20px;
-  font-size: 0.85rem;
-  font-weight: 600;
+  padding: 10px 26px;
+  font-size: 0.95rem;
+  font-weight: 700;
   color: var(--text-muted);
-  border-radius: 20px;
+  border-radius: 30px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -459,6 +459,7 @@
   background: var(--accent);
   color: #faf8f3;
 }
+
 
 
 
