@@ -22,6 +22,12 @@ export default function TopBar({ onGoToDashboard, onLogout, onStartTour }) {
     setCompileActive(true);   // pause background project sync while compiling
 
     try {
+      // Sync project to the cloud before compilation
+      const syncActiveProjectNow = useAcaStore.getState().syncActiveProjectNow;
+      if (syncActiveProjectNow) {
+        await syncActiveProjectNow();
+      }
+
       console.log(`[${new Date().toISOString()}] Step 1: Initiating compileProject for project ID: ${currentProject.id}`);
       const { jobId } = await compileProject(currentProject);
       console.log(`[${new Date().toISOString()}] Step 2: Received jobId: ${jobId}. Beginning polling...`);

@@ -155,13 +155,45 @@ export async function deleteUserProject(clientId) {
  * Upsert a single project by its clientId.
  * Replaces the old syncUserProjects bulk call for on-keystroke saves.
  * @param {object} project
+ * @param {object} [options]
  * @returns {object} The saved project from the server.
  */
-export async function upsertUserProject(project) {
+export async function upsertUserProject(project, options = {}) {
+  const { keepalive } = options;
+  if (keepalive) {
+    const token = getStoredToken();
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    try {
+      await fetch(`${BASE}/projects/item`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(project),
+        keepalive: true,
+      });
+    } catch (err) {
+      console.warn('[api] upsert keepalive failed', err.message || err);
+    }
+    return project;
+  }
+
   const data = await authFetch('/projects/item', {
     method: 'PUT',
     body: project,
   });
+  return data.project;
+}
+
+export async function fetchProjectSyncStatus() {
+  const data = await authFetch('/projects/sync-status');
+  return data.syncStatus;
+}
+
+export async function fetchProject(clientId) {
+  const data = await authFetch(`/projects/${clientId}`);
   return data.project;
 }
 

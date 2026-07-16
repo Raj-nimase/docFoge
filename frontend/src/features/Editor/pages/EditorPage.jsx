@@ -17,6 +17,14 @@ export default function Editor({ onGoToDashboard, onLogout }) {
   
   const [activeTab, setActiveTab] = useState('editor');
 
+  // Sync active project to cloud when leaving the editor
+  const syncActiveProjectNow = useAcaStore(s => s.syncActiveProjectNow);
+  useEffect(() => {
+    return () => {
+      syncActiveProjectNow();
+    };
+  }, [syncActiveProjectNow]);
+
   // Automatically switch to Preview when compile begins
   const compileStatus = useAcaStore(s => s.compileJob?.status);
   useEffect(() => {

@@ -89,6 +89,34 @@ async function syncProjects(req, res, next) {
   }
 }
 
+async function getSyncStatus(req, res, next) {
+  try {
+    const docs = await Project.find({ userId: req.user._id }, { clientId: 1, updatedAt: 1 });
+    res.json({
+      success: true,
+      syncStatus: docs.map(d => ({
+        id: d.clientId,
+        updatedAt: d.updatedAt || 0
+      }))
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getProject(req, res, next) {
+  try {
+    const { clientId } = req.params;
+    const doc = await Project.findOne({ userId: req.user._id, clientId });
+    if (!doc) {
+      return res.status(404).json({ success: false, error: 'Project not found' });
+    }
+    res.json({ success: true, project: doc.toClientJSON() });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function deleteProject(req, res, next) {
   try {
     const { clientId } = req.params;
@@ -99,4 +127,4 @@ async function deleteProject(req, res, next) {
   }
 }
 
-module.exports = { listProjects, upsertProject, syncProjects, deleteProject };
+module.exports = { listProjects, getSyncStatus, getProject, upsertProject, syncProjects, deleteProject };

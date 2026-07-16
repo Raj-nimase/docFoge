@@ -123,62 +123,12 @@ function migrateLocalBase64Images() {
 // Run migration once at module load — clears any legacy base64 image blobs
 migrateLocalBase64Images();
 
-// Module-level dirty set + timer — tracks which project has unsaved cloud changes
+// Module-level dirty set — tracks which project has unsaved cloud changes
 const dirtyProjectIds = new Set();
-let syncTimer = null;
 let _compileActive = false;  // set true while a compile job is running
 
 /** Called by TopBar before/after compile so sync doesn't race with Tectonic */
 export function setCompileActive(active) { _compileActive = active; }
-
-/**
- * Debounced sync for ONLY the currently active project.
- * Fires 2.5s after the last mutation (up from 1.5s — gives Render breathing
- * room). Skips entirely if a compile is in progress to avoid timeouts caused
- * by Tectonic consuming all of Render's CPU during compilation.
- */
-function scheduleActiveProjectSync(get) {
-  clearTimeout(syncTimer);
-  syncTimer = setTimeout(async () => {
-    // Don't race with an active compile — reschedule for after it finishes
-    if (_compileActive) {
-      scheduleActiveProjectSync(get);
-      return;
-    }
-
-    const token = api.getStoredToken();
-    if (!token) return;
-
-    const { currentProjectId, projects } = get();
-    if (!currentProjectId || !dirtyProjectIds.has(currentProjectId)) return;
-
-    const project = projects.find((p) => p.id === currentProjectId);
-    if (!project) return;
-
-    try {
-      await api.upsertUserProject(project);
-      dirtyProjectIds.delete(currentProjectId);
-    } catch (err) {
-      console.warn('[sync]', err.message);
-      // Leave it in dirtyProjectIds so the next edit triggers a retry
-    }
-  }, 2500);  // 2.5s debounce — was 1.5s
-}
-
-/** Merge cloud and local project lists; newer updatedAt wins per project id */
-function mergeProjectLists(cloud = [], local = []) {
-  const byId = new Map();
-  for (const p of cloud) byId.set(p.id, p);
-  for (const p of local) {
-    const existing = byId.get(p.id);
-    if (!existing || (p.updatedAt || 0) >= (existing.updatedAt || 0)) {
-      byId.set(p.id, p);
-    }
-  }
-  return Array.from(byId.values()).sort(
-    (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0),
-  );
-}
 
 function createProjectFromTemplate(templateId, metadata) {
   const tpl = getTemplate(templateId);
@@ -233,6 +183,22 @@ export const useProjectStore = create((set, get) => ({
    * Guests use localStorage only.
    */
   async loadProjectsForUser(force = false) {
+    const t0 = Date.now();
+    const local = loadProjectsLocal();
+    const token = api.getStoredToken();
+
+    // Immediately set local cached projects so UI is instant!
+    if (local.length > 0 && !get().projectsLoaded) {
+      set({ projects: local, projectsLoaded: true });
+      console.log('[projects] instant load from local cache', `count=${local.length}`);
+    }
+
+    if (!token) {
+      set({ projects: local, projectsLoaded: true });
+      _projectsLoadedOnce = true;
+      return { count: local.length, guest: true };
+    }
+
     // Return immediately if already loaded and not forced
     if (!force && _projectsLoadedOnce && get().projectsLoaded) {
       return { count: get().projects.length, cached: true };
@@ -242,74 +208,87 @@ export const useProjectStore = create((set, get) => ({
     if (!force && _loadProjectsPromise) return _loadProjectsPromise;
 
     _loadProjectsPromise = (async () => {
-      const t0 = Date.now();
-      const local = loadProjectsLocal();
-      const token = api.getStoredToken();
+      try {
+        // Fetch the lightweight cloud sync status
+        const cloudSync = await api.fetchProjectSyncStatus();
+        const cloudMap = new Map(cloudSync.map(p => [p.id, p.updatedAt]));
+        const localMap = new Map(local.map(p => [p.id, p.updatedAt || 0]));
 
-      if (token) {
-        try {
-          // 1. Fetch the authoritative cloud list
-          const cloud = await api.fetchUserProjects();
-          const cloudIds = new Set(cloud.map((p) => p.id));
+        const toDownload = [];
+        const toUpload = [];
 
-          // 2. Find projects that only exist locally (created while offline / as guest)
-          const localOnlyProjects = local.filter((p) => !cloudIds.has(p.id));
-
-          // 3. Push each offline-only project individually — no bulk sync
-          if (localOnlyProjects.length > 0) {
-            console.log('[projects] pushing offline-only projects', `count=${localOnlyProjects.length}`);
-            await Promise.allSettled(
-              localOnlyProjects.map((p) =>
-                api.upsertUserProject(p).catch((err) =>
-                  console.warn('[projects] failed to push offline project', p.id, err.message),
-                ),
-              ),
-            );
-          }
-
-          // 4. Re-fetch from cloud so we have the canonical merged list
-          const final = localOnlyProjects.length > 0
-            ? await api.fetchUserProjects()
-            : cloud;
-
-          saveProjectsLocal(final);
-          set({ projects: final, projectsLoaded: true });
-          _projectsLoadedOnce = true;
-          const elapsed = Date.now() - t0;
-          console.log(
-            '[projects] cloud load OK',
-            `cloud=${cloud.length}`,
-            `pushed=${localOnlyProjects.length}`,
-            `${elapsed}ms`,
-          );
-          return { count: final.length, pushed: localOnlyProjects.length };
-        } catch (err) {
-          const elapsed = Date.now() - t0;
-          console.warn(
-            '[projects] cloud load failed, using local cache',
-            err.message,
-            `${elapsed}ms`,
-          );
-          if (local.length > 0) {
-            set({ projects: local, projectsLoaded: true });
-            console.log(
-              '[projects] loaded local cache',
-              `count=${local.length}`,
-              `${Date.now() - t0}ms`,
-            );
-            return { count: local.length, offline: true };
+        // Check cloud projects
+        for (const cloudProj of cloudSync) {
+          const localUpdated = localMap.get(cloudProj.id);
+          if (localUpdated === undefined) {
+            toDownload.push(cloudProj.id);
+          } else if (cloudProj.updatedAt > localUpdated) {
+            toDownload.push(cloudProj.id);
           }
         }
-      }
 
-      set({ projects: local, projectsLoaded: true });
-      _projectsLoadedOnce = true;
-      console.log(
-        "[projects] guest/local only",
-        `count=${local.length}`,
-        `${Date.now() - t0}ms`,
-      );
-      return { count: local.length, guest: true };
+        // Check local projects
+        for (const localProj of local) {
+          const cloudUpdated = cloudMap.get(localProj.id);
+          if (cloudUpdated === undefined) {
+            toUpload.push(localProj);
+          } else if (localProj.updatedAt > cloudUpdated) {
+            toUpload.push(localProj);
+          }
+        }
+
+        console.log('[projects] delta sync analysis:', {
+          localCount: local.length,
+          cloudCount: cloudSync.length,
+          toDownload: toDownload.length,
+          toUpload: toUpload.length
+        });
+
+        let updatedLocal = [...local];
+
+        // Download missing/updated projects
+        if (toDownload.length > 0) {
+          const downloaded = await Promise.all(
+            toDownload.map(id => api.fetchProject(id).catch(err => {
+              console.warn('[projects] failed to download project', id, err.message);
+              return null;
+            }))
+          );
+
+          const downloadedValid = downloaded.filter(Boolean);
+          const downloadedIds = new Set(downloadedValid.map(p => p.id));
+          updatedLocal = [
+            ...downloadedValid,
+            ...updatedLocal.filter(p => !downloadedIds.has(p.id))
+          ];
+        }
+
+        // Upload local offline changes/new projects
+        if (toUpload.length > 0) {
+          await Promise.allSettled(
+            toUpload.map(p => api.upsertUserProject(p).catch(err =>
+              console.warn('[projects] failed to sync local changes to cloud', p.id, err.message)
+            ))
+          );
+        }
+
+        // Sort by updatedAt descending
+        updatedLocal.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+        saveProjectsLocal(updatedLocal, true);
+        set({ projects: updatedLocal, projectsLoaded: true });
+        _projectsLoadedOnce = true;
+
+        const elapsed = Date.now() - t0;
+        console.log('[projects] delta sync completed', `${elapsed}ms`);
+        return { count: updatedLocal.length, downloaded: toDownload.length, uploaded: toUpload.length };
+      } catch (err) {
+        const elapsed = Date.now() - t0;
+        console.warn('[projects] delta sync failed, using local cache', err.message, `${elapsed}ms`);
+        set({ projects: local, projectsLoaded: true });
+        _projectsLoadedOnce = true;
+        return { count: local.length, offline: true };
+      }
     })();
 
     try {
@@ -342,7 +321,6 @@ export const useProjectStore = create((set, get) => ({
       compileJob: null,
     });
     dirtyProjectIds.add(project.id);
-    scheduleActiveProjectSync(get);
     return project;
   },
 
@@ -387,7 +365,6 @@ export const useProjectStore = create((set, get) => ({
       compileJob: null,
     });
     dirtyProjectIds.add(project.id);
-    scheduleActiveProjectSync(get);
     return project;
   },
 
@@ -423,6 +400,25 @@ export const useProjectStore = create((set, get) => ({
     set({ activeChapterId: id });
   },
 
+  async syncActiveProjectNow(keepalive = false) {
+    const token = api.getStoredToken();
+    if (!token) return;
+
+    const { currentProjectId, projects } = get();
+    if (!currentProjectId || !dirtyProjectIds.has(currentProjectId)) return;
+
+    const project = projects.find((p) => p.id === currentProjectId);
+    if (!project) return;
+
+    console.log('[projects] sync executing', { currentProjectId, keepalive });
+    try {
+      await api.upsertUserProject(project, { keepalive });
+      dirtyProjectIds.delete(currentProjectId);
+    } catch (err) {
+      console.warn('[projects] sync failed', err.message || err);
+    }
+  },
+
   updateSectionContent(sectionId, tiptapJson) {
     const { projects, currentProjectId } = get();
     const updated = projects.map((p) => {
@@ -443,7 +439,6 @@ export const useProjectStore = create((set, get) => ({
     saveProjectsLocal(updated, false);
     set({ projects: updated });
     dirtyProjectIds.add(currentProjectId);
-    scheduleActiveProjectSync(get);
   },
 
   updateMetadata(fields) {
@@ -460,7 +455,6 @@ export const useProjectStore = create((set, get) => ({
     saveProjectsLocal(updated, false);
     set({ projects: updated });
     dirtyProjectIds.add(currentProjectId);
-    scheduleActiveProjectSync(get);
   },
 
   addChapter(title) {
@@ -477,7 +471,6 @@ export const useProjectStore = create((set, get) => ({
     saveProjectsLocal(updated, true); // immediate — structural change
     set({ projects: updated, activeChapterId: newChapter.id });
     dirtyProjectIds.add(currentProjectId);
-    scheduleActiveProjectSync(get);
   },
 
   deleteChapter(chapterId) {
@@ -499,7 +492,6 @@ export const useProjectStore = create((set, get) => ({
       activeChapterId: activeChapterId === chapterId ? nextId : activeChapterId,
     });
     dirtyProjectIds.add(currentProjectId);
-    scheduleActiveProjectSync(get);
   },
 
   renameChapter(chapterId, newTitle) {
@@ -517,7 +509,6 @@ export const useProjectStore = create((set, get) => ({
     saveProjectsLocal(updated, true); // immediate — structural change
     set({ projects: updated });
     dirtyProjectIds.add(currentProjectId);
-    scheduleActiveProjectSync(get);
   },
 
   reorderChapters(startIndex, endIndex) {
@@ -532,7 +523,6 @@ export const useProjectStore = create((set, get) => ({
     saveProjectsLocal(updated, true); // immediate — structural change
     set({ projects: updated });
     dirtyProjectIds.add(currentProjectId);
-    scheduleActiveProjectSync(get);
   },
 
   setCompileJob(jobOrUpdater) {
@@ -553,5 +543,23 @@ export const useProjectStore = create((set, get) => ({
 
   clearToast: () => set({ toast: null }),
 }));
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      const state = useProjectStore.getState();
+      if (state && typeof state.syncActiveProjectNow === 'function') {
+        state.syncActiveProjectNow(true);
+      }
+    }
+  });
+
+  window.addEventListener('pagehide', () => {
+    const state = useProjectStore.getState();
+    if (state && typeof state.syncActiveProjectNow === 'function') {
+      state.syncActiveProjectNow(true);
+    }
+  });
+}
 
 export default useProjectStore;
