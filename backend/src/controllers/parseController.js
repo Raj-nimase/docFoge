@@ -1,5 +1,5 @@
 const fs = require('fs');
-const pdfParse = require('pdf-parse');
+const { PDFParse } = require('pdf-parse');
 const mammoth = require('mammoth');
 const { parseRawText } = require('../services/parserService');
 const { logger } = require('../utils/logger');
@@ -51,7 +51,8 @@ async function uploadAndParseDocument(req, res) {
 
     if (mimeType === 'application/pdf') {
       const dataBuffer = fs.readFileSync(filePath);
-      const pdfData = await pdfParse(dataBuffer);
+      const parser = new PDFParse({ data: dataBuffer });
+      const pdfData = await parser.getText();
       extractedText = pdfData.text;
     } else if (
       mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
