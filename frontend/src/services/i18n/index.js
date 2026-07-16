@@ -97,16 +97,7 @@ const resources = {
       findStylesPlaceholder: 'Find styles (MSBTE, IEEE)...',
       layoutStructure: 'Layout Structure',
       
-      step3Title: 'Step 3 — Write Document Outline & Content',
-      introContentLabel: 'Introduction Content / abstract Draft',
-      introPlaceholder: 'Type raw paper abstract here or use AI suggestions on the right...',
-      dragDropLabel: 'Drag & Drop source file (.txt / .md) here or ',
-      browse: 'Browse',
-      aiCreativeSuite: 'AI Creative Suite',
-      proTip: 'Pro Tip',
-      proTipDesc: 'Providing draft sentences inside the wizard auto-populates your active chapter frames immediately inside TipTap workspace.',
-      
-      step4Title: 'Step 4 — Assembling Workspace Assets',
+      step3Title: 'Step 3 — Assembling Workspace Assets',
       compilingPreamble: 'Compiling PDF & LaTeX Preambles',
       estimatedTimeRemaining: 'Estimated time remaining: less than 3 seconds',
       

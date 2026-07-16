@@ -168,6 +168,28 @@ export default function MetadataForm({ onDone }) {
               </div>
             )}
           </div>
+
+          {/* Document Section Lists Configuration */}
+          <div className="settings-section-divider" />
+          <h3 className="settings-section-title">📄 Document List Pages</h3>
+          <div className="settings-subsection" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={fields.enableListOfFigures !== false}
+                onChange={e => setFields(f => ({ ...f, enableListOfFigures: e.target.checked }))}
+              />
+              Include List of Figures
+            </label>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={fields.enableListOfTables !== false}
+                onChange={e => setFields(f => ({ ...f, enableListOfTables: e.target.checked }))}
+              />
+              Include List of Tables
+            </label>
+          </div>
         </div>
         <div className="metadata-footer">
           <button className="btn-ghost" onClick={() => setOpen(false)}>Cancel</button>

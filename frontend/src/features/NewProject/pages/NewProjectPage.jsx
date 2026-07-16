@@ -48,7 +48,7 @@ export default function NewProject({ onCreated, onCancel }) {
   const createProject = useAcaStore(s => s.createProject);
   const user = useAuthStore(s => s.user);
 
-  // Stepper state: 1 to 4 (Details → Template → Content → Assemble)
+  // Stepper state: 1 to 3 (Details → Template → Assemble)
   const [step, setStep]           = useState(1);
   const [direction, setDirection] = useState(1); // 1 = next, -1 = back
 
@@ -69,17 +69,11 @@ export default function NewProject({ onCreated, onCancel }) {
   const [tplSearch, setTplSearch]     = useState('');
   const [previewModalTpl, setPreviewModalTpl] = useState(null);
 
-  // STEP 3: Content Outline Input
+  // STEP 3: Preview & Compilation
   const [draftContent, setDraftContent] = useState('');
-  const [aiSuggestions, setAiSuggestions] = useState([
-    "Auto-Generate Abstract",
-    "Convert to Formal Writing style",
-    "Suggest Academic Section Headings"
-  ]);
-
-  // STEP 4: Preview & Compilation
   const [compilingLogs, setCompilingLogs] = useState([]);
   const [compileProgress, setCompileProgress] = useState(0);
+  const [hasLaunched, setHasLaunched] = useState(false);
 
   // Template metadata details fields mapper
   const [metadata, setMetadata] = useState({
@@ -121,39 +115,6 @@ export default function NewProject({ onCreated, onCancel }) {
     return searchMatch;
   });
 
-  // Step 4 simulated compilation logging
-  useEffect(() => {
-    if (step !== 4) return;
-
-    setCompilingLogs([]);
-    setCompileProgress(0);
-
-    const logMessages = [
-      { time: '12:04:01', msg: '📝 Preparing workspace drafts and file pipelines...', success: false },
-      { time: '12:04:02', msg: `📦 Assembling chapters directory based on: ${selectedTpl.name}`, success: false },
-      { time: '12:04:03', msg: `📂 Hydrating metadata values for authors: "${metadata.authors}"`, success: false },
-      { time: '12:04:04', msg: `🪄 Ingesting draft texts: ${(draftContent || '').slice(0, 30)}...`, success: false },
-      { time: '12:04:05', msg: '✨ Applying document layout and citation standards...', success: false },
-      { time: '12:04:06', msg: `🛡️ Injecting LaTeX packages & standard styles...`, success: false },
-      { time: '12:04:07', msg: '✅ LaTeX document workspace compiled successfully!', success: true }
-    ];
-
-    let currentLogIndex = 0;
-    const logInterval = setInterval(() => {
-      if (currentLogIndex < logMessages.length) {
-        const nextLog = logMessages[currentLogIndex];
-        setCompilingLogs(prev => [...prev, nextLog]);
-        setCompileProgress(prev => Math.min(prev + 15, 100));
-        currentLogIndex++;
-      } else {
-        clearInterval(logInterval);
-        setCompileProgress(100);
-      }
-    }, 700);
-
-    return () => clearInterval(logInterval);
-  }, [step]);
-
   // Submit and open active project
   const handleCreate = () => {
     if (!selectedId) return;
@@ -170,6 +131,46 @@ export default function NewProject({ onCreated, onCancel }) {
 
     onCreated();
   };
+
+  // Step 3 simulated compilation logging
+  useEffect(() => {
+    if (step !== 3) return;
+
+    setCompilingLogs([]);
+    setCompileProgress(0);
+
+    const logMessages = [
+      { time: '12:04:01', msg: '📝 Preparing workspace drafts and file pipelines...', success: false },
+      { time: '12:04:02', msg: `📦 Assembling chapters directory based on: ${selectedTpl.name}`, success: false },
+      { time: '12:04:03', msg: `📂 Hydrating metadata values for authors: "${metadata.authors}"`, success: false },
+      { time: '12:04:05', msg: '✨ Applying document layout and citation standards...', success: false },
+      { time: '12:04:06', msg: `🛡️ Injecting LaTeX packages & standard styles...`, success: false },
+      { time: '12:04:07', msg: '✅ LaTeX document workspace compiled successfully!', success: true }
+    ];
+
+    let currentLogIndex = 0;
+    const logInterval = setInterval(() => {
+      if (currentLogIndex < logMessages.length) {
+        const nextLog = logMessages[currentLogIndex];
+        setCompilingLogs(prev => [...prev, nextLog]);
+        setCompileProgress(prev => Math.min(prev + 20, 100));
+        currentLogIndex++;
+      } else {
+        clearInterval(logInterval);
+        setCompileProgress(100);
+      }
+    }, 700);
+
+    return () => clearInterval(logInterval);
+  }, [step, selectedTpl.name, metadata.authors]);
+
+  // Auto-launch workspace when compilation finishes
+  useEffect(() => {
+    if (step === 3 && compileProgress === 100 && !hasLaunched) {
+      setHasLaunched(true);
+      handleCreate();
+    }
+  }, [compileProgress, step, hasLaunched, handleCreate]);
 
   // Pre-fill content using AI panel simulation
   const handleAiAction = (action) => {
@@ -200,14 +201,8 @@ export default function NewProject({ onCreated, onCancel }) {
           </div>
           <span className={`stepper-line ${step > 2 ? 'stepper-line--active' : ''}`} />
 
-          <div className={`stepper-node ${step === 3 ? 'stepper-node--active' : ''} ${step > 3 ? 'stepper-node--completed' : ''}`} onClick={() => step > 3 && goToStep(3)} style={{ cursor: step > 3 ? 'pointer' : 'default' }}>
-            <span className="stepper-circle">{step > 3 ? <Check size={12} /> : "3"}</span>
-            <span className="stepper-label">{t('wizardContent')}</span>
-          </div>
-          <span className={`stepper-line ${step > 3 ? 'stepper-line--active' : ''}`} />
-
-          <div className={`stepper-node ${step === 4 ? 'stepper-node--active' : ''}`}>
-            <span className="stepper-circle">4</span>
+          <div className={`stepper-node ${step === 3 ? 'stepper-node--active' : ''}`}>
+            <span className="stepper-circle">3</span>
             <span className="stepper-label">{t('wizardAssemble')}</span>
           </div>
         </header>
@@ -362,72 +357,10 @@ export default function NewProject({ onCreated, onCancel }) {
                 </div>
               )}
 
-              {/* STEP 3: CONTENT OUTLINE WRITER */}
+              {/* STEP 3: PREVIEW & ASSEMBLY */}
               {step === 3 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16, height: '100%' }}>
-                  <div className="dashboard-section-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <FileCode size={18} style={{ color: 'var(--accent)' }} /> {t('step3Title')}
-                  </div>
-
-                  <div className="content-wizard-split">
-                    
-                    {/* Visual Editor canvas */}
-                    <div className="editor-wizard-canvas">
-                      <label className="metadata-label">{t('introContentLabel')}</label>
-                      <textarea
-                        className="editor-wizard-textarea"
-                        placeholder={t('introPlaceholder')}
-                        value={draftContent}
-                        onChange={e => setDraftContent(e.target.value)}
-                      />
-
-                      {/* Simulated Upload dropzone */}
-                      <div
-                        className="dropzone-wizard"
-                        onClick={() => setDraftContent("Uploaded from sample_paper.txt successfully.\n\nABSTRACT\nOptimizing citation metadata indexing inside standard LaTeX compilers using tectonic backends.")}
-                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20 }}
-                      >
-                        <UploadCloud size={28} style={{ color: 'var(--accent)', opacity: 0.7, marginBottom: 8 }} />
-                        <span style={{ fontSize: '0.8rem' }}>{t('dragDropLabel')}<b style={{ color: 'var(--accent)' }}>{t('browse')}</b></span>
-                      </div>
-                    </div>
-
-                    {/* AI Assistant Help panel */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      <span className="metadata-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Sparkles size={14} style={{ color: 'var(--accent)' }} /> {t('aiCreativeSuite')}
-                      </span>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {aiSuggestions.map((sug, idx) => (
-                          <button
-                            key={idx}
-                            className="btn-ghost"
-                            style={{ textAlign: 'left', fontSize: '0.78rem', justifyContent: 'flex-start', padding: 10, display: 'flex', alignItems: 'center', gap: 6 }}
-                            onClick={() => handleAiAction(sug)}
-                          >
-                            <Sparkles size={12} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-                            <span>{t(sug, { defaultValue: sug })}</span>
-                          </button>
-                        ))}
-                      </div>
-
-                      <div className="ai-tip-card" style={{ marginTop: 10 }}>
-                        <span className="ai-tip-header" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <Lightbulb size={13} style={{ color: 'var(--accent)' }} /> {t('proTip')}
-                        </span>
-                        <p className="ai-tip-desc">
-                          {t('proTipDesc')}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 4: PREVIEW & ASSEMBLY */}
-              {step === 4 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 640, margin: '0 auto', width: '100%', textAlign: 'center' }}>
-                  <div className="dashboard-section-title">{t('step4Title')}</div>
+                  <div className="dashboard-section-title">{t('step3Title')}</div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '20px 0' }}>
                     <div className="preview-compile-spinner" style={{ width: 44, height: 44 }} />
@@ -466,7 +399,7 @@ export default function NewProject({ onCreated, onCancel }) {
 
         {/* WIZARD ACTIONS FOOTER */}
         <footer className="new-project-footer">
-          {step > 1 && step < 4 ? (
+          {step > 1 && step < 3 ? (
             <button className="btn-ghost" onClick={() => goToStep(step - 1)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <ArrowLeft size={14} /> {t('backBtn', { defaultValue: 'Back' })}
             </button>
@@ -477,27 +410,26 @@ export default function NewProject({ onCreated, onCancel }) {
               {t('cancelCreation')}
             </button>
 
-            {step < 3 ? (
+            {step === 1 ? (
               <button
                 className="btn-primary"
-                disabled={step === 1 && !title}
-                onClick={() => goToStep(step + 1)}
+                disabled={!title}
+                onClick={() => goToStep(2)}
                 style={{ display: 'flex', alignItems: 'center', gap: 6 }}
               >
                 {t('nextStepBtn')} <ArrowRight size={14} />
               </button>
-            ) : step === 3 ? (
-              <button className="btn-primary" onClick={() => goToStep(4)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            ) : step === 2 ? (
+              <button className="btn-primary" onClick={() => goToStep(3)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 {t('assembleWorkspaceBtn')} <Sparkles size={14} />
               </button>
             ) : (
               <button
                 className="btn-primary"
-                disabled={compileProgress < 100}
-                onClick={handleCreate}
+                disabled={true}
                 style={{ display: 'flex', alignItems: 'center', gap: 6 }}
               >
-                {t('launchWorkspaceBtn')} <ArrowRight size={14} />
+                Assembling... <ArrowRight size={14} />
               </button>
             )}
           </div>

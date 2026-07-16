@@ -228,11 +228,15 @@ function buildBody(templateId, metadata, frontMatter, chapters) {
     parts.push("\\newpage");
     parts.push("{\\singlespacing\n\\tableofcontents\n}");
     
-    parts.push("\\newpage");
-    parts.push("{\\singlespacing\n\\listoffigures\n}");
+    if (metadata.enableListOfFigures !== false) {
+      parts.push("\\newpage");
+      parts.push("{\\singlespacing\n\\listoffigures\n}");
+    }
     
-    parts.push("\\newpage");
-    parts.push("{\\singlespacing\n\\listoftables\n}");
+    if (metadata.enableListOfTables !== false) {
+      parts.push("\\newpage");
+      parts.push("{\\singlespacing\n\\listoftables\n}");
+    }
   }
 
   // ── Switch to arabic page numbering before chapters ──
