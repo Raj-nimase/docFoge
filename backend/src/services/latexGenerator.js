@@ -271,7 +271,11 @@ function buildBody(templateId, metadata, frontMatter, chapters) {
     if (isIEEE) {
       parts.push(`\\section{${title}}\n\n${content}`);
     } else {
-      parts.push(`\\chapter{${title}}\n\n${content}`);
+      if (metadata.enableChapterNumbers === false) {
+        parts.push(`\\chapter*{${title}}\n\\addcontentsline{toc}{chapter}{${title}}\n\n${content}`);
+      } else {
+        parts.push(`\\chapter{${title}}\n\n${content}`);
+      }
     }
   }
 
