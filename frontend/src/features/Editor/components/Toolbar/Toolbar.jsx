@@ -20,9 +20,77 @@ import {
   Trash2,
   Tag,
   Sigma,
+  FileText,
 } from 'lucide-react';
 import { HEADING_LEVELS, getActiveHeadingLevel, toggleHeading, clearHeading } from '@/features/Editor/utils/editorFormatActions';
 import useAcaStore from '@/contexts/projectStore/projectStore';
+
+function convertTextToParagraphsAndLists(lines) {
+  const blocks = [];
+  let currentBlock = [];
+  let currentType = 'paragraph'; // 'paragraph', 'bulletList', 'orderedList'
+
+  const getLineType = (trimmedLine) => {
+    if (/^[-*•]\s+/.test(trimmedLine)) return 'bulletList';
+    if (/^\d+[.)]\s+/.test(trimmedLine)) return 'orderedList';
+    return 'paragraph';
+  };
+
+  const flushBlock = () => {
+    if (currentBlock.length === 0) return;
+    
+    if (currentType === 'bulletList') {
+      blocks.push({
+        type: 'bulletList',
+        content: currentBlock.map(line => ({
+          type: 'listItem',
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: line.replace(/^[-*•]\s+/, '').trim() }]
+            }
+          ]
+        }))
+      });
+    } else if (currentType === 'orderedList') {
+      blocks.push({
+        type: 'orderedList',
+        content: currentBlock.map(line => ({
+          type: 'listItem',
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: line.replace(/^\d+[.)]\s+/, '').trim() }]
+            }
+          ]
+        }))
+      });
+    } else {
+      blocks.push({
+        type: 'paragraph',
+        content: [{ type: 'text', text: currentBlock.join(' ') }]
+      });
+    }
+    currentBlock = [];
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === '') {
+      flushBlock();
+      continue;
+    }
+
+    const type = getLineType(trimmed);
+    if (type !== currentType) {
+      flushBlock();
+      currentType = type;
+    }
+    currentBlock.push(trimmed);
+  }
+  flushBlock();
+  return blocks;
+}
 
 export default function EditorToolbar({ editor }) {
   if (!editor) return null;
@@ -203,6 +271,43 @@ export default function EditorToolbar({ editor }) {
         >
           <ImagePlus size={15} />
           <span className="toolbar-btn-label">Image</span>
+        </button>
+        <button
+          type="button"
+          className="toolbar-btn toolbar-btn--icon"
+          title="Import text/paragraphs from PDF, DOCX, or text file"
+          onClick={() => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.pdf, .docx, .txt, .md';
+            input.onchange = (e) => {
+              const file = e.target.files[0];
+              if (!file) return;
+              const showToast = useAcaStore.getState().showToast;
+              showToast('info', 'Uploading and extracting text...');
+              import('@/services/api').then(({ uploadDocument }) => {
+                uploadDocument(file)
+                  .then((res) => {
+                    if (res && res.text) {
+                      const lines = res.text.split('\n');
+                      const blocks = convertTextToParagraphsAndLists(lines);
+                      editor.chain().focus().insertContent(blocks).run();
+                      showToast('success', 'Document text imported ✓');
+                    } else {
+                      showToast('error', 'No text extracted from document');
+                    }
+                  })
+                  .catch((err) => {
+                    console.error('Document import failed:', err);
+                    showToast('error', 'Import failed: ' + err.message);
+                  });
+              });
+            };
+            input.click();
+          }}
+        >
+          <FileText size={15} />
+          <span className="toolbar-btn-label">Import File</span>
         </button>
       </>)}
 
