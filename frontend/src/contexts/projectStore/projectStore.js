@@ -346,6 +346,51 @@ export const useProjectStore = create((set, get) => ({
     return project;
   },
 
+  createImportedProject(title, chaptersList) {
+    const now = Date.now();
+    const project = {
+      id: genId(),
+      templateId: "report", // Default to report template
+      createdAt: now,
+      updatedAt: now,
+      metadata: {
+        title,
+        authors: "",
+        institution: "",
+        department: "",
+        year: new Date().getFullYear().toString(),
+        enableChapterNumbers: true,
+        enableListOfFigures: true,
+        enableListOfTables: true
+      },
+      frontMatter: [
+        { id: genId(), label: "Title Page", content: null },
+        { id: genId(), label: "Abstract", content: null },
+        { id: genId(), label: "Table of Contents", content: null }
+      ],
+      chapters: chaptersList.map((ch) => ({
+        id: genId(),
+        title: ch.title,
+        content: ch.content,
+        required: false,
+      })),
+    };
+
+    const firstChapterId =
+      project.chapters[0]?.id || project.frontMatter[0]?.id || null;
+    const updated = [project, ...get().projects];
+    saveProjectsLocal(updated, true);
+    set({
+      projects: updated,
+      currentProjectId: project.id,
+      activeChapterId: firstChapterId,
+      compileJob: null,
+    });
+    dirtyProjectIds.add(project.id);
+    scheduleActiveProjectSync(get);
+    return project;
+  },
+
   openProject(projectId) {
     const project = get().projects.find((p) => p.id === projectId);
     if (!project) return;

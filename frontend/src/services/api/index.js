@@ -1,6 +1,7 @@
 /** Single source of truth for the backend URL. Change this one line to switch environments. */
-export const API_BASE_URL = 'https://docfoge.onrender.com/api';
-// export const API_BASE_URL = `http://localhost:3001/api`;
+export const API_BASE_URL = (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'))
+  ? 'http://localhost:3001/api'
+  : 'https://docfoge.onrender.com/api';
 
 /** @internal used by all api functions in this file */
 const BASE = API_BASE_URL;
@@ -275,4 +276,25 @@ export async function extractMathFromImage(base64Image) {
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.error || 'Vision extraction failed');
   return data; // { type: 'math'|'text', content: string }
+}
+
+export async function uploadDocument(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const token = getStoredToken();
+  const headers = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE}/documents/upload`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.success === false) {
+    throw new Error(data.error || `Upload failed with status ${res.status}`);
+  }
+  return data;
 }

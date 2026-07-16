@@ -1,11 +1,14 @@
 const express = require('express');
-const { parseDocument } = require('../controllers/parseController');
+const multer = require('multer');
+const { parseDocument, uploadAndParseDocument } = require('../controllers/parseController');
 const { enqueueExport, getJobStatus, downloadPdf } = require('../controllers/exportController');
 
 const router = express.Router();
+const upload = multer({ dest: 'uploads/' });
 
 // Parse raw text → blocks
 router.post('/parse', parseDocument);
+router.post('/upload', upload.single('file'), uploadAndParseDocument);
 
 // Export pipeline
 router.post('/export',                     enqueueExport);

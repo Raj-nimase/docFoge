@@ -18,6 +18,147 @@ import {
 } from 'lucide-react';
 import { getTemplate, getTemplateIcon, formatDate } from './dashboardUtils.jsx';
 import { SketchHeroAccent, SketchUnderline, SketchDocument } from '@/components/SketchDecor/SketchDecor';
+import * as api from '@/services/api';
+
+function convertTextToParagraphsAndLists(lines) {
+  const blocks = [];
+  let currentBlock = [];
+  let currentType = 'paragraph'; // 'paragraph', 'bulletList', 'orderedList'
+
+  const getLineType = (trimmedLine) => {
+    if (/^[-*•]\s+/.test(trimmedLine)) return 'bulletList';
+    if (/^\d+[.)]\s+/.test(trimmedLine)) return 'orderedList';
+    return 'paragraph';
+  };
+
+  const flushBlock = () => {
+    if (currentBlock.length === 0) return;
+    
+    if (currentType === 'bulletList') {
+      blocks.push({
+        type: 'bulletList',
+        content: currentBlock.map(line => ({
+          type: 'listItem',
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: line.replace(/^[-*•]\s+/, '').trim() }]
+            }
+          ]
+        }))
+      });
+    } else if (currentType === 'orderedList') {
+      blocks.push({
+        type: 'orderedList',
+        content: currentBlock.map(line => ({
+          type: 'listItem',
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: line.replace(/^\d+[.)]\s+/, '').trim() }]
+            }
+          ]
+        }))
+      });
+    } else {
+      blocks.push({
+        type: 'paragraph',
+        content: [{ type: 'text', text: currentBlock.join(' ') }]
+      });
+    }
+    currentBlock = [];
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === '') {
+      flushBlock();
+      continue;
+    }
+
+    const type = getLineType(trimmed);
+    if (type !== currentType) {
+      flushBlock();
+      currentType = type;
+    }
+    currentBlock.push(trimmed);
+  }
+  flushBlock();
+  return blocks;
+}
+
+function parseImportedTextIntoChapters(text) {
+  if (!text) return [];
+
+  const lines = text.split('\n');
+  const chapters = [];
+  let currentChapterTitle = 'Introduction';
+  let currentLines = [];
+
+  const isHeading = (line) => {
+    const trimmed = line.trim();
+    if (trimmed.length === 0 || trimmed.length > 80) return false;
+    
+    // 1. All uppercase short headings (e.g. ABSTRACT, INTRODUCTION)
+    const isShortUpper = trimmed === trimmed.toUpperCase() && trimmed.length < 50 && /[A-Z]/.test(trimmed);
+    if (isShortUpper) return true;
+
+    // 2. Chapter headings (e.g. Chapter 1, CHAPTER II)
+    if (/^chapter\s+\d+/i.test(trimmed) || /^chapter\s+[ivxldcm]+/i.test(trimmed)) return true;
+
+    // 3. Multi-level numbering (e.g. 1.1 Background, 2.1.3 Details)
+    if (/^\d+\.\d+(\.\d+)*\.?\s+[A-Za-z]/.test(trimmed)) return true;
+
+    // 4. Single-level numbering with Title Case (e.g. 1. Introduction, 2. Literature Review)
+    // but not sentence case (e.g. 1. Step one)
+    if (/^\d+[.)]\s+[A-Z][A-Za-z]*(\s+[A-Z][A-Za-z]*)*$/.test(trimmed)) return true;
+
+    // 5. Common section names exactly (case-insensitive)
+    const commonSectionNames = [
+      'abstract', 'introduction', 'overview', 'background', 'literature review',
+      'methodology', 'methods', 'implementation', 'results', 'evaluation',
+      'discussion', 'conclusion', 'conclusions', 'future work', 'references', 'appendix'
+    ];
+    if (commonSectionNames.includes(trimmed.toLowerCase())) return true;
+
+    return false;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (isHeading(trimmed)) {
+      const hasTextContent = currentLines.some(l => l.trim() !== '');
+      if (hasTextContent || chapters.length > 0) {
+        chapters.push({
+          title: currentChapterTitle,
+          content: {
+            type: 'doc',
+            content: convertTextToParagraphsAndLists(currentLines)
+          }
+        });
+      }
+      currentChapterTitle = trimmed;
+      currentLines = [];
+    } else {
+      currentLines.push(line);
+    }
+  }
+
+  const hasTextContent = currentLines.some(l => l.trim() !== '');
+  if (hasTextContent || chapters.length === 0) {
+    chapters.push({
+      title: currentChapterTitle,
+      content: {
+        type: 'doc',
+        content: convertTextToParagraphsAndLists(currentLines)
+      }
+    });
+  }
+
+  return chapters;
+}
 
 export default function DashboardHomePage() {
   const { t } = useTranslation();
@@ -46,6 +187,46 @@ export default function DashboardHomePage() {
   const [searchQuery, setSearchQuery]       = useState('');
   const [confirmDelete, setConfirmDelete]   = useState(null);
   const [pinnedProjects, setPinnedProjects] = useState(() => new Map());
+
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importTitle, setImportTitle] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState(null);
+
+  const createImportedProject = useAcaStore(s => s.createImportedProject);
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setImportFile(file);
+    const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+    setImportTitle(baseName);
+  };
+
+  const handleImportSubmit = async () => {
+    if (!importFile) return;
+    setImporting(true);
+    setError(null);
+    try {
+      const result = await api.uploadDocument(importFile);
+      if (!result.success || !result.text) {
+        throw new Error(result.error || 'Failed to extract text from the file.');
+      }
+
+      const chaptersList = parseImportedTextIntoChapters(result.text);
+      createImportedProject(importTitle, chaptersList);
+      setShowImportModal(false);
+      // Reset state
+      setImportFile(null);
+      setImportTitle('');
+      navigate('/editor');
+    } catch (err) {
+      setError(err.message || 'Import failed.');
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
@@ -91,6 +272,9 @@ export default function DashboardHomePage() {
         <div className="db-hero-actions">
           <button type="button" className="btn-primary" onClick={onNewProject}>
             <Sparkles size={14} /> {t('newProjectHero')}
+          </button>
+          <button type="button" className="btn-secondary" onClick={() => setShowImportModal(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255, 255, 255, 0.1)', borderColor: 'rgba(255, 255, 255, 0.2)', color: '#fff' }}>
+            <FileText size={14} /> Import Document
           </button>
           <button type="button" className="btn-ghost" onClick={() => navigate('/templates')}>
             <BookOpen size={14} /> {t('browseTemplatesHero')}
@@ -174,9 +358,14 @@ export default function DashboardHomePage() {
           <p className="dashboard-empty-desc">
             {t('emptyDesc')}
           </p>
-          <button className="btn-primary btn-large" onClick={onNewProject}>
-            {t('newProjectBtn')}
-          </button>
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+            <button className="btn-primary btn-large" onClick={onNewProject}>
+              {t('newProjectBtn')}
+            </button>
+            <button className="btn-secondary btn-large" onClick={() => setShowImportModal(true)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <FileText size={16} /> Import Document
+            </button>
+          </div>
         </div>
       ) : (
         <div className="projects-grid">
@@ -189,6 +378,18 @@ export default function DashboardHomePage() {
               <Folder size={32} strokeWidth={1.5} />
             </span>
             <span className="project-card-new-label">{t('createWorkspace')}</span>
+          </button>
+
+          {/* Import file card trigger */}
+          <button
+            className="project-card project-card--new"
+            onClick={() => setShowImportModal(true)}
+            style={{ borderStyle: 'dashed', borderColor: 'var(--border)' }}
+          >
+            <span className="project-card-new-icon" style={{ color: 'var(--accent)' }}>
+              <FileText size={32} strokeWidth={1.5} />
+            </span>
+            <span className="project-card-new-label">Import Document</span>
           </button>
 
           {/* Filtered Project Cards */}
@@ -295,6 +496,111 @@ export default function DashboardHomePage() {
                     onClick={() => handleDeleteConfirm(confirmDelete)}
                   >
                     {t('confirmDelete')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
+
+      {/* Import Document Modal */}
+      <>
+        {showImportModal && (
+          <div className="modal-backdrop" onClick={() => !importing && setShowImportModal(false)}>
+            <div className="modal-panel" style={{ maxWidth: 500 }} onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <span className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Sparkles size={15} style={{ color: 'var(--accent)' }} /> Import Document
+                </span>
+                <button className="modal-close" onClick={() => !importing && setShowImportModal(false)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', lineHeight: 1.5, margin: 0 }}>
+                  Upload a PDF, DOCX, or text file. We will extract the text, split it into chapters automatically, and create a workspace for you to edit.
+                </p>
+
+                {/* Project Title Input */}
+                <div className="metadata-field">
+                  <label className="metadata-label">Project Title</label>
+                  <input
+                    type="text"
+                    className="metadata-input"
+                    value={importTitle}
+                    onChange={e => setImportTitle(e.target.value)}
+                    placeholder="e.g. My Imported Document"
+                    disabled={importing}
+                  />
+                </div>
+
+                {/* File Input container */}
+                <div className="metadata-field">
+                  <label className="metadata-label">Select File (.pdf, .docx, .txt)</label>
+                  <div style={{
+                    border: '2px dashed var(--border)',
+                    borderRadius: 'var(--radius)',
+                    padding: '24px 16px',
+                    textAlign: 'center',
+                    cursor: importing ? 'default' : 'pointer',
+                    background: 'var(--bg)',
+                    position: 'relative'
+                  }}
+                  onClick={() => !importing && document.getElementById('import-file-input').click()}
+                  >
+                    <input
+                      id="import-file-input"
+                      type="file"
+                      accept=".pdf,.docx,.txt,.md"
+                      onChange={handleFileChange}
+                      style={{ display: 'none' }}
+                      disabled={importing}
+                    />
+                    {importFile ? (
+                      <div>
+                        <FileText size={28} style={{ color: 'var(--accent)', marginBottom: 8 }} />
+                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text)' }}>
+                          {importFile.name}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                          {(importFile.size / 1024).toFixed(1)} KB
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <Folder size={28} style={{ color: 'var(--text-muted)', marginBottom: 8 }} />
+                        <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                          Click to select file
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                          Supports PDF, Word (DOCX), Text (TXT)
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {error && (
+                  <div style={{ color: 'var(--error)', fontSize: '0.8rem', marginTop: 4 }}>
+                    ⚠️ {error}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10 }}>
+                  <button className="btn-ghost" onClick={() => setShowImportModal(false)} disabled={importing}>
+                    Cancel
+                  </button>
+                  <button
+                    className="btn-primary"
+                    onClick={handleImportSubmit}
+                    disabled={!importFile || !importTitle.trim() || importing}
+                    style={{ minWidth: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                  >
+                    {importing ? (
+                      <span className="preview-compile-spinner" style={{ width: 12, height: 12 }} />
+                    ) : null}
+                    {importing ? 'Importing...' : 'Import'}
                   </button>
                 </div>
               </div>
