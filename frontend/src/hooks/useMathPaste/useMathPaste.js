@@ -99,17 +99,147 @@ import { MathMLToLaTeX } from "mathml-to-latex";
  * the entire DOM independently. Nodes are collected first, then mutated
  * after the walk completes (DOM mutation during a TreeWalker is unsafe).
  */
+/**
+ * Splits squashed PDF text (where paragraphs, section headings like "3.2 Attention",
+ * and lead-in labels like "Decoder:" are concatenated together without line breaks)
+ * into properly separated blocks.
+ */
+export function separatePdfParagraphsAndHeadings(text) {
+  if (!text) return text;
+
+  let cleaned = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+  // 1. Insert blank lines before section headers squashed after sentence endings or space
+  // e.g. "...less than i. 3.2 Attention An attention..." -> "...less than i.\n\n3.2 Attention\n\nAn attention..."
+  cleaned = cleaned.replace(
+    /([.:!?]|\b)\s+((?:Section\s+)?\d+(?:\.\d+)+[.)]?\s+[A-Z][A-Za-z0-9\s\-/]{1,60})(?=\s+[A-Z])/g,
+    "$1\n\n$2\n\n"
+  );
+
+  // 2. Insert blank lines before single-number section headings if squashed
+  // e.g. "...dmodel = 512. 3 Methodology In this..." -> "...dmodel = 512.\n\n3 Methodology\n\nIn this..."
+  cleaned = cleaned.replace(
+    /([.:!?])\s+(\d+[.)]\s+[A-Z][A-Za-z0-9\s\-/]{1,40})(?=\s+[A-Z])/g,
+    "$1\n\n$2\n\n"
+  );
+
+  // 3. Insert blank lines before paragraph lead-in labels if squashed after a sentence ending
+  // e.g. "...dmodel = 512. Decoder: The decoder is..." -> "...dmodel = 512.\n\nDecoder: The decoder is..."
+  cleaned = cleaned.replace(
+    /([.:!?])\s+([A-Z][A-Za-z0-9\s\-/]{1,30}:\s+[A-Z])/g,
+    "$1\n\n$2"
+  );
+
+  return cleaned;
+}
+
+export function reconstructPdfParagraphs(text) {
+  if (!text) return "";
+  const separated = separatePdfParagraphsAndHeadings(text);
+  const rawLines = separated.split("\n");
+
+  const blocks = [];
+  let currentPara = [];
+
+  const isStructuralLine = (trimmedLine) => {
+    if (!trimmedLine) return true; // empty line breaks paragraph
+    if (/^[-*_]{3,}$/.test(trimmedLine)) return true; // hr
+    if (/^#{1,6}\s/.test(trimmedLine)) return true; // heading
+    if (/^[\[\$\$]|\\\[/.test(trimmedLine)) return true; // math fence
+    if (/^([•◦▪*\-]|(\d+|[a-zA-Z]|[iIvVxX]+)[.)])\s+/.test(trimmedLine)) return true; // list item
+    if (trimmedLine.includes("|") && /^\s*\|?[\s:|\\-]*-[\s:|\\-]*\|?\s*$/.test(trimmedLine)) return true; // table
+    if (/\\[a-zA-Z]/.test(trimmedLine) && trimmedLine.length < 150) return true; // standalone latex
+    if (/^(?:Section\s+)?\d+(?:\.\d+)*[.)]?\s+[A-Z]/i.test(trimmedLine) && trimmedLine.length < 80) return true; // section headers like 3.2 Attention or 3.2.1 Scaled Dot-Product
+    if (/^[A-Z0-9\s\-\.\:]{3,50}$/.test(trimmedLine) && trimmedLine.length < 60 && !/[a-z]/.test(trimmedLine)) return true; // all-caps titles like ABSTRACT
+    return false;
+  };
+
+  for (let i = 0; i < rawLines.length; i++) {
+    const line = rawLines[i];
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      if (currentPara.length > 0) {
+        blocks.push(currentPara.join(" "));
+        currentPara = [];
+      }
+      continue;
+    }
+
+    if (isStructuralLine(trimmed)) {
+      if (currentPara.length > 0) {
+        blocks.push(currentPara.join(" "));
+        currentPara = [];
+      }
+      blocks.push(trimmed);
+    } else {
+      if (currentPara.length > 0) {
+        const prev = currentPara[currentPara.length - 1];
+        const isShortTitleLine = trimmed.length < 60 && /^[A-Z0-9][^.:;!?]*$/.test(trimmed);
+        if (isShortTitleLine && /[.:!?]$/.test(prev)) {
+          blocks.push(currentPara.join(" "));
+          currentPara = [trimmed];
+          continue;
+        }
+      }
+      currentPara.push(trimmed);
+    }
+  }
+
+  if (currentPara.length > 0) {
+    blocks.push(currentPara.join(" "));
+  }
+
+  return blocks.join("\n\n");
+}
+
+/**
+ * Transforms clipboard HTML to replace <math> nodes with TipTap math spans,
+ * strip heading prefixes, remove <hr> / divider paragraphs, and convert
+ * inline CSS styles (font-weight, font-style, text-decoration) into semantic tags.
+ */
 export function transformMathHtml(html) {
   if (!html) return html;
 
-  // ── Cheap text-level gate ─────────────────────────────────────────────
-  const hasMath = html.includes("<math") || html.includes("katex");
-  const hasHeading = /<h[1-6][>\s]/i.test(html);
-  const hasHr = html.includes("<hr");
-  if (!hasMath && !hasHeading && !hasHr) return html;
-
   try {
     const doc = new DOMParser().parseFromString(html, "text/html");
+
+    // ── Convert inline CSS styles into semantic tags ───────────────────────
+    const styledNodes = doc.querySelectorAll("[style]");
+    styledNodes.forEach((node) => {
+      const style = node.getAttribute("style") || "";
+
+      const isBold = /font-weight\s*:\s*(bold|bolder|[6-9]\d{2})/i.test(style);
+      const isItalic = /font-style\s*:\s*(italic|oblique)/i.test(style);
+      const isUnderline = /text-decoration\s*:\s*[^;]*underline/i.test(style);
+      const isStrikethrough = /text-decoration\s*:\s*[^;]*line-through/i.test(style);
+
+      if (isBold && !node.closest("strong, b")) {
+        const strong = doc.createElement("strong");
+        while (node.firstChild) strong.appendChild(node.firstChild);
+        node.appendChild(strong);
+      }
+
+      if (isItalic && !node.closest("em, i")) {
+        const em = doc.createElement("em");
+        while (node.firstChild) em.appendChild(node.firstChild);
+        node.appendChild(em);
+      }
+
+      if (isUnderline && !node.closest("u")) {
+        const u = doc.createElement("u");
+        while (node.firstChild) u.appendChild(node.firstChild);
+        node.appendChild(u);
+      }
+
+      if (isStrikethrough && !node.closest("s, del, strike")) {
+        const s = doc.createElement("s");
+        while (node.firstChild) s.appendChild(node.firstChild);
+        node.appendChild(s);
+      }
+    });
+
+    const hasMath = html.includes("<math") || html.includes("katex");
 
     // ── Single TreeWalker: collect all interesting nodes ─────────────────
     const mathNodes = [];
@@ -563,12 +693,16 @@ function escapeAttr(s) { return (s || "").replace(/&/g, "&amp;").replace(/"/g, "
 function mathSpan(latex, display) {
   return `<span data-latex="${escapeAttr(sanitizeLatex(latex))}"${display ? ' data-display="true"' : ""}></span>`;
 }
-// Convert markdown **bold** / `code` in already-HTML-escaped text into tags
-// (so pasted "* **Stator:** …" keeps its bold instead of showing raw asterisks).
+// Convert markdown bold/italic/strikethrough/underline/code in text into tags
 function mmInlineMd(escaped) {
+  if (!escaped) return "";
   return escaped
-    .replace(/\*\*([^*]+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/`([^`]+?)`/g, "<code>$1</code>");
+    .replace(/(\*\*\*|___)(.*?)\1/g, "<strong><em>$2</em></strong>")
+    .replace(/(\*\*|__)(.*?)\1/g, "<strong>$2</strong>")
+    .replace(/(^|[^\w\\])(\*|_)(?=\S)(.*?)(?<=\S)\2/g, "$1<em>$3</em>")
+    .replace(/~~(.*?)~~/g, "<s>$1</s>")
+    .replace(/`([^`]+?)`/g, "<code>$1</code>")
+    .replace(/&lt;u&gt;(.*?)&lt;\/u&gt;/gi, "<u>$1</u>");
 }
 // A line's inline content → HTML (formatted text interleaved with inline math).
 function mmInlineToHtml(raw) {
@@ -601,7 +735,9 @@ export function looksLikeMarkdownMath(text) {
   const hasLatexCmd = /\\[a-zA-Z]/.test(text);
   const hasInlineMath = /\$[^\n$]+\$/m.test(text) || /\\\(.+\\\)/m.test(text);
   const hasTable = text.includes('|') && /^\s*\|?[\s:|\\-]*-[\s:|\\-]*\|?\s*$/m.test(text);
-  return hasFence || hasTable || hasHeading || ((hasList || hasInlineMath || hasLatexCmd) && text.includes("="));
+  const hasBoldOrItalic = /(\*\*|__|~~|\*|_)[^\s*].*?\1/.test(text);
+  const isMultiLinePdf = text.includes("\n");
+  return hasFence || hasTable || hasHeading || hasBoldOrItalic || isMultiLinePdf || ((hasList || hasInlineMath || hasLatexCmd) && text.includes("="));
 }
 
 // ── Markdown pipe-table helpers ──────────────────────────────────────────────
@@ -697,9 +833,44 @@ export function parseMarkdownMathToHtml(text) {
       continue;
     }
 
+    // Section header detection (e.g. "3.2 Attention", "3.2.1 Scaled Dot-Product Attention", "1. Introduction", "Section 3.2:")
+    const secHeadMatch = trimmed.match(/^(?:Section\s+)?(\d+(?:\.\d+)*)[.)]?\s+(.+)$/i);
+    if (secHeadMatch) {
+      flushList();
+      const secNum = secHeadMatch[1];
+      const secTitle = stripHeadingPrefix(secHeadMatch[2]);
+      const dots = (secNum.match(/\./g) || []).length;
+      const lvl = Math.min(3, Math.max(1, dots + 1));
+      headingSeen = true;
+      html += `<h${lvl}>${escapeHtml(secTitle || secHeadMatch[2])}</h${lvl}>`;
+      i++;
+      continue;
+    }
+
+    // Plain-text heading detection (stands alone, short, no sentence ending)
+    const prevBlank = i === 0 || lines[i - 1].trim() === "";
+    const nextBlank = i === lines.length - 1 || lines[i + 1].trim() === "";
+    const headText = trimmed;
+    const headWords = headText.split(/\s+/).length;
+    
+    const isExcludedWord = /^(where|or|and|given|hence|therefore|thus|then|but|so|if|let|with|for|to|now|here)$/i.test(headText);
+    const startsCorrectly = /^[A-Z0-9]/.test(headText);
+    
+    if (prevBlank && nextBlank && headText.length <= 64 && headWords <= 8 &&
+      startsCorrectly && !isExcludedWord &&
+      /[A-Za-z]/.test(headText) && !/[.:,;]$/.test(headText) &&
+      !mmLooksMathy(headText) && !mmMathScore(headText) && !mmDefLine(trimmed)) {
+      flushList();
+      const lvl = headingSeen ? 2 : 1;
+      headingSeen = true;
+      html += `<h${lvl}>${escapeHtml(stripHeadingPrefix(headText))}</h${lvl}>`;
+      i++; continue;
+    }
+
     // List item check (bullet, number, or letter/roman list)
     const lm = line.match(/^(\s*)(?:([*\-+•◦▪])|(\d+)[.)]|([a-zA-Z])[.)])\s+(.*)$/);
     if (lm) {
+
       const indent = lm[1].replace(/\t/g, "    ").length;
       const type = lm[2] ? "ul" : "ol";
       const content = lm[5].trim();
@@ -738,27 +909,6 @@ export function parseMarkdownMathToHtml(text) {
       continue;
     }
 
-    // Plain-text heading detection (stands alone, short, no sentence ending)
-    const prevBlank = i === 0 || lines[i - 1].trim() === "";
-    const nextBlank = i === lines.length - 1 || lines[i + 1].trim() === "";
-    const numHead = trimmed.match(/^\d+[.)]\s+(.+)$/);
-    const headText = (numHead ? numHead[1] : trimmed).trim();
-    const headWords = headText.split(/\s+/).length;
-    
-    const isExcludedWord = /^(where|or|and|given|hence|therefore|thus|then|but|so|if|let|with|for|to|now|here)$/i.test(headText);
-    const startsCorrectly = /^[A-Z0-9]/.test(headText);
-    
-    if (prevBlank && nextBlank && headText.length <= 64 && headWords <= 8 &&
-      startsCorrectly && !isExcludedWord &&
-      /[A-Za-z]/.test(headText) && !/[.:,;]$/.test(headText) &&
-      !mmLooksMathy(headText) && !mmMathScore(headText) && !mmDefLine(trimmed)) {
-      flushList();
-      const lvl = numHead ? 3 : headingSeen ? 2 : 1;
-      headingSeen = true;
-      html += `<h${lvl}>${escapeHtml(stripHeadingPrefix(headText))}</h${lvl}>`;
-      i++; continue;
-    }
-
     // Standalone definition / legend line
     const dfn = mmDefLine(trimmed);
     if (dfn) { flushList(); html += `<p>${mathSpan(dfn.lhs + " = \\text{" + mmTextEscape(dfn.rhs) + "}", false)}</p>`; i++; continue; }
@@ -780,8 +930,15 @@ export function parseMarkdownMathToHtml(text) {
       i++; continue;
     }
 
-    // Plain paragraph (with any inline math)
-    html += `<p>${mmInlineToHtml(trimmed)}</p>`;
+    // Plain paragraph (with lead-in bold label like "Decoder:", "Note:", "Figure 1:")
+    const leadInMatch = trimmed.match(/^([A-Z][A-Za-z0-9\s\-/]{1,35}:)\s+(.*)$/);
+    if (leadInMatch) {
+      const label = escapeHtml(leadInMatch[1]);
+      const rest = leadInMatch[2];
+      html += `<p><strong>${label}</strong> ${mmInlineToHtml(rest)}</p>`;
+    } else {
+      html += `<p>${mmInlineToHtml(trimmed)}</p>`;
+    }
     i++;
   }
   flushList();
@@ -792,34 +949,26 @@ export function handleRichPaste(view, event, editor) {
   const plainText = event.clipboardData?.getData("text/plain") || "";
   const htmlText = event.clipboardData?.getData("text/html") || "";
 
-  // ── Fast exit: nothing to intercept ───────────────────────────────────
-  // If the plain text contains no math indicators (backslash, dollar sign,
-  const looksLikeMath = /[\\$]|<math/.test(plainText);
-  const looksLikeListContent = /^[\s]*[•◦▪*\-]\s|^\s*\d+[.)]\s|^\s*[a-zA-Z][.)]\s/m.test(plainText);
-  const looksLikeTable = plainText.includes('|') && /^\s*\|?[\s:|\\-]*-[\s:|\\-]*\|?\s*$/m.test(plainText);
-  if (!looksLikeMath && !looksLikeListContent && !looksLikeTable) {
+  if (!plainText && !htmlText) return false;
+
+  const hasSemanticBlockHtml = /<(p|h[1-6]|ul|ol|table|blockquote)[>\s]/i.test(htmlText);
+  const htmlHasRealMath = /<math[\s>]|class=["']?[^"']*katex/i.test(htmlText);
+
+  // Defer to default HTML parser only if clipboard carries genuine semantic block tags (<p>, <h2>, <ul>, <table>) or MathML
+  if (htmlText && (htmlHasRealMath || hasSemanticBlockHtml)) {
     return false;
   }
 
-  // with "[ … ]" display fences, "X = Torque (N·m)" legend lines and markdown
-  // headings/bullets). Parse the plain text into headings / lists / math spans.
-  //
-  // We only defer to the default HTML path when the clipboard carries GENUINE
-  // math markup (MathML / KaTeX) — that is higher fidelity than re-parsing text.
-  // When the HTML is merely rendered markdown (headings / lists but no <math>),
-  // OUR parser is better: it also converts the "[ … ]" LaTeX fences that the
-  // HTML path leaves as raw text (which is exactly why the formulas "weren't
-  // converting to KaTeX" on a full-document markdown paste).
-  const htmlHasRealMath = /<math[\s>]|class=["']?[^"']*katex/i.test(htmlText);
-  if (!htmlHasRealMath && looksLikeMarkdownMath(plainText)) {
+  // Priority 2: Process PDF text / markdown text through squashed boundary splitter & paragraph reconstructor
+  const cleanPlainText = reconstructPdfParagraphs(plainText);
+
+  if (looksLikeMarkdownMath(cleanPlainText) || cleanPlainText.includes("\n") || cleanPlainText !== plainText) {
     event.preventDefault();
-    editor.commands.insertContent(parseMarkdownMathToHtml(plainText));
+    editor.commands.insertContent(parseMarkdownMathToHtml(cleanPlainText));
     return true;
   }
 
   // Priority 3: Garbled LaTeX or short unicode formulas from web/Claude
-  // Only intercept if the ENTIRE paste looks like a single formula.
-  // Mixed text should be handled by default TipTap paste rules.
   if (isSingleFormula(plainText)) {
     event.preventDefault();
     let formula = plainText.trim();
@@ -838,9 +987,6 @@ export function handleRichPaste(view, event, editor) {
   }
 
   // Priority 4: Plain text with bullet points or numbered lists (PDF copy/paste)
-  // Many PDF viewers (like Chrome) inject flat <p> or <span> tags without actual list structure into text/html.
-  // If the HTML lacks actual semantic list tags, but the plain text looks like a list,
-  // we intercept and use our smart list parser!
   const hasSemanticHtmlList = /<(ul|ol|li)[>\s]/i.test(htmlText);
   const isSquashedList = !plainText.includes("\n") && looksLikeList(plainText);
 
@@ -853,6 +999,13 @@ export function handleRichPaste(view, event, editor) {
     event.preventDefault();
     const html = textToHtmlList(plainText);
     editor.commands.insertContent(html);
+    return true;
+  }
+
+  // Priority 5: Universal fallback for PDF text
+  if (cleanPlainText) {
+    event.preventDefault();
+    editor.commands.insertContent(parseMarkdownMathToHtml(cleanPlainText));
     return true;
   }
 
