@@ -58,18 +58,63 @@ function buildPreamble(templateId, metadata) {
   const author = escapeLatex(metadata.authors || "");
   const date = escapeLatex(metadata.year || "");
   const isIEEE = templateId === "ieee-paper";
+  const isReport = ["diploma-project-report", "thesis", "assignment"].includes(templateId);
+  const isDoubleSided = !!metadata.isDoubleSided;
 
   const docclass = isIEEE
     ? "\\documentclass[twocolumn,10pt]{article}"
+    : isDoubleSided
+    ? "\\documentclass[12pt,a4paper,twoside]{report}"
     : "\\documentclass[12pt,a4paper]{report}";
+
+  const enableHeader = !!metadata.enableHeader;
+  const topMargin = enableHeader ? "15mm" : "30mm";
+
+  let geometryPackage;
+  if (isReport) {
+    if (isDoubleSided) {
+      geometryPackage = `\\usepackage[a4paper,top=${topMargin},bottom=22mm,inner=30mm,outer=20mm,headheight=14pt,headsep=12mm,footskip=13mm]{geometry}`;
+    } else {
+      geometryPackage = `\\usepackage[a4paper,top=${topMargin},bottom=22mm,left=30mm,right=20mm,headheight=14pt,headsep=12mm,footskip=13mm]{geometry}`;
+    }
+  } else if (isIEEE) {
+    geometryPackage = "\\usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=1.5cm,right=1.5cm]{geometry}";
+  } else {
+    geometryPackage = "\\usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=3.5cm,right=1.25cm]{geometry}";
+  }
 
   // Minimal, Tectonic-safe package set
   const lines = [
     docclass,
     "\\usepackage{amsmath, amssymb, amsfonts}",
-    "\\usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=3.5cm,right=1.25cm]{geometry}",
+    geometryPackage,
+    "\\usepackage{fontspec}",
+    "\\setmainfont{FreeSerif}[",
+    "  Extension = .otf,",
+    "  UprightFont = *,",
+    "  BoldFont = *Bold,",
+    "  ItalicFont = *Italic,",
+    "  BoldItalicFont = *BoldItalic,",
+    "]",
+    "\\setsansfont{FreeSans}[",
+    "  Extension = .otf,",
+    "  UprightFont = *,",
+    "  BoldFont = *Bold,",
+    "  ItalicFont = *Oblique,",
+    "  BoldItalicFont = *BoldOblique,",
+    "]",
+    "\\setmonofont{FreeMono}[",
+    "  Extension = .otf,",
+    "  UprightFont = *,",
+    "  BoldFont = *Bold,",
+    "  ItalicFont = *Oblique,",
+    "  BoldItalicFont = *BoldOblique,",
+    "]",
     "\\usepackage{setspace}",
     "\\usepackage{graphicx}",
+    "\\usepackage{caption}",
+    "\\captionsetup[table]{position=above, skip=10pt}",
+    "\\captionsetup[figure]{position=below, skip=10pt}",
     "\\usepackage{booktabs}",
     "\\usepackage{array}",
     "\\usepackage{longtable}",
@@ -82,7 +127,7 @@ function buildPreamble(templateId, metadata) {
     "\\usepackage{hyperref}",
     "\\usepackage{enumitem}",
     "\\usepackage{float}",
-    "\\setlist{noitemsep, topsep=0.5em, parsep=0pt, partopsep=0pt}",
+    "\\setlist{topsep=0.5em, itemsep=2pt, parsep=0pt, partopsep=0pt}",
     "",
     isIEEE ? "\\renewcommand{\\arraystretch}{1.2}" : "\\renewcommand{\\arraystretch}{1.6}",
     isIEEE ? "\\setlength{\\tabcolsep}{6pt}" : "\\setlength{\\tabcolsep}{14pt}",
@@ -116,27 +161,80 @@ function buildPreamble(templateId, metadata) {
     "",
   ];
 
-  if (!isIEEE) {
+  if (isReport) {
+    // Section 2.1.3: 1.5 line spacing
+    lines.push("\\onehalfspacing");
+    // Section 2.1.7: Clean Paragraph Spacing (0pt indent + 6pt parskip) & Widow/Orphan Control
+    lines.push("\\setlength{\\parindent}{0pt}");
+    lines.push("\\setlength{\\parskip}{6pt}");
+    lines.push("\\clubpenalty=10000");
+    lines.push("\\widowpenalty=10000");
+    lines.push("\\hyphenpenalty=1000");
+    lines.push("");
+    // Section 2.2.1 & 2.2.2: Compact, Balanced Chapter and Section Headings
+    lines.push("\\usepackage{titlesec}");
+    lines.push("\\titleformat{\\chapter}[display]");
+    lines.push("  {\\normalfont\\fontsize{18pt}{22pt}\\selectfont\\bfseries\\centering}");
+    lines.push("  {\\chaptertitlename\\ \\thechapter}");
+    lines.push("  {4mm}");
+    lines.push("  {\\fontsize{18pt}{22pt}\\selectfont\\bfseries}");
+    lines.push("\\titlespacing*{\\chapter}{0pt}{-10pt}{10mm}");
+    lines.push("");
+    lines.push("\\titleformat{\\section}");
+    lines.push("  {\\normalfont\\fontsize{16pt}{20pt}\\selectfont\\bfseries}");
+    lines.push("  {\\thesection}");
+    lines.push("  {1em}");
+    lines.push("  {}");
+    lines.push("\\titlespacing*{\\section}{0pt}{8mm}{3mm}");
+    lines.push("");
+    lines.push("\\titleformat{\\subsection}");
+    lines.push("  {\\normalfont\\fontsize{14pt}{18pt}\\selectfont\\bfseries}");
+    lines.push("  {\\thesubsection}");
+    lines.push("  {1em}");
+    lines.push("  {}");
+    lines.push("\\titlespacing*{\\subsection}{0pt}{6mm}{2mm}");
+    lines.push("");
+    lines.push("\\titleformat{\\subsubsection}");
+    lines.push("  {\\normalfont\\fontsize{12pt}{15pt}\\selectfont\\bfseries}");
+    lines.push("  {\\thesubsubsection}");
+    lines.push("  {1em}");
+    lines.push("  {}");
+    lines.push("\\titlespacing*{\\subsubsection}{0pt}{5mm}{2mm}");
+    lines.push("");
+    lines.push("\\setlength{\\abovedisplayskip}{6pt}");
+    lines.push("\\setlength{\\belowdisplayskip}{6pt}");
+    lines.push("");
+    lines.push("\\setlist[itemize]{leftmargin=1.5em, itemsep=2pt, topsep=4pt, parsep=0pt, partopsep=0pt}");
+    lines.push("\\setlist[enumerate]{leftmargin=1.5em, itemsep=2pt, topsep=4pt, parsep=0pt, partopsep=0pt}");
+    lines.push("");
+    lines.push("\\setcounter{secnumdepth}{3}");
+    lines.push("\\setcounter{tocdepth}{3}");
+  } else if (!isIEEE) {
     lines.push("\\doublespacing");
-    // Number sections 3 levels deep: 1 / 1.1 / 1.1.1
     lines.push("\\setcounter{secnumdepth}{3}");
     lines.push("\\setcounter{tocdepth}{3}");
   }
 
   // ─── Headers & Footers (fancyhdr) ───
   const config = getHeaderFooterConfig(metadata);
-  const isReport = ["diploma-project-report", "thesis", "assignment"].includes(templateId);
+
+  lines.push("");
+  lines.push("\\usepackage{fancyhdr}");
+
+  if (isReport) {
+    // Redefine plain page style so chapter first pages have center footer page number & NO header (Section 2.1.5)
+    lines.push("\\fancypagestyle{plain}{%");
+    lines.push("  \\fancyhf{}");
+    lines.push("  \\fancyfoot[C]{\\thepage}");
+    lines.push("  \\renewcommand{\\headrulewidth}{0pt}");
+    lines.push("  \\renewcommand{\\footrulewidth}{0pt}");
+    lines.push("}");
+  }
 
   if (config.enableHeader || config.enableFooter) {
-    lines.push("");
-    lines.push("\\usepackage{fancyhdr}");
-    
-    // For standard reports, we keep the default style as plain for the front matter.
-    // We will activate fancy headers/footers right before Chapter 1 in buildBody.
     if (isReport) {
       lines.push("\\pagestyle{plain}");
     } else {
-      // For articles / IEEE papers, we want fancy headers/footers immediately from page 1!
       lines.push("\\pagestyle{fancy}");
     }
     
@@ -167,6 +265,8 @@ function buildPreamble(templateId, metadata) {
       lines.push(`  \\renewcommand{\\footrulewidth}{${config.frule}}`);
       lines.push("}");
     }
+  } else {
+    lines.push("\\pagestyle{plain}");
   }
 
   lines.push("");
@@ -323,9 +423,27 @@ function buildTitlePage(meta) {
 
 // ─── TipTap JSON → LaTeX ──────────────────────────────────────────────────────
 
+function joinBlocksWithSmartSpacing(blocks) {
+  let result = "";
+  for (let i = 0; i < blocks.length; i++) {
+    const block = (blocks[i] || "").trim();
+    if (!block) continue;
+    if (!result) {
+      result = block;
+      continue;
+    }
+    const prevEndsMath = result.trimEnd().endsWith("\\]");
+    const currStartsMath = block.startsWith("\\[");
+    const sep = (prevEndsMath || currStartsMath) ? "\n" : "\n\n";
+    result += sep + block;
+  }
+  return result;
+}
+
 function convertTipTapToLatex(tiptapJson, templateId) {
   if (!tiptapJson || !tiptapJson.content) return "";
-  return tiptapJson.content.map(node => convertNode(node, templateId)).filter(Boolean).join("\n\n");
+  const blocks = tiptapJson.content.map(node => convertNode(node, templateId)).filter(Boolean);
+  return joinBlocksWithSmartSpacing(blocks);
 }
 
 /**
@@ -350,22 +468,37 @@ function convertTipTapToLatexWithLevelShift(tiptapJson, templateId) {
   const targetMinLevel = isIEEE ? 2 : 1;
   const shift = minLevel <= 3 ? targetMinLevel - minLevel : 0;
 
-  return tiptapJson.content
+  const blocks = tiptapJson.content
     .map((node) => convertNodeWithShift(node, shift, templateId))
-    .filter(Boolean)
-    .join("\n\n");
+    .filter(Boolean);
+
+  return joinBlocksWithSmartSpacing(blocks);
+}
+
+function isMathText(text) {
+  const tr = (text || "").trim();
+  if (!tr) return false;
+  if (/^[\[\]$$]/.test(tr)) return true;
+  if (/^\\[a-zA-Z]+/.test(tr)) return true;
+  if (/^\$/.test(tr)) return true;
+  if (tr.includes("\\frac") || tr.includes("\\sqrt") || tr.includes("\\sum")) return true;
+  return false;
 }
 
 function convertNodeWithShift(node, shift, templateId) {
   if (!node) return "";
   if (node.type === "heading") {
+    const text = convertInline(node.content, templateId);
+    if (isMathText(text)) {
+      return `\\[ ${sanitizeLatex(text)} \\]`;
+    }
+    const cleanText = stripAllPrefixes(text);
     const rawLevel = node.attrs && node.attrs.level ? node.attrs.level : 1;
     const isIEEE = templateId === "ieee-paper";
     const maxLevel = isIEEE ? 4 : 3;
     const shiftedLevel = Math.max(1, Math.min(maxLevel, rawLevel + shift));
-    const text = stripAllPrefixes(convertInline(node.content, templateId));
     const cmds = { 1: "section", 2: "subsection", 3: "subsubsection", 4: "paragraph" };
-    return `\\${cmds[shiftedLevel] || "paragraph"}{${text}}`;
+    return `\\${cmds[shiftedLevel] || "paragraph"}{${cleanText}}`;
   }
   // For all other node types, use the normal converter
   return convertNode(node, templateId);
@@ -378,12 +511,16 @@ function convertNode(node, templateId) {
       return convertInline(node.content, templateId);
 
     case "heading": {
+      const text = convertInline(node.content, templateId);
+      if (isMathText(text)) {
+        return `\\[ ${sanitizeLatex(text)} \\]`;
+      }
+      const cleanText = stripAllPrefixes(text);
       const level = node.attrs && node.attrs.level ? node.attrs.level : 1;
-      const text = stripAllPrefixes(convertInline(node.content, templateId));
       const isIEEE = templateId === "ieee-paper";
       const actualLevel = isIEEE ? level + 1 : level;
       const cmds = { 1: "section", 2: "subsection", 3: "subsubsection", 4: "paragraph" };
-      return `\\${cmds[actualLevel] || "paragraph"}{${text}}`;
+      return `\\${cmds[actualLevel] || "paragraph"}{${cleanText}}`;
     }
 
     case "bulletList":
@@ -498,6 +635,7 @@ function convertTable(tableNode, templateId) {
   const tableWidth = isIEEE ? "\\columnwidth" : "\\textwidth";
 
   let tex = `\\begin{table}[H]\n\\centering\n`;
+  tex += `\\caption{${caption}}\n\\vspace{4pt}\n`;
   tex += `\\begin{tabularx}{${tableWidth}}{| ${colSpec} |}\n\\hline\n`;
 
   for (const row of rows) {
@@ -511,7 +649,7 @@ function convertTable(tableNode, templateId) {
     tex += cells.join(" & ") + " \\\\\n\\hline\n";
   }
 
-  tex += `\\end{tabularx}\n\\caption{${caption}}\n\\end{table}`;
+  tex += `\\end{tabularx}\n\\end{table}`;
   return tex;
 }
 

@@ -43,8 +43,9 @@ const DANGEROUS_PATTERNS = [
 function escapeLatex(text) {
   if (!text || typeof text !== 'string') return '';
 
-  // 1. Strip emoji characters (all major emoji/symbol ranges)
+  // 1. Strip emoji characters and unprintable control characters
   let cleaned = text
+    .replace(/[\uFFFD\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '') // Control chars
     .replace(/[\u{1F000}-\u{1FFFF}]/gu, '')   // Emoticons, symbols, etc.
     .replace(/[\u{2600}-\u{27BF}]/gu, '')      // Misc symbols, dingbats
     .replace(/[\u{FE00}-\u{FE0F}]/gu, '')      // Variation selectors
@@ -115,6 +116,12 @@ function sanitizeLatex(latex) {
     .replace(/[\uFFFD\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, '')
     .replace(/(^|[^\\])%/g, '$1\\%');
 
+  // Fix OCR/Markdown artifact hashes:
+  // 1. Replace '##' with '-' (minus sign)
+  cleaned = cleaned.replace(/##/g, '-');
+  // 2. Remove single unescaped '#'
+  cleaned = cleaned.replace(/(^|[^\\])#/g, '$1');
+
   // 2. Normalize unicode whitespace to regular spaces
   cleaned = cleaned.replace(/[\u00A0\u2002-\u200A\u202F\u205F]/g, ' ');
 
@@ -142,8 +149,8 @@ function sanitizeLatex(latex) {
     .replace(/²/g, "^2")
     .replace(/³/g, "^3");
 
-  // 4. Strip any nested LaTeX math delimiters (\(, \), \[, \]) to prevent compilation errors
-  cleaned = cleaned.replace(/\\\(|\\\)|\\\[|\\\]/g, '');
+  // 4. Strip outer LaTeX display delimiters (\[, \], \(, \)) while preserving \left[ and \right]
+  cleaned = cleaned.replace(/(?<!\\left)\\\[|(?<!\\right)\\\]|\\\(|\\\)/g, '');
 
   // 5. Strip all unescaped $ signs to prevent nested math mode compilation errors
   return cleaned.replace(/\\\$|(\$)/g, (match, group1) => group1 ? '' : match);

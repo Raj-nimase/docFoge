@@ -8,10 +8,29 @@
 const PREAMBLE = `\\documentclass[12pt,a4paper]{report}
 
 % ─── Packages ──────────────────────────────────────────────────────────────────
-\\usepackage[utf8]{inputenc}         % UTF-8 input encoding (required for pdflatex)
-\\usepackage[T1]{fontenc}            % Proper font encoding for pdflatex
 \\usepackage[a4paper, margin=1in]{geometry}
-\\usepackage{mathptmx}            % Times New Roman-like font (Type1, no system fonts needed)
+\\usepackage{fontspec}            % Fontspec for XeTeX/Tectonic
+\\setmainfont{FreeSerif}[
+  Extension = .otf,
+  UprightFont = *,
+  BoldFont = *Bold,
+  ItalicFont = *Italic,
+  BoldItalicFont = *BoldItalic,
+]
+\\setsansfont{FreeSans}[
+  Extension = .otf,
+  UprightFont = *,
+  BoldFont = *Bold,
+  ItalicFont = *Oblique,
+  BoldItalicFont = *BoldOblique,
+]
+\\setmonofont{FreeMono}[
+  Extension = .otf,
+  UprightFont = *,
+  BoldFont = *Bold,
+  ItalicFont = *Oblique,
+  BoldItalicFont = *BoldOblique,
+]
 \\usepackage{setspace}            % Line spacing
 \\usepackage{titlesec}            % Section heading customisation
 \\usepackage{fancyhdr}            % Headers/footers

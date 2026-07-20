@@ -60,15 +60,20 @@ const MathView = ({ node, updateAttributes, selected }) => {
     const candidates = [latex, s1, s2, s3];
     let prev = null;
     for (const cand of candidates) {
-      if (cand === prev) continue;
+      if (!cand || cand === prev) continue;
       prev = cand;
       try {
         katex.render(cand, el, { throwOnError: true, displayMode });
         return;
-      } catch (e) { /* try next */ }
+      } catch (e) {
+        console.warn("KaTeX candidate failed:", cand, e);
+      }
     }
-    try { katex.render(s3, el, { throwOnError: false, displayMode }); }
-    catch (e2) { el.textContent = s3; }
+    try {
+      katex.render(s1 || s2 || latex, el, { throwOnError: false, displayMode });
+    } catch (e2) {
+      el.textContent = latex;
+    }
   }, []);
 
   // Main formula render
@@ -716,34 +721,36 @@ export default function ChapterEditor({
         return false;
       },
       handlePaste: (view, event) => {
-        const items = (event.clipboardData || event.originalEvent.clipboardData)
-          .items;
-        for (const item of items) {
-          if (item.type.indexOf("image") === 0) {
-            event.preventDefault();
-            const file = item.getAsFile();
-            const showToast = useAcaStore.getState().showToast;
+        const clipboardData = event.clipboardData || event.originalEvent?.clipboardData;
+        const items = clipboardData?.items;
+        if (items) {
+          for (const item of items) {
+            if (item.type.indexOf("image") === 0) {
+              event.preventDefault();
+              const file = item.getAsFile();
+              const showToast = useAcaStore.getState().showToast;
 
-            showToast("info", "Uploading image...");
-            import("@/services/api").then(({ uploadImage }) => {
-              uploadImage(file)
-                .then((url) => {
-                  const node = view.state.schema.nodes.image.create({
-                    src: url,
+              showToast("info", "Uploading image...");
+              import("@/services/api").then(({ uploadImage }) => {
+                uploadImage(file)
+                  .then((url) => {
+                    const node = view.state.schema.nodes.image.create({
+                      src: url,
+                    });
+                    const transaction = view.state.tr.replaceSelectionWith(node);
+                    view.dispatch(transaction);
+                    showToast("success", "Image uploaded ✓");
+                  })
+                  .catch((err) => {
+                    showToast("error", "Image upload failed: " + err.message);
+                    console.error(err);
                   });
-                  const transaction = view.state.tr.replaceSelectionWith(node);
-                  view.dispatch(transaction);
-                  showToast("success", "Image uploaded ✓");
-                })
-                .catch((err) => {
-                  showToast("error", "Image upload failed: " + err.message);
-                  console.error(err);
-                });
-            });
-            return true;
+              });
+              return true;
+            }
           }
         }
-        return false;
+        return handleRichPaste(view, event);
       },
     },
     content: normalizeContent(section?.content || ""),

@@ -2190,6 +2190,13 @@ body {
   box-shadow: none;
 }
 
+/* Reduce spacing on paragraphs that contain a display math block */
+.tiptap-editor .ProseMirror p:has(.math-view-wrapper) {
+  line-height: 1.2 !important;
+  margin-top: 0.15em !important;
+  margin-bottom: 0.15em !important;
+}
+
 .math-view-wrapper.selected {
   /* No box/background around selected math node to avoid visual clutter */
 }
@@ -2220,6 +2227,10 @@ body {
 .tiptap-editor .katex {
   font-size: 1.1em;
   line-height: 1.2;
+}
+
+.tiptap-editor .katex-display {
+  margin: 0.2em 0 !important;
 }
 
 .tiptap-editor .katex .katex-mathml {

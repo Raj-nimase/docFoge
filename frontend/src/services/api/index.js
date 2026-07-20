@@ -4,7 +4,7 @@ export const API_BASE_URL = (typeof window !== 'undefined' && (window.location.h
   : 'https://docfoge.onrender.com/api';
 
 /** @internal used by all api functions in this file */
-const BASE = 'https://docfoge.onrender.com/api'
+const BASE = 'http://localhost:3001/api'
 
 const TOKEN_KEY = 'acadoc_token';
 

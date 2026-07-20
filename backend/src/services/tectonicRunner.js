@@ -169,12 +169,9 @@ async function compileTex(latexSource, jobId) {
 function runTectonic(texPath, outDir, { multiPass = true } = {}) {
   return new Promise((resolve, reject) => {
     const args = [
+      '-Z', 'continue-on-errors',
       '--outdir', outDir,
       '--reruns', multiPass ? '1' : '0',  // 0 = 1 pass, 1 = 2 passes
-      // NOTE: --format latex is intentionally omitted — it requires
-      // tectonic-format-latex.tex which is absent on cold Render deploys.
-      // NOTE: --only-cached is intentionally omitted — it blocks format
-      // generation (.fmt file) on fresh deploys, causing cold-start failures.
     ];
 
     args.push(texPath);

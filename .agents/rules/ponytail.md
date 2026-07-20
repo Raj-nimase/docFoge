@@ -1,5 +1,5 @@
 ---
-trigger: always_on
+trigger: manual
 ---
 
 # Ponytail, lazy senior dev mode

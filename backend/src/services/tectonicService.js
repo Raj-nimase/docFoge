@@ -32,7 +32,7 @@ async function compileLaTeX(latexSource, jobId) {
     //   --print   → print output to stdout
     execFile(
       TECTONIC_PATH,
-      ["--outdir", tmpDir, "--keep-logs", texFile],
+      ["-Z", "continue-on-errors", "--outdir", tmpDir, "--keep-logs", texFile],
       { cwd: tmpDir, timeout: 120_000 },
       (err, stdout, stderr) => {
         if (err) {
