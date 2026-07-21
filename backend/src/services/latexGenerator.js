@@ -121,7 +121,7 @@ function buildPreamble(templateId, metadata) {
     "\\usepackage{setspace}",
     "\\usepackage{graphicx}",
     "\\usepackage{caption}",
-    "\\captionsetup[table]{position=above, skip=10pt}",
+    "\\captionsetup[table]{position=below, skip=10pt}",
     "\\captionsetup[figure]{position=below, skip=10pt}",
     "\\usepackage{booktabs}",
     "\\usepackage{array}",
@@ -698,7 +698,6 @@ function convertTable(tableNode, templateId) {
   const tableWidth = isIEEE ? "\\columnwidth" : "\\textwidth";
 
   let tex = `\\begin{table}[H]\n\\centering\n`;
-  tex += `\\caption{${caption}}\n\\vspace{4pt}\n`;
   tex += `\\begin{tabularx}{${tableWidth}}{| ${colSpec} |}\n\\hline\n`;
 
   for (const row of rows) {
@@ -715,7 +714,7 @@ function convertTable(tableNode, templateId) {
     tex += cells.join(" & ") + " \\\\\n\\hline\n";
   }
 
-  tex += `\\end{tabularx}\n\\end{table}`;
+  tex += `\\end{tabularx}\n\\vspace{6pt}\n\\caption{${caption}}\n\\end{table}`;
   return tex;
 }
 

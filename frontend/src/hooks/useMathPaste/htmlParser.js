@@ -1,9 +1,285 @@
 import { API_BASE_URL } from "@/services/api";
 import { MathMLToLaTeX } from "mathml-to-latex";
-import { extractLatex } from "./mathUtils";
+import { extractLatex, convUnicodeMath } from "./mathUtils";
 import { splitHeadingAndParagraph } from "./listParser";
 
 const API_BASE = API_BASE_URL;
+
+function getChildElement(node, targetTag) {
+  if (!node || !node.childNodes) return null;
+  for (let i = 0; i < node.childNodes.length; i++) {
+    const child = node.childNodes[i];
+    if (child.nodeType === 1) {
+      const tag = child.nodeName.toLowerCase().replace(/^.*:/, "");
+      if (tag === targetTag) return child;
+    }
+  }
+  return null;
+}
+
+function ommlToLatex(node) {
+  if (!node) return "";
+
+  if (node.nodeType === 3 /* TEXT_NODE */) {
+    let t = node.textContent || "";
+    return convUnicodeMath(t);
+  }
+
+  if (node.nodeType !== 1 /* ELEMENT_NODE */) {
+    return "";
+  }
+
+  const tag = node.nodeName.toLowerCase().replace(/^.*:/, "");
+
+  switch (tag) {
+    case "omathpara":
+    case "omath": {
+      return Array.from(node.childNodes).map(ommlToLatex).join("");
+    }
+
+    case "f": {
+      const numNode = getChildElement(node, "num");
+      const denNode = getChildElement(node, "den");
+      const numTex = numNode ? ommlToLatex(numNode) : "";
+      const denTex = denNode ? ommlToLatex(denNode) : "";
+      return `\\frac{${numTex}}{${denTex}}`;
+    }
+
+    case "num":
+    case "den":
+    case "e":
+    case "sub":
+    case "sup":
+    case "fname": {
+      return Array.from(node.childNodes).map(ommlToLatex).join("");
+    }
+
+    case "ssub": {
+      const eNode = getChildElement(node, "e");
+      const subNode = getChildElement(node, "sub");
+      const eTex = eNode ? ommlToLatex(eNode) : "";
+      const subTex = subNode ? ommlToLatex(subNode) : "";
+      return `{${eTex}}_{${subTex}}`;
+    }
+
+    case "ssup": {
+      const eNode = getChildElement(node, "e");
+      const supNode = getChildElement(node, "sup");
+      const eTex = eNode ? ommlToLatex(eNode) : "";
+      const supTex = supNode ? ommlToLatex(supNode) : "";
+      return `{${eTex}}^{${supTex}}`;
+    }
+
+    case "ssubsup": {
+      const eNode = getChildElement(node, "e");
+      const subNode = getChildElement(node, "sub");
+      const supNode = getChildElement(node, "sup");
+      const eTex = eNode ? ommlToLatex(eNode) : "";
+      const subTex = subNode ? ommlToLatex(subNode) : "";
+      const supTex = supNode ? ommlToLatex(supNode) : "";
+      return `{${eTex}}_{${subTex}}^{${supTex}}`;
+    }
+
+    case "rad": {
+      const eNode = getChildElement(node, "e");
+      const degNode = getChildElement(node, "deg");
+      const eTex = eNode ? ommlToLatex(eNode) : "";
+      const degTex = degNode ? ommlToLatex(degNode) : "";
+      return degTex ? `\\sqrt[${degTex}]{${eTex}}` : `\\sqrt{${eTex}}`;
+    }
+
+    case "d": {
+      const eNode = getChildElement(node, "e");
+      const eTex = eNode ? ommlToLatex(eNode) : "";
+      return `\\left( ${eTex} \\right)`;
+    }
+
+    case "nary": {
+      const subNode = getChildElement(node, "sub");
+      const supNode = getChildElement(node, "sup");
+      const eNode = getChildElement(node, "e");
+      const subTex = subNode ? ommlToLatex(subNode) : "";
+      const supTex = supNode ? ommlToLatex(supNode) : "";
+      const eTex = eNode ? ommlToLatex(eNode) : "";
+      return `\\sum_{${subTex}}^{${supTex}} {${eTex}}`;
+    }
+
+    case "t": {
+      let tText = node.textContent || "";
+      return convUnicodeMath(tText);
+    }
+
+    default: {
+      return Array.from(node.childNodes).map(ommlToLatex).join("");
+    }
+  }
+}
+
+function convertOmmlInHtml(rawHtml) {
+  if (!rawHtml) return "";
+
+  let processedHtml = rawHtml.replace(
+    /<!--\[if\s+gte\s+msEquation[\s\S]*?-->([\s\S]*?)<!--<!\[endif\]-->|<!--\[if\s+gte\s+msEquation[\s\S]*?<!\[endif\]-->/gi,
+    (match) => {
+      const cleanXml = match
+        .replace(/<!--\[if[^\]]*\]>/gi, "")
+        .replace(/<!\[endif\]-->/gi, "")
+        .replace(/<!\[if[^\]]*\]>/gi, "")
+        .replace(/<!--[\s\S]*?-->/g, "")
+        .trim();
+
+      if (!cleanXml) return "";
+
+      try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(
+          `<root xmlns:m="http://schemas.microsoft.com/office/2004/12/omml" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${cleanXml}</root>`,
+          "text/xml",
+        );
+        const oMath =
+          doc.getElementsByTagName("m:oMathPara")[0] ||
+          doc.getElementsByTagName("m:oMath")[0] ||
+          doc.getElementsByTagName("oMathPara")[0] ||
+          doc.getElementsByTagName("oMath")[0] ||
+          doc.documentElement;
+
+        if (oMath) {
+          const latex = ommlToLatex(oMath).replace(/\s+/g, " ").trim();
+          if (latex) {
+            return `<p><span data-latex="${extractLatex(latex)}" data-display="true"></span></p>`;
+          }
+        }
+      } catch (e) {
+        console.error("Failed to parse OMML equation:", e);
+      }
+      return "";
+    },
+  );
+
+  processedHtml = processedHtml.replace(
+    /<!--\[if\s+!msEquation\]-->[\s\S]*?<!--<!\[endif\]-->|<!\[if\s+!msEquation\]>[\s\S]*?<!\[endif\]>/gi,
+    "",
+  );
+
+  return processedHtml;
+}
+
+function cleanMsOfficeHtml(rawHtml) {
+  if (!rawHtml) return "";
+  let cleaned = convertOmmlInHtml(rawHtml);
+  cleaned = cleaned.replace(/<!--\[if[\s\S]*?<!\[endif\]-->/gi, "");
+  cleaned = cleaned
+    .replace(/<o:p\b[^>]*>[\s\S]*?<\/o:p>/gi, "")
+    .replace(/<xml\b[^>]*>[\s\S]*?<\/xml>/gi, "")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<meta\b[^>]*>/gi, "")
+    .replace(/<link\b[^>]*>/gi, "");
+  return cleaned;
+}
+
+function transformWordListParagraphs(doc) {
+  doc.querySelectorAll("[style*='mso-list:Ignore'], span.mso-list-ignore").forEach((el) => {
+    el.remove();
+  });
+
+  const allBlocks = Array.from(doc.querySelectorAll("p, div, p.MsoListParagraph"));
+  const listItems = [];
+
+  allBlocks.forEach((el) => {
+    if (!el.isConnected) return;
+    const className = el.className || "";
+    const style = el.getAttribute("style") || "";
+    const text = el.textContent.trim();
+    if (!text) return;
+
+    const isMsoList = /MsoListParagraph/i.test(className) || /mso-list\s*:/i.test(style);
+    const hasBulletSymbol = /^[\u25CF\u2022\u25CB\u25A1\u25A0\u2013\u2014\u2212\uF0B7\u00B7\uF0A7*•-]\s*/.test(text);
+    const hasNumberMarker = /^(\d+|[a-zA-Z]|[iIvVxX]+)[.)]\s+/.test(text);
+
+    if (isMsoList || hasBulletSymbol || hasNumberMarker) {
+      let type = "ul";
+      if (hasNumberMarker && !hasBulletSymbol && !isMsoList) {
+        type = "ol";
+      }
+      listItems.push({ el, type });
+    }
+  });
+
+  let i = 0;
+  while (i < listItems.length) {
+    const group = [listItems[i]];
+    let j = i + 1;
+    while (j < listItems.length) {
+      const prevEl = listItems[j - 1].el;
+      const currEl = listItems[j].el;
+      if (prevEl.nextElementSibling === currEl || prevEl.nextSibling === currEl) {
+        group.push(listItems[j]);
+        j++;
+      } else {
+        break;
+      }
+    }
+
+    if (group.length > 0) {
+      const firstEl = group[0].el;
+      const listType = group[0].type;
+      const listEl = doc.createElement(listType);
+
+      group.forEach(({ el }) => {
+        const li = doc.createElement("li");
+        let htmlContent = el.innerHTML.trim();
+        htmlContent = htmlContent.replace(/^([\u25CF\u2022\u25CB\u25A1\u25A0\u2013\u2014\u2212\uF0B7\u00B7\uF0A7*•-]\s*)+/i, "");
+        li.innerHTML = htmlContent || el.textContent;
+        listEl.appendChild(li);
+      });
+
+      firstEl.parentNode.insertBefore(listEl, firstEl);
+      group.forEach(({ el }) => el.remove());
+    }
+
+    i = j;
+  }
+}
+
+function transformWordHeadings(doc) {
+  doc.querySelectorAll("p[class*='MsoHeading'], p[class*='Heading'], p[style*='mso-outline-level']").forEach((p) => {
+    if (!p.isConnected) return;
+    const cls = p.className || "";
+    const style = p.getAttribute("style") || "";
+    let level = 1;
+    const outlineMatch = style.match(/mso-outline-level\s*:\s*(\d+)/i);
+    if (outlineMatch) {
+      level = Math.min(parseInt(outlineMatch[1], 10), 3);
+    } else if (/Heading\s*2|MsoHeading2/i.test(cls)) level = 2;
+    else if (/Heading\s*3|MsoHeading3/i.test(cls)) level = 3;
+
+    const h = doc.createElement(`h${level}`);
+    h.innerHTML = p.innerHTML;
+    p.parentNode.replaceChild(h, p);
+  });
+
+  const paragraphs = Array.from(doc.querySelectorAll("p"));
+  paragraphs.forEach((p) => {
+    if (!p.isConnected) return;
+    if (p.closest("ul, ol, li, pre, code")) return;
+
+    const text = p.textContent.trim();
+    if (!text || text.length > 80) return;
+
+    const h1Match = /^(\d+)\.\s+([A-Z].*)$/.test(text);
+    const h2Match = /^(\d+\.\d+)\s+([A-Z].*)$/.test(text);
+
+    if (h1Match) {
+      const h1 = doc.createElement("h1");
+      h1.innerHTML = p.innerHTML;
+      p.parentNode.replaceChild(h1, p);
+    } else if (h2Match) {
+      const h2 = doc.createElement("h2");
+      h2.innerHTML = p.innerHTML;
+      p.parentNode.replaceChild(h2, p);
+    }
+  });
+}
 
 /**
  * Transforms clipboard HTML to replace <math> nodes with TipTap math spans,
@@ -14,7 +290,17 @@ export function transformMathHtml(html) {
   if (!html) return html;
 
   try {
-    const doc = new DOMParser().parseFromString(html, "text/html");
+    const cleanedHtml = cleanMsOfficeHtml(html);
+    const doc = new DOMParser().parseFromString(cleanedHtml, "text/html");
+
+    // ── Word list paragraphs → <ul> / <ol> ──────────────────────────────
+    transformWordListParagraphs(doc);
+
+    // ── Word headings → <h1>, <h2>, <h3> ────────────────────────────────
+    transformWordHeadings(doc);
+
+    // ── Remove file:/// local temp images from Word clipboard ──────────
+    doc.querySelectorAll("img[src^='file:///']").forEach((img) => img.remove());
 
     // ── Convert inline CSS styles into semantic tags ───────────────────────
     const styledNodes = doc.querySelectorAll("[style]");

@@ -69,10 +69,8 @@ export function handleRichPaste(view, event, editor) {
   // Normalize multi-line raw LaTeX pastes into a single unified formula string first
   const plainText = normalizeLatexPaste(preProcessedText);
 
-  const htmlHasRealMath = /<math[\s>]|class=["']?[^"']*katex/i.test(htmlText);
-
-  // Case 1: Clipboard contains MathML or KaTeX math in HTML
-  if (htmlText && htmlHasRealMath) {
+  // Case 1: Clipboard contains HTML (MS Word, Google Docs, Webpage, MathML, KaTeX)
+  if (htmlText && htmlText.trim()) {
     event.preventDefault();
     const transformedHtml = transformMathHtml(htmlText);
     insertHtmlContent(view, editor, transformedHtml);
