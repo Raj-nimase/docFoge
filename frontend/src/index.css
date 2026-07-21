@@ -1696,6 +1696,14 @@ body {
   margin: 12px 0;
 }
 
+.tiptap-editor .ProseMirror pre code {
+  background: transparent !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  color: inherit !important;
+  font-size: inherit !important;
+}
+
 .tiptap-editor .ProseMirror blockquote {
   border-left: 3px solid #cbd5e1;
   padding-left: 1em;

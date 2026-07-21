@@ -788,6 +788,14 @@ body {
   font-family: 'JetBrains Mono', monospace !important;
 }
 
+.tiptap-editor .ProseMirror pre code {
+  background: transparent !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  color: inherit !important;
+  font-size: inherit !important;
+}
+
 /* Math nodes: do not inherit document Times New Roman on the wrapper */
 .tiptap-editor .ProseMirror .math-view-wrapper,
 .tiptap-editor .ProseMirror .math-view-wrapper .math-container,

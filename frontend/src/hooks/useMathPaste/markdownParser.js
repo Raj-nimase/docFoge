@@ -331,6 +331,12 @@ export function parseMarkdownMathToHtml(text) {
       if (i < lines.length && lines[i].trim().startsWith("```")) {
         i++; // consume closing fence
       }
+      while (codeLines.length > 0 && codeLines[0].trim() === "") {
+        codeLines.shift();
+      }
+      while (codeLines.length > 0 && codeLines[codeLines.length - 1].trim() === "") {
+        codeLines.pop();
+      }
       const codeContent = escapeHtml(codeLines.join("\n"));
       html += `<pre><code${lang ? ` class="language-${escapeAttr(lang)}"` : ""}>${codeContent}</code></pre>`;
       continue;

@@ -209,6 +209,30 @@ export function transformMathHtml(html) {
     // ── Remove <hr> and divider <p> ─────────────────────────────────────
     for (const node of toRemove) node.remove();
 
+    // ── Sanitize <pre> blocks from ChatGPT / Sider.ai clipboard ─────────
+    // ChatGPT/Sider.ai clipboard HTML wraps code blocks in <pre> containing
+    // header divs (language labels, copy buttons) and leading newlines.
+    // Clean them so <pre> contains only the inner <code> content stripped of
+    // leading and trailing empty lines.
+    doc.querySelectorAll("pre").forEach((pre) => {
+      const codeEl = pre.querySelector("code");
+      const codeText = codeEl ? codeEl.textContent : pre.textContent;
+      const lines = codeText.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+      while (lines.length > 0 && lines[0].trim() === "") {
+        lines.shift();
+      }
+      while (lines.length > 0 && lines[lines.length - 1].trim() === "") {
+        lines.pop();
+      }
+      const cleanText = lines.join("\n");
+      const newCode = doc.createElement("code");
+      const langClass = codeEl?.className || pre.className || "";
+      if (langClass) newCode.className = langClass;
+      newCode.textContent = cleanText;
+      pre.innerHTML = "";
+      pre.appendChild(newCode);
+    });
+
     // ── Collapse stray whitespace between/inside tags ───────────────────
     // ChatGPT's clipboard HTML puts raw newlines around list-item text
     // ("<li>\nPseudocode\n</li>") and between sibling tags. ProseMirror's

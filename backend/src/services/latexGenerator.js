@@ -141,15 +141,23 @@ function buildPreamble(templateId, metadata) {
       ? "\\renewcommand{\\arraystretch}{1.2}"
       : "\\renewcommand{\\arraystretch}{1.6}",
     isIEEE ? "\\setlength{\\tabcolsep}{6pt}" : "\\setlength{\\tabcolsep}{14pt}",
-    "",
+    "\\usepackage{etoolbox}",
+    "\\AtBeginEnvironment{lstlisting}{\\setstretch{1.0}}",
     "\\lstset{",
-    "  basicstyle=\\small\\ttfamily,",
+    "  basicstyle=\\ttfamily\\small,",
+    "  columns=fixed,",
+    "  keepspaces=true,",
+    "  showstringspaces=false,",
     "  breaklines=true,",
-    "  columns=fullflexible,",
     "  breakatwhitespace=false,",
     "  frame=single,",
-    "  rulecolor=\\color{gray!30},",
-    "  backgroundcolor=\\color{gray!5}",
+    "  framerule=0.6pt,",
+    "  rulecolor=\\color{gray!40},",
+    "  backgroundcolor=\\color{gray!6},",
+    "  tabsize=2,",
+    "  xleftmargin=4pt,",
+    "  xrightmargin=4pt,",
+    "  escapeinside={(*@}{@*)}",
     "}",
     "",
     "\\newmdenv[",
@@ -569,8 +577,22 @@ function convertNode(node, templateId) {
     }
 
     case "codeBlock": {
-      const code = (node.content || []).map((n) => n.text || "").join("");
-      return `\\begin{lstlisting}\n${code}\n\\end{lstlisting}`;
+      const rawCode = (node.content || []).map((n) => n.text || "").join("");
+      let cleanCode = rawCode.replace(/^\s*\n+/, "").replace(/\n+\s*$/, "");
+      cleanCode = cleanCode
+        .replace(/[│┃┆┇┊┠┨┯┷┿╂╎╏║]/g, "|")
+        .replace(/[─━┄┅┈┉═]/g, "-")
+        .replace(
+          /[┌┐└┘├┤┬┴┼┍┎┏╔┑┒┓╗┕┖┗╚┙┚┛╝┝┞┟┠┡┢┣╠┥┦┧┨┩┪┫╣┭┮┯┰┱┲┳╦┵┶┷┸┹┺┻╩┽┾┿╀╁╂╃╄╅╆╇╈╉╊╋╬╭╮╯╰]/g,
+          "+",
+        )
+        .replace(/[▼▽▾⬇⇩⇓↓🡓]/g, "(*@$\\downarrow$@*)")
+        .replace(/[▲△▴⬆⇧⇑↑🡑]/g, "(*@$\\uparrow$@*)")
+        .replace(/[◄◁◀⇦⇐←🡐]/g, "(*@$\\leftarrow$@*)")
+        .replace(/[►▷▶⇨⇒→➔➘➙➚➛➜➝➞➟➡🡒]/g, "(*@$\\rightarrow$@*)")
+        .replace(/↔/g, "(*@$\\leftrightarrow$@*)")
+        .replace(/↕/g, "|");
+      return `\\begin{lstlisting}\n${cleanCode}\n\\end{lstlisting}`;
     }
 
     case "blockquote": {

@@ -51,7 +51,22 @@ function escapeLatex(text) {
     .replace(/[\u{FE00}-\u{FE0F}]/gu, '')      // Variation selectors
     .replace(/[\u{E0020}-\u{E007F}]/gu, '');   // Tags
 
-  // 2. Strip mathematical operator symbols that crash in text mode
+  // 2. Map common unicode arrows and symbols before stripping
+  cleaned = cleaned
+    .replace(/→/g, '$\\rightarrow$')
+    .replace(/←/g, '$\\leftarrow$')
+    .replace(/↓/g, '$\\downarrow$')
+    .replace(/↑/g, '$\\uparrow$')
+    .replace(/↔/g, '$\\leftrightarrow$')
+    .replace(/⇒/g, '$\\Rightarrow$')
+    .replace(/⇐/g, '$\\Leftarrow$')
+    .replace(/⇔/g, '$\\Leftrightarrow$')
+    .replace(/▼/g, '$\\downarrow$')
+    .replace(/▲/g, '$\\uparrow$')
+    .replace(/◄/g, '$\\leftarrow$')
+    .replace(/►/g, '$\\rightarrow$');
+
+  // 3. Strip mathematical operator symbols that crash in text mode
   //    ∫ (U+222B), ∑ (U+2211), ∏ (U+220F), √ (U+221A), ∞ (U+221E),
   //    ± (U+00B1), × (U+00D7), ÷ (U+00F7), etc.
   cleaned = cleaned
@@ -147,7 +162,11 @@ function sanitizeLatex(latex) {
     .replace(/≥/g, "\\geq")
     .replace(/≠/g, "\\neq")
     .replace(/²/g, "^2")
-    .replace(/³/g, "^3");
+    .replace(/³/g, "^3")
+    .replace(/↓/g, "\\downarrow")
+    .replace(/↑/g, "\\uparrow")
+    .replace(/→/g, "\\rightarrow")
+    .replace(/←/g, "\\leftarrow");
 
   // 4. Strip outer LaTeX display delimiters (\[, \], \(, \)) while preserving \left[ and \right]
   cleaned = cleaned.replace(/(?<!\\left)\\\[|(?<!\\right)\\\]|\\\(|\\\)/g, '');
