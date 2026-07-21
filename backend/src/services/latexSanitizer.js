@@ -126,9 +126,14 @@ function sanitizeLatex(latex) {
 
   // 1. Strip emojis and other control/invisible/BOM characters
   let cleaned = clean
+    .replace(/\u0008([a-zA-Z])/g, "\\b$1")
+    .replace(/\u000B([a-zA-Z])/g, "\\v$1")
+    .replace(/\u000C([a-zA-Z])/g, "\\f$1")
+    .replace(/\u0009([a-zA-Z])/g, "\\t$1")
+    .replace(/\u000D(?!\n)([a-zA-Z])/g, "\\r$1")
     .replace(/[\u{1F000}-\u{1FFFF}]/gu, '')
     .replace(/[\u{2600}-\u{27BF}]/gu, '')
-    .replace(/[\uFFFD\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, '')
+    .replace(/[\uFFFD\u0000-\u0007\u000E-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, '')
     .replace(/(^|[^\\])%/g, '$1\\%');
 
   // Fix OCR/Markdown artifact hashes:

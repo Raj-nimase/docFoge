@@ -1,4 +1,4 @@
-import { convUnicodeMath, sanitizeLatex } from "./mathUtils.js";
+import { convUnicodeMath, sanitizeLatex, isUnclosedLatex } from "./mathUtils.js";
 
 // Escape prose so it is safe inside a LaTeX \text{…}; normalise a few unit
 // glyphs to ASCII and drop remaining non-ASCII (the '·' in "N·m", etc.).
@@ -8,25 +8,25 @@ function mmTextEscape(s) {
     .replace(/[−–—]/g, "-")
     .replace(/×/g, "x")
     .replace(/[’‘]/g, "'")
-    .replace(/[“”]/g, '"')
-    .replace(/[^\x20-\x7E]/g, "")
-    .replace(/\\/g, "/")
-    .replace(/([%#&_$])/g, "\\$1")
-    .replace(/\{/g, "\\{")
-    .replace(/\}/g, "\\}")
-    .replace(/[\^~]/g, "");
+    .replace(/[“”]/g, '"');
 }
 
 function mmIsVar(s) {
   s = (s || "").trim();
+  s = s.replace(/^\(+(.*)\)+$/, "$1").trim();
   return (
     /^[A-Za-z](_[A-Za-z0-9]+|\^[A-Za-z0-9]+|_\{[^}]+\}|\^\{[^}]+\})?$/.test(
       s,
-    ) || /^\\[a-zA-Z]+(_[A-Za-z0-9]+)?$/.test(s)
+    ) ||
+    /^\\[a-zA-Z]+(_[A-Za-z0-9]+|\^[A-Za-z0-9]+|_\{[^}]+\}|\^\{[^}]+\})?$/.test(s) ||
+    /^(R\^2|R_adj\^2|R2)$/i.test(s)
   );
 }
 function mmWordy(s) {
-  const m = s.match(/[A-Za-z]{3,}/g);
+  if (!s) return 0;
+  // Strip LaTeX macro commands (\command) so names like \mathbb, \left, \right, \frac, \partial, etc. are not counted as prose words
+  const clean = s.replace(/\\[a-zA-Z]+/g, "");
+  const m = clean.match(/[A-Za-z]{3,}/g);
   return m ? m.length : 0;
 }
 function mmMathScore(L) {
@@ -35,14 +35,17 @@ function mmMathScore(L) {
   return hasStruct || (hasOps && mmWordy(L) <= 3);
 }
 
-// "LHS = description" legend line (e.g. "(S) = Slip (%)", "T = Torque (N·m)",
-// "\cos\phi = Power factor") → { lhs, rhs } or null. One layer of wrapping
-// parens on the LHS is stripped.
+// "LHS = description" or "LHS: description" legend line (e.g. "(\beta_0): Intercept", "(S) = Slip (%)", "T = Torque (N·m)")
 function mmDefLine(s) {
   const cleanS = (s || "")
     .trim()
     .replace(/^([*\-+•◦▪]|(?:\d+|[a-zA-Z])[.)])\s+/, "");
-  const eq = cleanS.indexOf("=");
+  let eq = cleanS.indexOf("=");
+  let sep = "=";
+  if (eq <= 0) {
+    eq = cleanS.indexOf(":");
+    sep = ":";
+  }
   if (eq <= 0) return null;
   if (
     cleanS.charAt(eq + 1) === "=" ||
@@ -52,8 +55,7 @@ function mmDefLine(s) {
   let lhs = cleanS.slice(0, eq).trim();
   const rhs = cleanS.slice(eq + 1).trim();
   if (!lhs || !rhs) return null;
-  const pm = lhs.match(/^\(([^)]{1,24})\)$/);
-  if (pm) lhs = pm[1].trim();
+  lhs = lhs.replace(/^\(+(.*)\)+$/, "$1").trim();
 
   // Strip any leading/trailing math delimiters from LHS (e.g. $N_s$ -> N_s)
   while (true) {
@@ -76,7 +78,7 @@ function mmDefLine(s) {
     (lhs.length <= 12 && mmWordy(lhs) === 0);
   if (!lhsOk) return null;
   if (mmWordy(rhs) < 1 || mmMathScore(rhs)) return null;
-  return { lhs, rhs };
+  return { lhs, sep, rhs };
 }
 
 function mmLooksMathy(text) {
@@ -94,7 +96,11 @@ function mmCleanText(s) {
 }
 
 function mmHasLatex(s) {
-  return /[\\^_]/.test(s);
+  if (!s) return false;
+  return (
+    /[\\^_]|[\u0008\u000B\u000C\u0009]/.test(s) ||
+    /^(R\^2|R_adj\^2|R2|\beta|\alpha|\gamma|\delta|\epsilon|\varepsilon|\theta|\sigma|\mu|\lambda|\phi|\psi|\omega|y|x)$/i.test(s.trim())
+  );
 }
 
 function mmMatchBalanced(str, open, oc, cc) {
@@ -116,13 +122,23 @@ function mmMatchBalanced(str, open, oc, cc) {
 
 // Scan a line into text / inline-math tokens ($…$, \(…\), and (latex)/[latex]).
 function mmScanInline(str) {
+  if (!str) return [];
+  // Restore control characters from JS string escapes
+  str = str
+    .replace(/\u0008([a-zA-Z])/g, "\\b$1")
+    .replace(/\u000B([a-zA-Z])/g, "\\v$1")
+    .replace(/\u000C([a-zA-Z])/g, "\\f$1")
+    .replace(/\u0009([a-zA-Z])/g, "\\t$1")
+    .replace(/\u000D(?!\n)([a-zA-Z])/g, "\\r$1");
+
   const tokens = [];
   let buf = "";
   let i = 0;
-  const pushText = () => {
-    if (buf) {
-      tokens.push({ t: "text", v: buf });
-      buf = "";
+  const pushText = (t) => {
+    const textToPush = t !== undefined ? t : buf;
+    if (textToPush) {
+      tokens.push({ t: "text", v: textToPush });
+      if (t === undefined) buf = "";
     }
   };
   while (i < str.length) {
@@ -152,7 +168,7 @@ function mmScanInline(str) {
       const e = str.indexOf(d, i + d.length);
       if (e !== -1) {
         pushText();
-        tokens.push({ t: "math", v: str.slice(i + d.length, e).trim() });
+        tokens.push({ t: "math", v: str.slice(i + d.length, e).trim(), display: dbl });
         i = e + d.length;
         continue;
       }
@@ -160,10 +176,26 @@ function mmScanInline(str) {
     if (c === "(" && str[i - 1] !== "\\") {
       const e = mmMatchBalanced(str, i, "(", ")");
       if (e !== -1) {
-        const inner = str.slice(i + 1, e);
-        if (mmHasLatex(inner)) {
+        let inner = str.slice(i + 1, e);
+        let isDoubleParen = false;
+        if (inner.startsWith("(") && inner.endsWith(")")) {
+          inner = inner.slice(1, -1).trim();
+          isDoubleParen = true;
+        }
+
+        if (mmHasLatex(inner) || mmIsVar(inner)) {
           pushText();
-          tokens.push({ t: "math", v: inner.trim() });
+          if (isDoubleParen) {
+            tokens.push({ t: "text", v: "(" });
+            tokens.push({ t: "math", v: inner.trim() });
+            tokens.push({ t: "text", v: ")" });
+          } else if (mmIsVar(inner) && !inner.includes("=")) {
+            tokens.push({ t: "text", v: "(" });
+            tokens.push({ t: "math", v: inner.trim() });
+            tokens.push({ t: "text", v: ")" });
+          } else {
+            tokens.push({ t: "math", v: inner.trim() });
+          }
           i = e + 1;
           continue;
         }
@@ -203,6 +235,7 @@ function escapeHtml(s) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }
+
 function escapeAttr(s) {
   return (s || "")
     .replace(/&/g, "&amp;")
@@ -219,9 +252,9 @@ function mathSpan(latex, display) {
 function mmInlineMd(escaped) {
   if (!escaped) return "";
   return escaped
-    .replace(/(\*\*\*|___)(.*?)\1/g, "<strong><em>$2</em></strong>")
-    .replace(/(\*\*|__)(.*?)\1/g, "<strong>$2</strong>")
-    .replace(/(^|[^\w\\])(\*|_)(?=\S)(.*?)(?<=\S)\2/g, "$1<em>$3</em>")
+    .replace(/\*\*\*(.*?)\*\*\*/g, "<strong><em>$1</em></strong>")
+    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^\w\\])\*(?=\S)(.*?)(?<=\S)\*/g, "$1<em>$2</em>")
     .replace(/~~(.*?)~~/g, "<s>$1</s>")
     .replace(/`([^`]+?)`/g, "<code>$1</code>")
     .replace(/&lt;u&gt;(.*?)&lt;\/u&gt;/gi, "<u>$1</u>");
@@ -230,13 +263,22 @@ function mmInlineMd(escaped) {
 // A line's inline content → HTML (formatted text interleaved with inline math).
 function mmInlineToHtml(raw) {
   const tokens = mmScanInline(raw);
-  let out = "";
+  const mathMap = [];
+  let placeholderStr = "";
   for (const tk of tokens) {
     if (tk.t === "math") {
-      if (tk.v) out += mathSpan(tk.v, false);
-    } else out += mmInlineMd(escapeHtml(tk.v));
+      const key = `___MATHTK_${mathMap.length}___`;
+      mathMap.push(mathSpan(tk.v, tk.display));
+      placeholderStr += key;
+    } else {
+      placeholderStr += tk.v;
+    }
   }
-  return out;
+  let html = mmInlineMd(escapeHtml(placeholderStr));
+  for (let idx = 0; idx < mathMap.length; idx++) {
+    html = html.replace(`___MATHTK_${idx}___`, mathMap[idx]);
+  }
+  return html;
 }
 
 // Does this plain text read like a markdown-with-math formula sheet worth
@@ -387,7 +429,12 @@ export function parseMarkdownMathToHtml(text) {
     const singleLineMatch = trimmed.match(
       /^(?:\[|\\\[|\$\$)\s*(.+?)\s*(?:\]|\\\]|\$\$)$/,
     );
-    if (singleLineMatch && !/^\d+[.)]/.test(singleLineMatch[1])) {
+    if (
+      singleLineMatch &&
+      !singleLineMatch[1].includes("$$") &&
+      !singleLineMatch[1].includes("\\]") &&
+      !/^\d+[.)]/.test(singleLineMatch[1])
+    ) {
       flushList();
       const spanHtml = mathSpan(
         singleLineMatch[1].replace(/={3,}/g, "=").trim(),
@@ -436,41 +483,55 @@ export function parseMarkdownMathToHtml(text) {
         i++;
       }
 
-      const body = [];
-      let k = 0;
-      while (k < fenceLines.length) {
-        let lineK = fenceLines[k].replace(/={2,}/g, "=");
+      // Group fenceLines into separate formula blocks if multiple formulas exist inside fence
+      const blocks = [];
+      let currentBlock = [];
+      let currentInEnv = false;
+      let state = { unclosed: false, inEnv: false };
 
-        // Check if this line starts with ## (e.g. "## \text{Completion Time}" or "## \theta")
+      for (let k = 0; k < fenceLines.length; k++) {
+        let lineK = fenceLines[k].replace(/={2,}/g, "=");
         const hashMatch = lineK.match(/^\s*#{1,6}\s*(.+)$/);
         if (hashMatch) {
           const term1 = hashMatch[1].trim();
           if (k + 1 < fenceLines.length && !fenceLines[k + 1].startsWith("#")) {
             const term2 = fenceLines[k + 1].replace(/={2,}/g, "=").trim();
-            body.push(`${term1} - ${term2}`);
-            k += 2; // consumed both term1 and term2
-            continue;
-          } else {
-            body.push(`- ${term1}`);
+            lineK = `${term1} - ${term2}`;
             k++;
-            continue;
+          } else {
+            lineK = `- ${term1}`;
           }
         }
 
-        body.push(lineK);
-        k++;
+        if (currentBlock.length === 0) {
+          currentBlock.push(lineK);
+          state = isUnclosedLatex(lineK, currentInEnv);
+          currentInEnv = state.inEnv;
+        } else {
+          const isContinuation =
+            state.unclosed ||
+            /^[})\],]/.test(lineK) ||
+            /^\s*\\(right|end)\b/.test(lineK);
+
+          if (isContinuation) {
+            currentBlock.push(lineK);
+            state = isUnclosedLatex(lineK, currentInEnv);
+            currentInEnv = state.inEnv;
+          } else {
+            blocks.push(currentBlock.join(" "));
+            currentBlock = [lineK];
+            state = isUnclosedLatex(lineK, currentInEnv);
+            currentInEnv = state.inEnv;
+          }
+        }
+      }
+      if (currentBlock.length > 0) {
+        blocks.push(currentBlock.join(" "));
       }
 
       flushList();
-      const spanHtml = mathSpan(
-        body.join(" ").replace(/\s+/g, " ").trim(),
-        true,
-      );
-      const lastPIndex = html.lastIndexOf("<p>");
-      const lastP = lastPIndex !== -1 ? html.slice(lastPIndex) : "";
-      if (html.endsWith("</p>") && lastP.includes('data-display="true"')) {
-        html = html.slice(0, -4) + spanHtml + "</p>";
-      } else {
+      for (const b of blocks) {
+        const spanHtml = mathSpan(b.replace(/\s+/g, " ").trim(), true);
         html += `<p>${spanHtml}</p>`;
       }
       continue;
@@ -557,10 +618,14 @@ export function parseMarkdownMathToHtml(text) {
 
       const itemDfn = mmDefLine(content);
       if (itemDfn) {
-        const itemHtml = mathSpan(
-          itemDfn.lhs + " = \\text{" + mmTextEscape(itemDfn.rhs) + "}",
-          false,
-        );
+        const lhsMath = mathSpan(itemDfn.lhs, false);
+        const itemHtml =
+          itemDfn.sep === ":"
+            ? `${lhsMath}: ${mmInlineToHtml(itemDfn.rhs)}`
+            : mathSpan(
+                itemDfn.lhs + " = \\text{" + mmTextEscape(itemDfn.rhs) + "}",
+                false,
+              );
         html += `<li><p>${itemHtml}</p>`;
       } else {
         html += `<li><p>${mmInlineToHtml(content)}</p>`;
@@ -573,7 +638,15 @@ export function parseMarkdownMathToHtml(text) {
     const dfn = mmDefLine(trimmed);
     if (dfn) {
       flushList();
-      html += `<p>${mathSpan(dfn.lhs + " = \\text{" + mmTextEscape(dfn.rhs) + "}", false)}</p>`;
+      const lhsMath = mathSpan(dfn.lhs, false);
+      const dfnHtml =
+        dfn.sep === ":"
+          ? `${lhsMath}: ${mmInlineToHtml(dfn.rhs)}`
+          : mathSpan(
+              dfn.lhs + " = \\text{" + mmTextEscape(dfn.rhs) + "}",
+              false,
+            );
+      html += `<p>${dfnHtml}</p>`;
       i++;
       continue;
     }
@@ -583,9 +656,11 @@ export function parseMarkdownMathToHtml(text) {
       const tr = (l || "").trim();
       if (!tr) return false;
       if (/^\s*[*+\-•◦▪]\s/.test(tr) || /^\s*\d+[.)]\s/.test(tr)) return false; // Markdown list items must NOT be grouped as latex formula blocks
+      if (/^\*[a-zA-Z]/.test(tr)) return false; // Markdown emphasis (*Text...) must NOT be latex lines
       if (/^[\[\]$$]/.test(tr)) return false; // display fence handled above
       // Setext heading underlines (===, ---) must NOT be treated as LaTeX operator lines
       if (/^[=]{3,}$/.test(tr) || /^[-]{3,}$/.test(tr)) return false;
+      if (mmWordy(tr) > 3) return false; // Prose sentences with >3 words are text, NOT standalone display math
       if (
         /^\s*\\(text|frac|dfrac|tfrac|mathrm|mathbf|mathit|sum|prod|int|alpha|beta|theta|sigma|mu|lambda|phi|psi|omega|infty|pm|times|div|leq|geq|neq|partial|nabla|left|right|begin|end|underbrace|overbrace|mathbf)\b/.test(
           tr,
@@ -593,7 +668,7 @@ export function parseMarkdownMathToHtml(text) {
       )
         return true;
       if (/^[\\{}]/.test(tr)) return true;
-      if (/^[=+\-*/×÷]\s*(\\|\{|\w)/.test(tr) || /^=\s*$/.test(tr)) return true;
+      if (/^[=+\-/×÷]\s*(\\|\{|\w)/.test(tr) || /^=\s*$/.test(tr)) return true;
       if (
         tr.includes("\\") &&
         /\\[a-zA-Z]{2,}/.test(tr) &&
@@ -604,23 +679,34 @@ export function parseMarkdownMathToHtml(text) {
     };
 
     if (isLatexLine(trimmed)) {
-      const latexBlock = [];
+      const latexBlock = [trimmed];
+      let currentInEnv = false;
+      let state = isUnclosedLatex(trimmed, currentInEnv);
+      currentInEnv = state.inEnv;
+      i++;
+
       while (i < lines.length && isLatexLine(lines[i])) {
-        latexBlock.push(lines[i].trim());
-        i++;
+        const nextTrimmed = lines[i].trim();
+        const isContinuation =
+          state.unclosed ||
+          /^[})\],]/.test(nextTrimmed) ||
+          /^\s*\\(right|end)\b/.test(nextTrimmed);
+
+        if (isContinuation) {
+          latexBlock.push(nextTrimmed);
+          state = isUnclosedLatex(nextTrimmed, currentInEnv);
+          currentInEnv = state.inEnv;
+          i++;
+        } else {
+          break;
+        }
       }
       flushList();
       const combinedLatex = convUnicodeMath(
         latexBlock.join(" ").replace(/\s+/g, " ").trim(),
       );
       const spanHtml = mathSpan(combinedLatex, true);
-      const lastPIndex = html.lastIndexOf("<p>");
-      const lastP = lastPIndex !== -1 ? html.slice(lastPIndex) : "";
-      if (html.endsWith("</p>") && lastP.includes('data-display="true"')) {
-        html = html.slice(0, -4) + spanHtml + "</p>";
-      } else {
-        html += `<p>${spanHtml}</p>`;
-      }
+      html += `<p>${spanHtml}</p>`;
       continue;
     }
 
@@ -639,19 +725,13 @@ export function parseMarkdownMathToHtml(text) {
     const isMixedLine = hasInlineDelim && !isFullyWrapped;
 
     const hasExplicitLatex =
-      /\\[a-zA-Z]+/.test(trimmed) && mmWordy(trimmed) <= 10 && !isMixedLine;
+      /\\[a-zA-Z]+/.test(trimmed) && mmWordy(trimmed) <= 3 && !isMixedLine;
     if (
       hasExplicitLatex ||
       (convLine !== trimmed && mmMathScore(convLine) && mmWordy(convLine) <= 4)
     ) {
       const spanHtml = mathSpan(convLine.replace(/\s+/g, " ").trim(), true);
-      const lastPIndex = html.lastIndexOf("<p>");
-      const lastP = lastPIndex !== -1 ? html.slice(lastPIndex) : "";
-      if (html.endsWith("</p>") && lastP.includes('data-display="true"')) {
-        html = html.slice(0, -4) + spanHtml + "</p>";
-      } else {
-        html += `<p>${spanHtml}</p>`;
-      }
+      html += `<p>${spanHtml}</p>`;
       i++;
       continue;
     }

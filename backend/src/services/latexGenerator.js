@@ -720,7 +720,22 @@ function convertTable(tableNode, templateId) {
 
 function convertInline(nodes, templateId) {
   if (!nodes || !nodes.length) return "";
-  return nodes.map((node) => convertNode(node, templateId)).join("");
+  let result = "";
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const converted = convertNode(node, templateId);
+    if (!converted) continue;
+
+    if (result) {
+      const prevIsDisplay = nodes[i - 1]?.type === "math" && nodes[i - 1]?.attrs?.display === true;
+      const currIsDisplay = node.type === "math" && node.attrs?.display === true;
+      if (prevIsDisplay || currIsDisplay) {
+        result += "\n\n";
+      }
+    }
+    result += converted;
+  }
+  return result;
 }
 
 function convertTextWithMarks(node) {

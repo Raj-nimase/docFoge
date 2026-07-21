@@ -79,6 +79,14 @@ export function extractLatex(formulaText) {
   return cleaned;
 }
 
+function mmWordy(s) {
+  if (!s) return 0;
+  // Strip LaTeX macro commands (\command) so names like \mathbb, \left, \right, \frac, \partial, etc. are not counted as prose words
+  const clean = s.replace(/\\[a-zA-Z]+/g, "");
+  const m = clean.match(/[A-Za-z]{3,}/g);
+  return m ? m.length : 0;
+}
+
 /**
  * Checks if a SINGLE LINE looks like a standalone math formula.
  * MUST be conservative — headings, bullets, and prose should NOT match.
@@ -89,11 +97,12 @@ export function isSingleFormula(line) {
   // Skip empty lines
   if (!trimmed) return false;
 
-  // Skip lines that look like markdown headings, bullets, or prose
+  // Skip lines that look like markdown headings, bullets, emphasis, or prose
   if (/^#{1,6}\s/.test(trimmed)) return false; // ## Heading
-  if (/^[-*]\s/.test(trimmed)) return false; // - bullet
+  if (/^[-*•◦▪]\s/.test(trimmed)) return false; // - bullet
+  if (/^\*[a-zA-Z]/.test(trimmed)) return false; // *italic text*
   if (/^---+$/.test(trimmed)) return false; // --- divider
-  if (trimmed.split(/\s+/).length > 15) return false; // prose sentences
+  if (mmWordy(trimmed) > 3) return false; // prose sentences
 
   // It IS a formula if it's wrapped in $...$
   if (/^\$[\s\S]+?\$$/.test(trimmed)) return true;
@@ -264,14 +273,19 @@ export function sanitizeLatex(latex) {
   if (!latex || typeof latex !== "string") return "";
 
   let cleaned = latex
-    // Restore JS string control characters \u0009 (tab -> \t) and \u000C (formfeed -> \f)
+    // Restore JS string control characters (\u0008 -> \b, \u000B -> \v, \u000C -> \f, \u0009 -> \t, \u000D -> \r)
+    .replace(/\u0008([a-zA-Z])/g, "\\b$1")
+    .replace(/\u000B([a-zA-Z])/g, "\\v$1")
+    .replace(/\u000C([a-zA-Z])/g, "\\f$1")
+    .replace(/\u0009([a-zA-Z])/g, "\\t$1")
+    .replace(/\u000D(?!\n)([a-zA-Z])/g, "\\r$1")
     .replace(/\u0009ext/g, "\\text")
     .replace(/\u000Crac/g, "\\frac")
     .replace(/\u000C/g, "\\f")
     .replace(/\u0009/g, "\\t")
     // eslint-disable-next-line no-control-regex -- intentional control/invisible-char strip
     .replace(
-      /[\uFFFD\u0000-\u0008\u000B\u000E-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g,
+      /[\uFFFD\u0000-\u0007\u000E-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g,
       "",
     )
     .replace(/(^|[^\\])%/g, "$1\\%");
@@ -288,11 +302,6 @@ export function sanitizeLatex(latex) {
   // Remove any unescaped '#' (that isn't \#)
   cleaned = cleaned.replace(/(^|[^\\])#/g, "$1");
 
-  // Strip all unescaped $ signs to prevent KaTeX syntax rendering errors
-  cleaned = cleaned.replace(/\\\$|(\$)/g, (match, group1) =>
-    group1 ? "" : match,
-  );
-
   return cleaned;
 }
 
@@ -302,8 +311,49 @@ export function stripUnknownChars(latex) {
 }
 
 /**
+ * Helper to determine if a LaTeX line is unclosed or incomplete,
+ * indicating that the next line is a continuation of the same formula.
+ */
+export function isUnclosedLatex(line, inEnv = false) {
+  const tr = (line || "").trim();
+  if (!tr) return { unclosed: false, inEnv: false };
+
+  // Check LaTeX environments \begin{...} vs \end{...}
+  const begins = (tr.match(/\\begin\{[^}]+\}/g) || []).length;
+  const ends = (tr.match(/\\end\{[^}]+\}/g) || []).length;
+  const newInEnv = inEnv ? (begins >= ends) : (begins > ends);
+
+  if (newInEnv) return { unclosed: true, inEnv: true };
+
+  // Check unclosed braces/brackets (ignoring escaped ones)
+  let openBraces = 0, openParens = 0, openBrackets = 0;
+  for (let i = 0; i < tr.length; i++) {
+    if (tr[i] === "\\") { i++; continue; }
+    if (tr[i] === "{") openBraces++;
+    else if (tr[i] === "}") openBraces--;
+    else if (tr[i] === "(") openParens++;
+    else if (tr[i] === ")") openParens--;
+    else if (tr[i] === "[") openBrackets++;
+    else if (tr[i] === "]") openBrackets--;
+  }
+
+  if (openBraces > 0 || openParens > 0 || openBrackets > 0) {
+    return { unclosed: true, inEnv: false };
+  }
+
+  // Check ending operator continuation (\, +, -, =, *, /, ,)
+  if (/(\\[a-zA-Z]+|[+\-*=/,])$/.test(tr)) {
+    if (!/\\(right|quad|qquad|hfill|cr|\\)$/.test(tr)) {
+      return { unclosed: true, inEnv: false };
+    }
+  }
+
+  return { unclosed: false, inEnv: false };
+}
+
+/**
  * Normalizes multi-line raw LaTeX pastes (e.g. copied from web math renders or PDFs)
- * into a single unified LaTeX formula string before parsing.
+ * into unified LaTeX formula strings before parsing. Preserves separate formula lines.
  */
 export function normalizeLatexPaste(text) {
   if (!text || typeof text !== "string") return text;
@@ -329,9 +379,11 @@ export function normalizeLatexPaste(text) {
     const tr = (l || "").trim();
     if (!tr) return false;
     if (/^\s*[*+\-•◦▪]\s/.test(tr) || /^\s*\d+[.)]\s/.test(tr)) return false; // Markdown list items must NOT be grouped as latex formula blocks
+    if (/^\*[a-zA-Z]/.test(tr)) return false; // Markdown emphasis (*Text...) must NOT be latex lines
     if (/^[\[\]$$]/.test(tr)) return false;
     // Setext heading underlines (===, ---) must NOT be treated as LaTeX operator lines
     if (/^[=]{3,}$/.test(tr) || /^[-]{3,}$/.test(tr)) return false;
+    if (mmWordy(tr) > 3) return false; // Prose sentences with >3 words are text, NOT standalone display math
     if (
       /^\s*\\(text|frac|dfrac|tfrac|mathrm|mathbf|mathit|sum|prod|int|alpha|beta|theta|sigma|mu|lambda|phi|psi|omega|infty|pm|times|div|leq|geq|neq|partial|nabla|left|right|begin|end|underbrace|overbrace)\b/.test(
         tr,
@@ -339,7 +391,7 @@ export function normalizeLatexPaste(text) {
     )
       return true;
     if (/^[\\{}]/.test(tr)) return true;
-    if (/^[=+\-*/×÷]\s*/.test(tr) || /^=\s*$/.test(tr)) return true;
+    if (/^[=+\-/×÷]\s*(\\|\{|\w)/.test(tr) || /^=\s*$/.test(tr)) return true;
     if (tr.includes("\\") && /\\[a-zA-Z]{2,}/.test(tr) && !tr.includes("http"))
       return true;
     return false;
@@ -352,10 +404,27 @@ export function normalizeLatexPaste(text) {
     const trimmed = line.trim();
 
     if (isLatexPart(trimmed)) {
-      const latexBlock = [];
+      const latexBlock = [trimmed];
+      let currentInEnv = false;
+      let state = isUnclosedLatex(trimmed, currentInEnv);
+      currentInEnv = state.inEnv;
+      i++;
+
       while (i < rawLines.length && isLatexPart(rawLines[i])) {
-        latexBlock.push(rawLines[i].trim());
-        i++;
+        const nextTrimmed = rawLines[i].trim();
+        const isContinuation =
+          state.unclosed ||
+          /^[})\],]/.test(nextTrimmed) ||
+          /^\s*\\(right|end)\b/.test(nextTrimmed);
+
+        if (isContinuation) {
+          latexBlock.push(nextTrimmed);
+          state = isUnclosedLatex(nextTrimmed, currentInEnv);
+          currentInEnv = state.inEnv;
+          i++;
+        } else {
+          break;
+        }
       }
       outLines.push(latexBlock.join(" "));
     } else {

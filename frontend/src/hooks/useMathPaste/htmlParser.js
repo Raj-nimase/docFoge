@@ -281,6 +281,308 @@ function transformWordHeadings(doc) {
   });
 }
 
+function scanTextForMathTokens(str) {
+  const tokens = [];
+  let i = 0;
+  let buf = "";
+
+  const pushText = () => {
+    if (buf) {
+      tokens.push({ type: "text", value: buf });
+      buf = "";
+    }
+  };
+
+  while (i < str.length) {
+    const c = str[i];
+    const n = str[i + 1];
+
+    if (c === "\\" && (n === "$" || n === "\\" || n === "%" || n === "#" || n === "_")) {
+      buf += str[i] + str[i + 1];
+      i += 2;
+      continue;
+    }
+
+    if (c === "\\" && n === "[") {
+      const e = str.indexOf("\\]", i + 2);
+      if (e !== -1) {
+        pushText();
+        tokens.push({
+          type: "math",
+          value: str.slice(i + 2, e).trim(),
+          display: true,
+        });
+        i = e + 2;
+        continue;
+      }
+    }
+
+    if (c === "\\" && n === "(") {
+      const e = str.indexOf("\\)", i + 2);
+      if (e !== -1) {
+        pushText();
+        tokens.push({
+          type: "math",
+          value: str.slice(i + 2, e).trim(),
+          display: false,
+        });
+        i = e + 2;
+        continue;
+      }
+    }
+
+    if (c === "$") {
+      const dbl = n === "$";
+      const delim = dbl ? "$$" : "$";
+      const startIdx = i + delim.length;
+      const e = str.indexOf(delim, startIdx);
+
+      if (e !== -1) {
+        const content = str.slice(startIdx, e).trim();
+        const isCurrency = !dbl && /^\d+(?:\.\d+)?\s*(?:and|or|,|\.|\$)?$/.test(content);
+        if (content && !isCurrency) {
+          pushText();
+          tokens.push({
+            type: "math",
+            value: content,
+            display: dbl,
+          });
+          i = e + delim.length;
+          continue;
+        }
+      }
+    }
+
+    buf += c;
+    i++;
+  }
+
+  pushText();
+  return tokens;
+}
+
+function wrapDisplaySpansInParagraphs(doc) {
+  const displaySpans = Array.from(doc.querySelectorAll('span[data-display="true"]'));
+  for (const span of displaySpans) {
+    if (!span.isConnected) continue;
+
+    const parent = span.parentElement;
+    if (!parent) continue;
+
+    const parentTag = parent.tagName.toUpperCase();
+    const isAloneInP =
+      parentTag === "P" &&
+      parent.childNodes.length === 1 &&
+      parent.firstChild === span;
+
+    if (isAloneInP) continue;
+
+    // Create a standalone <p> element containing only this display math span
+    const standaloneP = doc.createElement("p");
+    standaloneP.appendChild(span.cloneNode(true));
+
+    if (parentTag === "P") {
+      // Insert standaloneP before parent paragraph, then remove original span
+      parent.parentNode.insertBefore(standaloneP, parent);
+      span.remove();
+    } else {
+      // Replace span with standaloneP inside parent container
+      span.replaceWith(standaloneP);
+    }
+  }
+
+  // Remove any empty paragraphs left behind by span removals
+  doc.querySelectorAll("p, div").forEach((el) => {
+    if (el.children.length === 0 && (!el.textContent || !el.textContent.trim())) {
+      el.remove();
+    }
+  });
+}
+
+function convertMarkdownMathInHtml(doc) {
+  // Process block elements (<p>, <div>, <li>, <td>, <th>, <h1>-<h6>) containing math fences ($$, \[, \(, $)
+  const blockElements = Array.from(
+    doc.querySelectorAll("p, div, li, td, th, h1, h2, h3, h4, h5, h6"),
+  );
+
+  for (const el of blockElements) {
+    if (!el.isConnected) continue;
+    if (el.closest("pre, code")) continue;
+    if (el.querySelector("[data-latex]")) continue;
+
+    // Convert <br> tags inside display math elements into newlines
+    // Check for $$, \[, or bare [ bracket fences
+    const rawText = el.textContent;
+    if (rawText && (rawText.includes("$$") || rawText.includes("\\[") || /^\s*\[/.test(rawText))) {
+      el.querySelectorAll("br").forEach((br) => br.replaceWith("\n"));
+    }
+
+    let fullText = el.textContent;
+    if (!fullText) continue;
+
+    // Normalize bare [ ] display math fences to $$ $$
+    // Only when the ENTIRE block element content is [content] and content is not
+    // a markdown link or numbered list item
+    const bracketFenceMatch = fullText.trim().match(/^\[\s*([\s\S]+?)\s*\]$/);
+    if (bracketFenceMatch) {
+      const inner = bracketFenceMatch[1].trim();
+      if (inner && !/^\d+[.)]/.test(inner) && !inner.includes("](")) {
+        fullText = `$$ ${inner} $$`;
+      }
+    }
+
+    const hasDisplayFence = fullText.includes("$$") || fullText.includes("\\[");
+    const hasInlineFence = fullText.includes("$") || fullText.includes("\\(");
+
+    if (!hasDisplayFence && !hasInlineFence) continue;
+
+    // Evaluate math using el.textContent so formulas fragmented across child elements (like <em> or <span>) stay intact
+    const tokens = scanTextForMathTokens(fullText);
+    if (
+      !tokens ||
+      tokens.length === 0 ||
+      (tokens.length === 1 && tokens[0].type === "text")
+    ) {
+      continue;
+    }
+
+    const hasDisplayToken = tokens.some((t) => t.type === "math" && t.display);
+
+    if (hasDisplayToken && (el.tagName === "P" || el.tagName === "DIV")) {
+      const parent = el.parentNode;
+      if (!parent) continue;
+
+      for (const token of tokens) {
+        if (token.type === "text") {
+          const txt = token.value.trim();
+          if (txt) {
+            const p = doc.createElement("p");
+            p.textContent = txt;
+            parent.insertBefore(p, el);
+          }
+        } else if (token.type === "math") {
+          const p = doc.createElement("p");
+          const span = doc.createElement("span");
+          span.setAttribute("data-latex", extractLatex(token.value));
+          if (token.display) {
+            span.setAttribute("data-display", "true");
+          }
+          p.appendChild(span);
+          parent.insertBefore(p, el);
+        }
+      }
+      el.remove();
+    } else {
+      const frag = doc.createDocumentFragment();
+      for (const token of tokens) {
+        if (token.type === "text") {
+          frag.appendChild(doc.createTextNode(token.value));
+        } else if (token.type === "math") {
+          const span = doc.createElement("span");
+          span.setAttribute("data-latex", extractLatex(token.value));
+          if (token.display) {
+            span.setAttribute("data-display", "true");
+          }
+          frag.appendChild(span);
+        }
+      }
+      el.innerHTML = "";
+      el.appendChild(frag);
+    }
+  }
+
+  // ── Bare parenthesized LaTeX: (\beta_0), (\varepsilon), (R^2), ((R^2)) ──
+  // Walk text nodes and replace patterns like (\beta_0) or ((R^2)) with
+  // inline math spans.  These have no $, \(, or \[ delimiter so the
+  // earlier scanTextForMathTokens pass cannot see them.
+  convertBareParenMathInTextNodes(doc);
+
+  // Ensure display math spans get wrapped in clean top-level paragraph blocks
+  wrapDisplaySpansInParagraphs(doc);
+}
+
+/**
+ * Detect bare parenthesized LaTeX in text nodes and convert to math spans.
+ * Matches patterns like:
+ *   (\beta_0)  (\varepsilon)  (R^2)  ((R^2))  (y)  (x)  (\hat{y})
+ * Only fires when the parenthesized content looks like LaTeX (contains
+ * backslash-commands, carets, underscores, or is a single-letter variable).
+ */
+function convertBareParenMathInTextNodes(doc) {
+  // Regex: match ((...)) or (\cmd...) or (expr with ^_) inside parens
+  // Group 1: double-paren inner, Group 2: single-paren inner
+  const PAREN_MATH_RE = /\(\(([^()]+)\)\)|\(([^()]*\\[a-zA-Z][^()]*)\)|\(([A-Za-z](?:\^[\w{}]+|_[\w{}]+|_\{[^}]+\}|\^\{[^}]+\})+)\)|\(([A-Za-z])\)(?=\s*[:=])/g;
+
+  const textWalker = document.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  let tNode;
+  while ((tNode = textWalker.nextNode())) textNodes.push(tNode);
+
+  for (const node of textNodes) {
+    if (!node.isConnected) continue;
+    if (node.parentElement?.closest("pre, code, [data-latex]")) continue;
+
+    const text = node.textContent;
+    if (!text) continue;
+
+    // Quick check: must contain ( and either \ or ^ or _ or a single letter in parens
+    if (!text.includes("(")) continue;
+    if (!/\\[a-zA-Z]|[\^_]|\([a-zA-Z]\)\s*[:=]/.test(text)) continue;
+
+    PAREN_MATH_RE.lastIndex = 0;
+    const parts = [];
+    let lastIdx = 0;
+    let match;
+
+    while ((match = PAREN_MATH_RE.exec(text)) !== null) {
+      // Push text before this match
+      if (match.index > lastIdx) {
+        parts.push({ type: "text", value: text.slice(lastIdx, match.index) });
+      }
+
+      const doubleParen = match[1]; // ((R^2))
+      const latexCmd = match[2];   // (\beta_0)
+      const exprSup = match[3];    // (R^2)
+      const singleVar = match[4];  // (y): or (x)=
+
+      if (doubleParen) {
+        // ((R^2)) → show as ( math )
+        parts.push({ type: "text", value: "(" });
+        parts.push({ type: "math", value: doubleParen.trim() });
+        parts.push({ type: "text", value: ")" });
+      } else {
+        const inner = (latexCmd || exprSup || singleVar || "").trim();
+        // For single-letter vars and simple expressions, wrap with parens around the math
+        parts.push({ type: "text", value: "(" });
+        parts.push({ type: "math", value: inner });
+        parts.push({ type: "text", value: ")" });
+      }
+
+      lastIdx = match.index + match[0].length;
+    }
+
+    if (parts.length === 0) continue;
+
+    // Push remaining text
+    if (lastIdx < text.length) {
+      parts.push({ type: "text", value: text.slice(lastIdx) });
+    }
+
+    // Build fragment to replace the text node
+    const frag = doc.createDocumentFragment();
+    for (const part of parts) {
+      if (part.type === "text") {
+        frag.appendChild(doc.createTextNode(part.value));
+      } else {
+        const span = doc.createElement("span");
+        span.setAttribute("data-latex", extractLatex(part.value));
+        frag.appendChild(span);
+      }
+    }
+    node.replaceWith(frag);
+  }
+}
+
 /**
  * Transforms clipboard HTML to replace <math> nodes with TipTap math spans,
  * strip heading prefixes, remove <hr> / divider paragraphs, and convert
@@ -477,19 +779,7 @@ export function transformMathHtml(html) {
       // into a single paragraph (all formulas on one line). Wrapping each one
       // matches the markdown-paste output where every display equation gets
       // its own paragraph.
-      doc.querySelectorAll('span[data-display="true"]').forEach((span) => {
-        const parent = span.parentElement;
-        if (!parent) return;
-        const parentTag = parent.tagName;
-        const isAlone =
-          parentTag === "P" &&
-          parent.childNodes.length === 1 &&
-          parent.firstChild === span;
-        if (isAlone) return; // already alone in its own paragraph
-        const p = doc.createElement("p");
-        span.replaceWith(p);
-        p.appendChild(span);
-      });
+      wrapDisplaySpansInParagraphs(doc);
     }
 
     // ── Remove <hr> and divider <p> ─────────────────────────────────────
@@ -518,6 +808,9 @@ export function transformMathHtml(html) {
       pre.innerHTML = "";
       pre.appendChild(newCode);
     });
+
+    // ── Convert raw markdown math ($...$, $$...$$, \(...\), \[...\]) in text ──
+    convertMarkdownMathInHtml(doc);
 
     // ── Collapse stray whitespace between/inside tags ───────────────────
     // ChatGPT's clipboard HTML puts raw newlines around list-item text
