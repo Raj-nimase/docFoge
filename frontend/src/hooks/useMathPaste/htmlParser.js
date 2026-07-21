@@ -80,10 +80,50 @@ export function transformMathHtml(html) {
       }
     }
 
-    // ── Process headings (list-item demotion only) ──────────
+    // ── Process headings (math-heading rescue + list-item demotion) ──────
     for (const headingEl of headingNodes) {
+      if (!headingEl.isConnected) continue;
       const text = headingEl.textContent.trim();
       if (!text) continue;
+
+      // ChatGPT renders an un-rendered display-math block's setext underline
+      // as a heading: "<h1>[<br>\mathrm{Attention}(Q,K,V)</h1>" followed by
+      // "<p>\mathrm{softmax}…<br>]</p>". Rebuild the equation as display math
+      // instead of keeping raw LaTeX as a document heading.
+      const startsFence = text.startsWith("[");
+      const hasLatexCmd = /\\[a-zA-Z]{2,}/.test(text);
+      const next = headingEl.nextElementSibling;
+      const nextClosesFence =
+        startsFence &&
+        next &&
+        next.tagName.toUpperCase() === "P" &&
+        /\]\s*$/.test(next.textContent);
+      if (hasLatexCmd || (startsFence && (/[\\^_{}]/.test(text) || nextClosesFence))) {
+        headingEl.querySelectorAll("br").forEach((br) => br.replaceWith(" "));
+        const lhs = headingEl.textContent.trim().replace(/^\[\s*/, "");
+        // The setext underline the heading came from encodes an operator:
+        // H1 ("===") means "=", H2 ("---") means "-".
+        const op = headingEl.tagName.toUpperCase() === "H2" ? "-" : "=";
+        let rhs = "";
+        if (startsFence && next && next.tagName.toUpperCase() === "P") {
+          next.querySelectorAll("br").forEach((br) => br.replaceWith(" "));
+          const nextText = next.textContent.trim();
+          if (/\]$/.test(nextText)) {
+            rhs = nextText.replace(/\]$/, "").trim();
+            next.remove();
+          }
+        }
+        const latex = (rhs ? `${lhs} ${op} ${rhs}` : lhs)
+          .replace(/\s+/g, " ")
+          .trim();
+        const p = doc.createElement("p");
+        const span = doc.createElement("span");
+        span.setAttribute("data-latex", extractLatex(latex));
+        span.setAttribute("data-display", "true");
+        p.appendChild(span);
+        headingEl.replaceWith(p);
+        continue;
+      }
 
       // If a heading tag is wrapping a list marker like "a) " or "i. ", demote to paragraph
       if (/^([a-zA-Z]|(?:i|ii|iii|iv|v|vi|vii|viii|ix|x))[.)]\s+/i.test(text)) {
@@ -101,8 +141,18 @@ export function transformMathHtml(html) {
         if (!el.isConnected) return; // already replaced via a parent element
         const ann = el.querySelector('annotation[encoding="application/x-tex"]');
         if (ann) {
+          // .katex-display wrappers (and MathML display="block") are block
+          // equations — mark them so TipTap renders each on its own line,
+          // matching the markdown-paste (Format 2) output.
+          const isDisplay =
+            el.classList.contains("katex-display") ||
+            !!el.querySelector('math[display="block"]');
           const span = doc.createElement("span");
-          span.setAttribute("data-latex", extractLatex(ann.textContent.trim()));
+          span.setAttribute(
+            "data-latex",
+            extractLatex(ann.textContent.trim()).replace(/\s+/g, " "),
+          );
+          if (isDisplay) span.setAttribute("data-display", "true");
           el.replaceWith(span);
         }
       });
@@ -118,7 +168,13 @@ export function transformMathHtml(html) {
             ? annotation.textContent
             : MathMLToLaTeX.convert(mathNode.outerHTML);
           const span = doc.createElement("span");
-          span.setAttribute("data-latex", extractLatex(latex));
+          span.setAttribute(
+            "data-latex",
+            extractLatex(latex).replace(/\s+/g, " ").trim(),
+          );
+          if (mathNode.getAttribute("display") === "block") {
+            span.setAttribute("data-display", "true");
+          }
           mathNode.parentNode.replaceChild(span, mathNode);
         } catch (e) {
           console.error("MathML convert error:", e);
@@ -129,10 +185,60 @@ export function transformMathHtml(html) {
       for (const node of katexNodes) {
         if (node.isConnected) node.remove();
       }
+
+      // Wrap each display-math span in its own <p>. The math node is inline
+      // in the TipTap schema, so bare sibling spans would otherwise be merged
+      // into a single paragraph (all formulas on one line). Wrapping each one
+      // matches the markdown-paste output where every display equation gets
+      // its own paragraph.
+      doc.querySelectorAll('span[data-display="true"]').forEach((span) => {
+        const parent = span.parentElement;
+        if (!parent) return;
+        const parentTag = parent.tagName;
+        const isAlone =
+          parentTag === "P" &&
+          parent.childNodes.length === 1 &&
+          parent.firstChild === span;
+        if (isAlone) return; // already alone in its own paragraph
+        const p = doc.createElement("p");
+        span.replaceWith(p);
+        p.appendChild(span);
+      });
     }
 
     // ── Remove <hr> and divider <p> ─────────────────────────────────────
     for (const node of toRemove) node.remove();
+
+    // ── Collapse stray whitespace between/inside tags ───────────────────
+    // ChatGPT's clipboard HTML puts raw newlines around list-item text
+    // ("<li>\nPseudocode\n</li>") and between sibling tags. ProseMirror's
+    // clipboard parser preserves that whitespace, which renders as blank
+    // lines around every list item. Normalise it here so the output is
+    // identical to cleanly-generated HTML. <pre>/<code> are left untouched.
+    const BLOCK_TAGS =
+      /^(P|DIV|UL|OL|LI|H[1-6]|TABLE|THEAD|TBODY|TR|TD|TH|PRE|BLOCKQUOTE|HR|BR|SECTION|ARTICLE|FIGURE|FIGCAPTION)$/;
+    const isBlockEl = (n) =>
+      !!n && n.nodeType === 1 && BLOCK_TAGS.test(n.tagName.toUpperCase());
+    const textWalker = document.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+    const textNodes = [];
+    let textNode;
+    while ((textNode = textWalker.nextNode())) textNodes.push(textNode);
+    for (const t of textNodes) {
+      if (t.parentElement?.closest("pre, code")) continue;
+      const atBlockStart = !t.previousSibling || isBlockEl(t.previousSibling);
+      const atBlockEnd = !t.nextSibling || isBlockEl(t.nextSibling);
+      if (!t.textContent.trim()) {
+        // Whitespace-only node: drop it at block boundaries, otherwise keep
+        // a single space so "<strong>A</strong> <em>B</em>" stays separated.
+        if (atBlockStart || atBlockEnd) t.remove();
+        else t.textContent = " ";
+        continue;
+      }
+      let collapsed = t.textContent.replace(/\s+/g, " ");
+      if (atBlockStart) collapsed = collapsed.replace(/^\s+/, "");
+      if (atBlockEnd) collapsed = collapsed.replace(/\s+$/, "");
+      if (collapsed !== t.textContent) t.textContent = collapsed;
+    }
 
     const finalHtml = doc.body
       ? doc.body.innerHTML

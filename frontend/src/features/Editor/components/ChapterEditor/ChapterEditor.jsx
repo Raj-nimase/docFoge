@@ -125,7 +125,7 @@ const MathView = ({ node, updateAttributes, selected }) => {
 
   return (
     <NodeViewWrapper
-      className={`math-view-wrapper ${selected ? "selected" : ""} ${editing ? "math-editing" : ""}`}
+      className={`math-view-wrapper ${node.attrs.display ? "math-display" : "math-inline"} ${selected ? "selected" : ""} ${editing ? "math-editing" : ""}`}
       style={{ display: node.attrs.display ? "block" : "inline-block" }}
     >
       {editing ? (

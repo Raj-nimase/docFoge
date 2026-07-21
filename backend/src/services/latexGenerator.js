@@ -3,7 +3,11 @@
  * Simplified preamble for Tectonic compatibility.
  */
 
-const { escapeLatex, auditLatexSource, sanitizeLatex } = require("./latexSanitizer");
+const {
+  escapeLatex,
+  auditLatexSource,
+  sanitizeLatex,
+} = require("./latexSanitizer");
 
 function stripAllPrefixes(text) {
   let cleaned = text;
@@ -58,14 +62,16 @@ function buildPreamble(templateId, metadata) {
   const author = escapeLatex(metadata.authors || "");
   const date = escapeLatex(metadata.year || "");
   const isIEEE = templateId === "ieee-paper";
-  const isReport = ["diploma-project-report", "thesis", "assignment"].includes(templateId);
+  const isReport = ["diploma-project-report", "thesis", "assignment"].includes(
+    templateId,
+  );
   const isDoubleSided = !!metadata.isDoubleSided;
 
   const docclass = isIEEE
     ? "\\documentclass[twocolumn,10pt]{article}"
     : isDoubleSided
-    ? "\\documentclass[12pt,a4paper,twoside]{report}"
-    : "\\documentclass[12pt,a4paper]{report}";
+      ? "\\documentclass[12pt,a4paper,twoside]{report}"
+      : "\\documentclass[12pt,a4paper]{report}";
 
   const enableHeader = !!metadata.enableHeader;
   const topMargin = enableHeader ? "15mm" : "30mm";
@@ -78,9 +84,11 @@ function buildPreamble(templateId, metadata) {
       geometryPackage = `\\usepackage[a4paper,top=${topMargin},bottom=22mm,left=30mm,right=20mm,headheight=14pt,headsep=12mm,footskip=13mm]{geometry}`;
     }
   } else if (isIEEE) {
-    geometryPackage = "\\usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=1.5cm,right=1.5cm]{geometry}";
+    geometryPackage =
+      "\\usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=1.5cm,right=1.5cm]{geometry}";
   } else {
-    geometryPackage = "\\usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=3.5cm,right=1.25cm]{geometry}";
+    geometryPackage =
+      "\\usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=3.5cm,right=1.25cm]{geometry}";
   }
 
   // Minimal, Tectonic-safe package set
@@ -129,7 +137,9 @@ function buildPreamble(templateId, metadata) {
     "\\usepackage{float}",
     "\\setlist{topsep=0.5em, itemsep=2pt, parsep=0pt, partopsep=0pt}",
     "",
-    isIEEE ? "\\renewcommand{\\arraystretch}{1.2}" : "\\renewcommand{\\arraystretch}{1.6}",
+    isIEEE
+      ? "\\renewcommand{\\arraystretch}{1.2}"
+      : "\\renewcommand{\\arraystretch}{1.6}",
     isIEEE ? "\\setlength{\\tabcolsep}{6pt}" : "\\setlength{\\tabcolsep}{14pt}",
     "",
     "\\lstset{",
@@ -174,7 +184,9 @@ function buildPreamble(templateId, metadata) {
     // Section 2.2.1 & 2.2.2: Compact, Balanced Chapter and Section Headings
     lines.push("\\usepackage{titlesec}");
     lines.push("\\titleformat{\\chapter}[display]");
-    lines.push("  {\\normalfont\\fontsize{18pt}{22pt}\\selectfont\\bfseries\\centering}");
+    lines.push(
+      "  {\\normalfont\\fontsize{18pt}{22pt}\\selectfont\\bfseries\\centering}",
+    );
     lines.push("  {\\chaptertitlename\\ \\thechapter}");
     lines.push("  {4mm}");
     lines.push("  {\\fontsize{18pt}{22pt}\\selectfont\\bfseries}");
@@ -204,8 +216,12 @@ function buildPreamble(templateId, metadata) {
     lines.push("\\setlength{\\abovedisplayskip}{6pt}");
     lines.push("\\setlength{\\belowdisplayskip}{6pt}");
     lines.push("");
-    lines.push("\\setlist[itemize]{leftmargin=1.5em, itemsep=2pt, topsep=4pt, parsep=0pt, partopsep=0pt}");
-    lines.push("\\setlist[enumerate]{leftmargin=1.5em, itemsep=2pt, topsep=4pt, parsep=0pt, partopsep=0pt}");
+    lines.push(
+      "\\setlist[itemize]{leftmargin=1.5em, itemsep=2pt, topsep=4pt, parsep=0pt, partopsep=0pt}",
+    );
+    lines.push(
+      "\\setlist[enumerate]{leftmargin=1.5em, itemsep=2pt, topsep=4pt, parsep=0pt, partopsep=0pt}",
+    );
     lines.push("");
     lines.push("\\setcounter{secnumdepth}{3}");
     lines.push("\\setcounter{tocdepth}{3}");
@@ -237,7 +253,7 @@ function buildPreamble(templateId, metadata) {
     } else {
       lines.push("\\pagestyle{fancy}");
     }
-    
+
     lines.push("\\fancyhf{}");
 
     // Apply to standard 'fancy' layout
@@ -327,12 +343,12 @@ function buildBody(templateId, metadata, frontMatter, chapters) {
   if (isReport && frontMatter.some((s) => s.id === "toc")) {
     parts.push("\\newpage");
     parts.push("{\\singlespacing\n\\tableofcontents\n}");
-    
+
     if (metadata.enableListOfFigures !== false) {
       parts.push("\\newpage");
       parts.push("{\\singlespacing\n\\listoffigures\n}");
     }
-    
+
     if (metadata.enableListOfTables !== false) {
       parts.push("\\newpage");
       parts.push("{\\singlespacing\n\\listoftables\n}");
@@ -372,7 +388,9 @@ function buildBody(templateId, metadata, frontMatter, chapters) {
       parts.push(`\\section{${title}}\n\n${content}`);
     } else {
       if (metadata.enableChapterNumbers === false) {
-        parts.push(`\\chapter*{${title}}\n\\addcontentsline{toc}{chapter}{${title}}\n\n${content}`);
+        parts.push(
+          `\\chapter*{${title}}\n\\addcontentsline{toc}{chapter}{${title}}\n\n${content}`,
+        );
       } else {
         parts.push(`\\chapter{${title}}\n\n${content}`);
       }
@@ -434,7 +452,7 @@ function joinBlocksWithSmartSpacing(blocks) {
     }
     const prevEndsMath = result.trimEnd().endsWith("\\]");
     const currStartsMath = block.startsWith("\\[");
-    const sep = (prevEndsMath || currStartsMath) ? "\n" : "\n\n";
+    const sep = prevEndsMath || currStartsMath ? "\n" : "\n\n";
     result += sep + block;
   }
   return result;
@@ -442,7 +460,9 @@ function joinBlocksWithSmartSpacing(blocks) {
 
 function convertTipTapToLatex(tiptapJson, templateId) {
   if (!tiptapJson || !tiptapJson.content) return "";
-  const blocks = tiptapJson.content.map(node => convertNode(node, templateId)).filter(Boolean);
+  const blocks = tiptapJson.content
+    .map((node) => convertNode(node, templateId))
+    .filter(Boolean);
   return joinBlocksWithSmartSpacing(blocks);
 }
 
@@ -461,7 +481,7 @@ function convertTipTapToLatexWithLevelShift(tiptapJson, templateId) {
       if (node.attrs.level < minLevel) minLevel = node.attrs.level;
     }
   }
-  
+
   // Shift amount: if minLevel=2, shift=-1 (H2→section, H3→subsection)
   // For IEEE, chapter title is already \section, so content headings should target \subsection (level 2)
   const isIEEE = templateId === "ieee-paper";
@@ -481,7 +501,8 @@ function isMathText(text) {
   if (/^[\[\]$$]/.test(tr)) return true;
   if (/^\\[a-zA-Z]+/.test(tr)) return true;
   if (/^\$/.test(tr)) return true;
-  if (tr.includes("\\frac") || tr.includes("\\sqrt") || tr.includes("\\sum")) return true;
+  if (tr.includes("\\frac") || tr.includes("\\sqrt") || tr.includes("\\sum"))
+    return true;
   return false;
 }
 
@@ -497,7 +518,12 @@ function convertNodeWithShift(node, shift, templateId) {
     const isIEEE = templateId === "ieee-paper";
     const maxLevel = isIEEE ? 4 : 3;
     const shiftedLevel = Math.max(1, Math.min(maxLevel, rawLevel + shift));
-    const cmds = { 1: "section", 2: "subsection", 3: "subsubsection", 4: "paragraph" };
+    const cmds = {
+      1: "section",
+      2: "subsection",
+      3: "subsubsection",
+      4: "paragraph",
+    };
     return `\\${cmds[shiftedLevel] || "paragraph"}{${cleanText}}`;
   }
   // For all other node types, use the normal converter
@@ -519,7 +545,12 @@ function convertNode(node, templateId) {
       const level = node.attrs && node.attrs.level ? node.attrs.level : 1;
       const isIEEE = templateId === "ieee-paper";
       const actualLevel = isIEEE ? level + 1 : level;
-      const cmds = { 1: "section", 2: "subsection", 3: "subsubsection", 4: "paragraph" };
+      const cmds = {
+        1: "section",
+        2: "subsection",
+        3: "subsubsection",
+        4: "paragraph",
+      };
       return `\\${cmds[actualLevel] || "paragraph"}{${cleanText}}`;
     }
 
@@ -530,7 +561,10 @@ function convertNode(node, templateId) {
       return buildList(node, "enumerate", templateId);
 
     case "listItem": {
-      const inner = (node.content || []).map(n => convertNode(n, templateId)).join(" ").trim();
+      const inner = (node.content || [])
+        .map((n) => convertNode(n, templateId))
+        .join(" ")
+        .trim();
       return `  \\item ${inner}`;
     }
 
@@ -565,7 +599,10 @@ function convertNode(node, templateId) {
 
     case "image": {
       const src = node.attrs && node.attrs.src ? node.attrs.src : "";
-      const caption = node.attrs && node.attrs.title ? escapeLatex(node.attrs.title) : "Figure";
+      const caption =
+        node.attrs && node.attrs.title
+          ? escapeLatex(node.attrs.title)
+          : "Figure";
       if (src === "katexmath") {
         // Unconverted image carrier from mobile editor — render as math
         const latex = node.attrs && node.attrs.alt ? node.attrs.alt : "";
@@ -589,20 +626,21 @@ function convertNode(node, templateId) {
         const filename = `${prefix}img_${imageCounter}.${extension}`;
         const base64Data = src.split(",")[1];
         extractedImages.push({ filename, base64: base64Data });
-        
+
         return `\\begin{figure}[H]\n  \\centering\n  \\includegraphics[width=0.6\\textwidth,height=0.4\\textheight,keepaspectratio]{${filename}}\n  \\caption{${caption}}\n\\end{figure}`;
       } else if (src.startsWith("http")) {
         imageCounter++;
         let extension = "png";
         try {
-          const urlExt = new URL(src).pathname.split('.').pop().toLowerCase();
-          if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(urlExt)) extension = urlExt;
-        } catch(e) {}
-        
+          const urlExt = new URL(src).pathname.split(".").pop().toLowerCase();
+          if (["png", "jpg", "jpeg", "gif", "webp"].includes(urlExt))
+            extension = urlExt;
+        } catch (e) {}
+
         const prefix = currentPrefix ? `${currentPrefix}_` : "";
         const filename = `${prefix}img_${imageCounter}.${extension}`;
         extractedImages.push({ filename, url: src });
-        
+
         return `\\begin{figure}[H]\n  \\centering\n  \\includegraphics[width=0.6\\textwidth,height=0.4\\textheight,keepaspectratio]{${filename}}\n  \\caption{${caption}}\n\\end{figure}`;
       }
       return "";
@@ -618,7 +656,7 @@ function convertNode(node, templateId) {
 
 function buildList(node, env, templateId) {
   const items = (node.content || [])
-    .map(n => convertNode(n, templateId))
+    .map((n) => convertNode(n, templateId))
     .filter(Boolean)
     .join("\n");
   return `\\begin{${env}}\n${items}\n\\end{${env}}`;
@@ -627,7 +665,10 @@ function buildList(node, env, templateId) {
 function convertTable(tableNode, templateId) {
   const rows = tableNode.content || [];
   if (!rows.length) return "";
-  const caption = tableNode.attrs && tableNode.attrs.caption ? escapeLatex(tableNode.attrs.caption) : "Table";
+  const caption =
+    tableNode.attrs && tableNode.attrs.caption
+      ? escapeLatex(tableNode.attrs.caption)
+      : "Table";
   const colCount = rows[0] && rows[0].content ? rows[0].content.length : 1;
   const colSpec = Array(colCount).fill("X").join(" | ");
 
@@ -640,7 +681,10 @@ function convertTable(tableNode, templateId) {
 
   for (const row of rows) {
     const cells = (row.content || []).map((cell) => {
-      const cellText = (cell.content || []).map(n => convertNode(n, templateId)).join(" ").trim();
+      const cellText = (cell.content || [])
+        .map((n) => convertNode(n, templateId))
+        .join(" ")
+        .trim();
       if (cell.type === "tableHeader") {
         return `\\textbf{${cellText}}`;
       }
@@ -655,7 +699,7 @@ function convertTable(tableNode, templateId) {
 
 function convertInline(nodes, templateId) {
   if (!nodes || !nodes.length) return "";
-  return nodes.map(node => convertNode(node, templateId)).join("");
+  return nodes.map((node) => convertNode(node, templateId)).join("");
 }
 
 function convertTextWithMarks(node) {
@@ -695,7 +739,7 @@ function getHeaderFooterConfig(metadata) {
     hl = escapeLatex(metadata.headerLeft || "");
     hc = escapeLatex(metadata.headerCenter || "");
     hr = escapeLatex(metadata.headerRight || "");
-    hrule = (metadata.headerRule !== false) ? "0.4pt" : "0pt";
+    hrule = metadata.headerRule !== false ? "0.4pt" : "0pt";
   }
 
   let fl = "";
@@ -707,7 +751,7 @@ function getHeaderFooterConfig(metadata) {
     fc = escapeLatex(metadata.footerCenter || "");
     fr = escapeLatex(metadata.footerRight || "");
 
-    const hasPagePlaceholder = 
+    const hasPagePlaceholder =
       /\[page\]/i.test(metadata.footerLeft || "") ||
       /\[page\]/i.test(metadata.footerCenter || "") ||
       /\[page\]/i.test(metadata.footerRight || "");
@@ -723,7 +767,7 @@ function getHeaderFooterConfig(metadata) {
         fc = `${fc}\\\\ \\thepage`;
       }
     }
-    frule = (!!metadata.footerRule) ? "0.4pt" : "0pt";
+    frule = !!metadata.footerRule ? "0.4pt" : "0pt";
   } else {
     fc = "\\thepage";
   }
@@ -731,8 +775,14 @@ function getHeaderFooterConfig(metadata) {
   return {
     enableHeader,
     enableFooter,
-    hl, hc, hr, hrule,
-    fl, fc, fr, frule
+    hl,
+    hc,
+    hr,
+    hrule,
+    fl,
+    fc,
+    fr,
+    frule,
   };
 }
 

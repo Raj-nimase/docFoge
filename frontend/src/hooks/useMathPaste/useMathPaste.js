@@ -18,12 +18,22 @@ import { DOMParser as PMDOMParser } from "prosemirror-model";
 
 function insertHtmlContent(view, editor, html) {
   if (editor?.commands?.insertContent) {
-    editor.commands.insertContent(html);
+    // insertContent defaults to preserveWhitespace: 'full', which turns the
+    // raw newlines inside pasted HTML (e.g. "<li>\nPseudocode\n</li>") into
+    // extra blank lines. Collapse whitespace like a normal HTML parse instead.
+    editor.commands.insertContent(html, {
+      parseOptions: { preserveWhitespace: false },
+    });
     return;
   }
   const container = document.createElement("div");
   container.innerHTML = html;
-  const slice = PMDOMParser.fromSchema(view.state.schema).parseSlice(container);
+  // parseSlice preserves whitespace by default — collapse it so newlines
+  // between tags ("<li>\nText\n</li>") don't become extra blank lines.
+  const slice = PMDOMParser.fromSchema(view.state.schema).parseSlice(
+    container,
+    { preserveWhitespace: false },
+  );
   const tr = view.state.tr.replaceSelection(slice);
   view.dispatch(tr);
 }
@@ -34,8 +44,30 @@ export function handleRichPaste(view, event, editor) {
 
   if (!rawText && !htmlText) return false;
 
+  // Pre-process: convert setext-style headings (text\n===) to ATX-style (# text)
+  // This must happen BEFORE normalizeLatexPaste to prevent === lines from being
+  // joined with math content. Only converts when the text line is NOT math/LaTeX.
+  const convertSetextHeadings = (text) => {
+    return text.replace(
+      /^([^\n]+)\n(={3,}|-{3,})$/gm,
+      (match, textLine, underline) => {
+        const trimmedText = textLine.trim();
+        // Don't convert if the text line looks like math/LaTeX
+        if (/\\[a-zA-Z]/.test(trimmedText) || /[\^_]/.test(trimmedText) ||
+            /[√∑∏∫∞±≤≥≠×÷∈∂]/.test(trimmedText) || /^(Coverage|DRE|MSE|AccessTime|P\(A\|B\)|SEEK|ROTATION|TRANSFER)/i.test(trimmedText)) {
+          // For math lines, convert setext underline to = or -
+          return `${trimmedText} ${underline[0] === "=" ? "=" : "-"}`;
+        }
+        const prefix = underline[0] === "=" ? "#" : "##";
+        return `${prefix} ${trimmedText}`;
+      }
+    );
+  };
+
+  const preProcessedText = convertSetextHeadings(rawText);
+
   // Normalize multi-line raw LaTeX pastes into a single unified formula string first
-  const plainText = normalizeLatexPaste(rawText);
+  const plainText = normalizeLatexPaste(preProcessedText);
 
   const htmlHasRealMath = /<math[\s>]|class=["']?[^"']*katex/i.test(htmlText);
 
@@ -50,8 +82,11 @@ export function handleRichPaste(view, event, editor) {
   // Case 2: Plain text contains math formulas ($, \[, $$, math fences, LaTeX commands)
   if (looksLikeMarkdownMath(plainText)) {
     event.preventDefault();
-    const cleanPlainText = reconstructPdfParagraphs(plainText);
-    insertHtmlContent(view, editor, parseMarkdownMathToHtml(cleanPlainText));
+    const cleanPlainText = plainText.includes("\n")
+      ? plainText
+      : reconstructPdfParagraphs(plainText);
+    const resultHtml = parseMarkdownMathToHtml(cleanPlainText);
+    insertHtmlContent(view, editor, resultHtml);
     return true;
   }
 

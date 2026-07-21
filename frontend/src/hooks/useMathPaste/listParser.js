@@ -88,30 +88,7 @@ export function textToHtmlList(text) {
     }
 
     if (sectionMatch) {
-      // Close all open lists when encountering a section heading
-      while (stack.length > 0) {
-        html += `</li></${stack.pop().type}>`;
-      }
-
-      const sectionNum = sectionMatch[1]; // e.g., "2.3" or "2.3.1"
-      const sectionText = sectionMatch[2];
-      const dots = (sectionNum.match(/\./g) || []).length;
-
-      // h2 for 1 dot (X.Y), h3 for 2 dots (X.Y.Z)
-      const level = Math.min(6, dots + 1);
-
-      const { heading, paragraph } = splitHeadingAndParagraph(sectionText);
-      console.log("[DEBUG] Split heading successfully:", {
-        heading,
-        paragraph,
-        level,
-      });
-      html += `<h${level}>${heading}</h${level}>`;
-
-      if (paragraph.trim()) {
-        html += `<p>${paragraph.trim()}</p>`;
-      }
-      continue;
+      numberMatch = [sectionMatch[0], sectionMatch[1], sectionMatch[2]];
     }
 
     if (bulletMatch || numberMatch) {

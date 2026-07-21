@@ -86,16 +86,138 @@ export function isPdfGarble(text) {
 }
 
 // Unicode super/subscripts and math symbols → LaTeX.
-const MM_SUP = { "⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4", "⁵": "5", "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9", "⁺": "+", "⁻": "-", "⁼": "=", "⁽": "(", "⁾": ")", "ⁿ": "n", "ⁱ": "i" };
-const MM_SUB = { "₀": "0", "₁": "1", "₂": "2", "₃": "3", "₄": "4", "₅": "5", "₆": "6", "₇": "7", "₈": "8", "₉": "9", "₊": "+", "₋": "-", "₌": "=", "₍": "(", "₎": ")", "ₙ": "n", "ₓ": "x", "ₐ": "a", "ₑ": "e", "ᵢ": "i", "ⱼ": "j" };
-const MM_SYM = { "−": "-", "–": "-", "—": "-", "×": "\\times ", "÷": "\\div ", "·": "\\cdot ", "⋅": "\\cdot ", "∗": "*", "±": "\\pm ", "∓": "\\mp ", "≤": "\\le ", "≥": "\\ge ", "≠": "\\ne ", "≈": "\\approx ", "≡": "\\equiv ", "∞": "\\infty ", "∑": "\\sum ", "∏": "\\prod ", "∫": "\\int ", "∂": "\\partial ", "∇": "\\nabla ", "√": "\\sqrt ", "→": "\\to ", "←": "\\gets ", "⇒": "\\Rightarrow ", "⇔": "\\Leftrightarrow ", "∈": "\\in ", "∉": "\\notin ", "⊂": "\\subset ", "⊆": "\\subseteq ", "∪": "\\cup ", "∩": "\\cap ", "∅": "\\emptyset ", "∀": "\\forall ", "∃": "\\exists ", "∝": "\\propto ", "°": "^{\\circ}", "α": "\\alpha ", "β": "\\beta ", "γ": "\\gamma ", "δ": "\\delta ", "ε": "\\epsilon ", "ζ": "\\zeta ", "η": "\\eta ", "θ": "\\theta ", "ι": "\\iota ", "κ": "\\kappa ", "λ": "\\lambda ", "μ": "\\mu ", "ν": "\\nu ", "ξ": "\\xi ", "π": "\\pi ", "ρ": "\\rho ", "σ": "\\sigma ", "τ": "\\tau ", "υ": "\\upsilon ", "φ": "\\phi ", "χ": "\\chi ", "ψ": "\\psi ", "ω": "\\omega ", "Γ": "\\Gamma ", "Δ": "\\Delta ", "Θ": "\\Theta ", "Λ": "\\Lambda ", "Ξ": "\\Xi ", "Π": "\\Pi ", "Σ": "\\Sigma ", "Φ": "\\Phi ", "Ψ": "\\Psi ", "Ω": "\\Omega " };
+const MM_SUP = {
+  "⁰": "0",
+  "¹": "1",
+  "²": "2",
+  "³": "3",
+  "⁴": "4",
+  "⁵": "5",
+  "⁶": "6",
+  "⁷": "7",
+  "⁸": "8",
+  "⁹": "9",
+  "⁺": "+",
+  "⁻": "-",
+  "⁼": "=",
+  "⁽": "(",
+  "⁾": ")",
+  ⁿ: "n",
+  ⁱ: "i",
+};
+const MM_SUB = {
+  "₀": "0",
+  "₁": "1",
+  "₂": "2",
+  "₃": "3",
+  "₄": "4",
+  "₅": "5",
+  "₆": "6",
+  "₇": "7",
+  "₈": "8",
+  "₉": "9",
+  "₊": "+",
+  "₋": "-",
+  "₌": "=",
+  "₍": "(",
+  "₎": ")",
+  ₙ: "n",
+  ₓ: "x",
+  ₐ: "a",
+  ₑ: "e",
+  ᵢ: "i",
+  ⱼ: "j",
+};
+const MM_SYM = {
+  "−": "-",
+  "–": "-",
+  "—": "-",
+  "×": "\\times ",
+  "÷": "\\div ",
+  "·": "\\cdot ",
+  "⋅": "\\cdot ",
+  "∗": "*",
+  "±": "\\pm ",
+  "∓": "\\mp ",
+  "≤": "\\le ",
+  "≥": "\\ge ",
+  "≠": "\\ne ",
+  "≈": "\\approx ",
+  "≡": "\\equiv ",
+  "∞": "\\infty ",
+  "∑": "\\sum ",
+  "∏": "\\prod ",
+  "∫": "\\int ",
+  "∂": "\\partial ",
+  "∇": "\\nabla ",
+  "√": "\\sqrt ",
+  "→": "\\to ",
+  "←": "\\gets ",
+  "⇒": "\\Rightarrow ",
+  "⇔": "\\Leftrightarrow ",
+  "∈": "\\in ",
+  "∉": "\\notin ",
+  "⊂": "\\subset ",
+  "⊆": "\\subseteq ",
+  "∪": "\\cup ",
+  "∩": "\\cap ",
+  "∅": "\\emptyset ",
+  "∀": "\\forall ",
+  "∃": "\\exists ",
+  "∝": "\\propto ",
+  "°": "^{\\circ}",
+  α: "\\alpha ",
+  β: "\\beta ",
+  γ: "\\gamma ",
+  δ: "\\delta ",
+  ε: "\\epsilon ",
+  ζ: "\\zeta ",
+  η: "\\eta ",
+  θ: "\\theta ",
+  ι: "\\iota ",
+  κ: "\\kappa ",
+  λ: "\\lambda ",
+  μ: "\\mu ",
+  ν: "\\nu ",
+  ξ: "\\xi ",
+  π: "\\pi ",
+  ρ: "\\rho ",
+  σ: "\\sigma ",
+  τ: "\\tau ",
+  υ: "\\upsilon ",
+  φ: "\\phi ",
+  χ: "\\chi ",
+  ψ: "\\psi ",
+  ω: "\\omega ",
+  Γ: "\\Gamma ",
+  Δ: "\\Delta ",
+  Θ: "\\Theta ",
+  Λ: "\\Lambda ",
+  Ξ: "\\Xi ",
+  Π: "\\Pi ",
+  Σ: "\\Sigma ",
+  Φ: "\\Phi ",
+  Ψ: "\\Psi ",
+  Ω: "\\Omega ",
+};
 
 // Convert unicode super/subscripts and symbols to LaTeX (θ→\theta, ×→\times, …).
 export function convUnicodeMath(s) {
   if (!s) return s;
-  s = s.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿⁱ]+/g, (m) => { let r = ""; for (const c of m) r += MM_SUP[c] || c; return "^{" + r + "}"; });
-  s = s.replace(/[₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₙₓₐₑᵢⱼ]+/g, (m) => { let r = ""; for (const c of m) r += MM_SUB[c] || c; return "_{" + r + "}"; });
-  s = s.replace(/[−–—×÷·⋅∗±∓≤≥≠≈≡∞∑∏∫∂∇√→←⇒⇔∈∉⊂⊆∪∩∅∀∃∝°αβγδεζηθικλμνξπρστυφχψωΓΔΘΛΞΠΣΦΨΩ]/g, (c) => MM_SYM[c] || c);
+  s = s.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿⁱ]+/g, (m) => {
+    let r = "";
+    for (const c of m) r += MM_SUP[c] || c;
+    return "^{" + r + "}";
+  });
+  s = s.replace(/[₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₙₓₐₑᵢⱼ]+/g, (m) => {
+    let r = "";
+    for (const c of m) r += MM_SUB[c] || c;
+    return "_{" + r + "}";
+  });
+  s = s.replace(
+    /[−–—×÷·⋅∗±∓≤≥≠≈≡∞∑∏∫∂∇√→←⇒⇔∈∉⊂⊆∪∩∅∀∃∝°αβγδεζηθικλμνξπρστυφχψωΓΔΘΛΞΠΣΦΨΩ]/g,
+    (c) => MM_SYM[c] || c,
+  );
   return s;
 }
 
@@ -111,19 +233,26 @@ export function sanitizeLatex(latex) {
     .replace(/\u000C/g, "\\f")
     .replace(/\u0009/g, "\\t")
     // eslint-disable-next-line no-control-regex -- intentional control/invisible-char strip
-    .replace(/[\uFFFD\u0000-\u0008\u000B\u000E-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, "")
+    .replace(
+      /[\uFFFD\u0000-\u0008\u000B\u000E-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g,
+      "",
+    )
     .replace(/(^|[^\\])%/g, "$1\\%");
 
-  // Fix OCR / Markdown artifact hashes:
+  // Fix OCR / Markdown artifact hashes & multi-equals:
   // 1. Replace '##' with '-' (minus sign)
   cleaned = cleaned.replace(/##/g, "-");
+  // 2. Replace multiple equal signs '===' with '='
+  cleaned = cleaned.replace(/={2,}/g, "=");
 
-  // 2. Remove any remaining single unescaped '#' (that isn't \#)
+  // Remove any unescaped '#' (that isn't \#)
   cleaned = cleaned.replace(/(^|[^\\])#/g, "$1");
 
   // Strip all unescaped $ signs to prevent KaTeX syntax rendering errors
-  cleaned = cleaned.replace(/\\\$|(\$)/g, (match, group1) => group1 ? '' : match);
-  
+  cleaned = cleaned.replace(/\\\$|(\$)/g, (match, group1) =>
+    group1 ? "" : match,
+  );
+
   return cleaned;
 }
 
@@ -143,7 +272,13 @@ export function normalizeLatexPaste(text) {
   if (!text.includes("\n")) {
     const trimmed = text.trim();
     const match = trimmed.match(/^.+?(\\[a-zA-Z]{2,}.*|\$.*|\\[(\[].*)$/);
-    if (match && !/^\\[a-zA-Z]/.test(trimmed) && !/^\$/.test(trimmed) && !/^\\\(/.test(trimmed) && !/^\\\[/.test(trimmed)) {
+    if (
+      match &&
+      !/^\\[a-zA-Z]/.test(trimmed) &&
+      !/^\$/.test(trimmed) &&
+      !/^\\\(/.test(trimmed) &&
+      !/^\\\[/.test(trimmed)
+    ) {
       return match[1].trim();
     }
     return text;
@@ -155,10 +290,18 @@ export function normalizeLatexPaste(text) {
     if (!tr) return false;
     if (/^\s*[*+\-•◦▪]\s/.test(tr) || /^\s*\d+[.)]\s/.test(tr)) return false; // Markdown list items must NOT be grouped as latex formula blocks
     if (/^[\[\]$$]/.test(tr)) return false;
-    if (/^\s*\\(text|frac|dfrac|tfrac|mathrm|mathbf|mathit|sum|prod|int|alpha|beta|theta|sigma|mu|lambda|phi|psi|omega|infty|pm|times|div|leq|geq|neq|partial|nabla|left|right|begin|end|underbrace|overbrace)\b/.test(tr)) return true;
+    // Setext heading underlines (===, ---) must NOT be treated as LaTeX operator lines
+    if (/^[=]{3,}$/.test(tr) || /^[-]{3,}$/.test(tr)) return false;
+    if (
+      /^\s*\\(text|frac|dfrac|tfrac|mathrm|mathbf|mathit|sum|prod|int|alpha|beta|theta|sigma|mu|lambda|phi|psi|omega|infty|pm|times|div|leq|geq|neq|partial|nabla|left|right|begin|end|underbrace|overbrace)\b/.test(
+        tr,
+      )
+    )
+      return true;
     if (/^[\\{}]/.test(tr)) return true;
     if (/^[=+\-*/×÷]\s*/.test(tr) || /^=\s*$/.test(tr)) return true;
-    if (tr.includes("\\") && /\\[a-zA-Z]{2,}/.test(tr) && !tr.includes("http")) return true;
+    if (tr.includes("\\") && /\\[a-zA-Z]{2,}/.test(tr) && !tr.includes("http"))
+      return true;
     return false;
   };
 
@@ -171,15 +314,7 @@ export function normalizeLatexPaste(text) {
     if (isLatexPart(trimmed)) {
       const latexBlock = [];
       while (i < rawLines.length && isLatexPart(rawLines[i])) {
-        let l = rawLines[i].trim();
-        const bsIdx = l.indexOf("\\");
-        if (bsIdx > 0 && !/^\\[a-zA-Z]/.test(l) && !/^\{/.test(l)) {
-          const postBs = l.slice(bsIdx);
-          if (/^\\[a-zA-Z]{2,}/.test(postBs)) {
-            l = postBs;
-          }
-        }
-        latexBlock.push(l);
+        latexBlock.push(rawLines[i].trim());
         i++;
       }
       outLines.push(latexBlock.join(" "));

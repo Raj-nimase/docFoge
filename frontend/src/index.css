@@ -2190,11 +2190,19 @@ body {
   box-shadow: none;
 }
 
-/* Reduce spacing on paragraphs that contain a display math block */
-.tiptap-editor .ProseMirror p:has(.math-view-wrapper) {
-  line-height: 1.2 !important;
-  margin-top: 0.15em !important;
-  margin-bottom: 0.15em !important;
+/* Display math block padding, margins, and centering */
+.math-view-wrapper.math-display {
+  display: block !important;
+  margin: 0.6em auto !important;
+  padding: 0.35em 0 !important;
+  text-align: center !important;
+}
+
+.tiptap-editor .ProseMirror p:has(.math-view-wrapper.math-display) {
+  line-height: 1.4 !important;
+  margin-top: 0.5em !important;
+  margin-bottom: 0.5em !important;
+  text-align: center !important;
 }
 
 .math-view-wrapper.selected {

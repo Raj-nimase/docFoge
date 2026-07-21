@@ -34,6 +34,7 @@ export function separatePdfParagraphsAndHeadings(text) {
 
 export function reconstructPdfParagraphs(text) {
   if (!text) return "";
+  if (text.includes("\n")) return text;
   const separated = separatePdfParagraphsAndHeadings(text);
   const rawLines = separated.split("\n");
 
@@ -49,10 +50,12 @@ export function reconstructPdfParagraphs(text) {
   const isHeadingOrDivider = (trimmedLine) => {
     const plain = trimmedLine.replace(/^[*_]{1,3}/, "").replace(/[*_]{1,3}$/, "").trim();
     if (/^[-*_]{3,}$/.test(plain)) return true; // hr
+    if (/^[=]{3,}$/.test(plain)) return true; // setext heading underline (===)
     if (/^#{1,6}\s/.test(plain)) return true; // heading
     if (/^[\[\]$$]/.test(plain) || /^\\\[/.test(plain) || /^\\\]/.test(plain)) return true; // math fence (open or close)
     if (plain.includes("|") && /^\s*\|?[\s:|\\-]*-[\s:|\\-]*\|?\s*$/.test(plain)) return true; // table
-    if (/^(?:Section\s+)?\d+(?:\.\d+)*[.)]?\s+[A-Z]/i.test(plain) && plain.length < 80) return true; // section headers like 3.2 Attention or 3.2.1 Scaled Dot-Product
+    if (/^\d+(?:\.\d+)+[.)]?\s+[A-Z]/i.test(plain) && plain.length < 80) return true; // dotted section headers like 3.2 Attention or 3.2.1 Scaled Dot-Product
+    if (/^Section\s+\d+/i.test(plain) && plain.length < 80) return true; // explicit "Section N" prefix
     if (/^[A-Z0-9\s\-\.\:]{3,50}$/.test(plain) && plain.length < 60 && !/[a-z]/.test(plain)) return true; // all-caps titles like ABSTRACT
     return false;
   };

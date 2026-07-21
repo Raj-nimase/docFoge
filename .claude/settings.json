@@ -1,12 +1,12 @@
 {
-    "env": {
-        "ANTHROPIC_API_KEY": "fe_oa_31d97da4e6a143551c8080cefb494db0f75b6506bd1786d5",
-        "ANTHROPIC_BASE_URL": "https://cc.freemodel.dev/",
-        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
-    },
-    "permissions": {
-        "allow": [],
-        "deny": []
-    },
-    "apiKeyHelper": "echo 'fe_oa_31d97da4e6a143551c8080cefb494db0f75b6506bd1786d5'"
+  "env": {
+    "ANTHROPIC_API_KEY": "fe_oa_d0801e3d6fa30c5dbea82882f142d71d9e49c29eda5bb388",
+    "ANTHROPIC_BASE_URL": "https://cc.freemodel.dev/",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+  },
+  "permissions": {
+    "allow": [],
+    "deny": []
+  },
+  "apiKeyHelper": "echo 'fe_oa_d0801e3d6fa30c5dbea82882f142d71d9e49c29eda5bb388'"
 }
