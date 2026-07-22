@@ -1,7 +1,7 @@
-import { API_BASE_URL } from "@/services/api";
+import { API_BASE_URL } from "../../services/api/index.js";
 import { MathMLToLaTeX } from "mathml-to-latex";
-import { extractLatex, convUnicodeMath } from "./mathUtils";
-import { splitHeadingAndParagraph } from "./listParser";
+import { extractLatex, convUnicodeMath } from "./mathUtils.js";
+import { splitHeadingAndParagraph } from "./listParser.js";
 
 const API_BASE = API_BASE_URL;
 
@@ -195,6 +195,11 @@ function transformWordListParagraphs(doc) {
     const isMsoList = /MsoListParagraph/i.test(className) || /mso-list\s*:/i.test(style);
     const hasBulletSymbol = /^[\u25CF\u2022\u25CB\u25A1\u25A0\u2013\u2014\u2212\uF0B7\u00B7\uF0A7*•-]\s*/.test(text);
     const hasNumberMarker = /^(\d+|[a-zA-Z]|[iIvVxX]+)[.)]\s+/.test(text);
+
+    // Skip math expressions that start with - (e.g. -\sum, -\frac, -\int, -\nabla, -\alpha)
+    // or contain LaTeX display math / closing bracket ]
+    const isMathExpr = /^\s*-\\[a-zA-Z]/.test(text) || (/\\[a-zA-Z]{2,}/.test(text) && (text.includes("]") || text.includes("[")));
+    if (isMathExpr && !isMsoList) return;
 
     if (isMsoList || hasBulletSymbol || hasNumberMarker) {
       let type = "ul";
@@ -414,7 +419,16 @@ function convertMarkdownMathInHtml(doc) {
     // Check for $$, \[, or bare [ bracket fences
     const rawText = el.textContent;
     if (rawText && (rawText.includes("$$") || rawText.includes("\\[") || /^\s*\[/.test(rawText))) {
-      el.querySelectorAll("br").forEach((br) => br.replaceWith("\n"));
+      el.querySelectorAll("br").forEach((br) => {
+        const prev = br.previousSibling;
+        if (prev && prev.nodeType === 3) {
+          const text = prev.textContent;
+          if (/(?<!\\)\\$/.test(text.trimEnd())) {
+            prev.textContent = text.replace(/(?<!\\)\\(\s*)$/, "\\\\$1");
+          }
+        }
+        br.replaceWith("\n");
+      });
     }
 
     let fullText = el.textContent;
@@ -684,26 +698,44 @@ export function transformMathHtml(html) {
       const nextClosesFence =
         startsFence &&
         next &&
-        next.tagName.toUpperCase() === "P" &&
-        /\]\s*$/.test(next.textContent);
+        /\]\s*$/.test(next.textContent || "");
       if (hasLatexCmd || (startsFence && (/[\\^_{}]/.test(text) || nextClosesFence))) {
         headingEl.querySelectorAll("br").forEach((br) => br.replaceWith(" "));
         const lhs = headingEl.textContent.trim().replace(/^\[\s*/, "");
         // The setext underline the heading came from encodes an operator:
         // H1 ("===") means "=", H2 ("---") means "-".
         const op = headingEl.tagName.toUpperCase() === "H2" ? "-" : "=";
-        let rhs = "";
-        if (startsFence && next && next.tagName.toUpperCase() === "P") {
-          next.querySelectorAll("br").forEach((br) => br.replaceWith(" "));
-          const nextText = next.textContent.trim();
-          if (/\]$/.test(nextText)) {
-            rhs = nextText.replace(/\]$/, "").trim();
-            next.remove();
+        let rhsParts = [];
+        let curr = headingEl.nextElementSibling;
+
+        while (curr) {
+          const siblingText = curr.textContent || "";
+          const nextSib = curr.nextElementSibling;
+          curr.querySelectorAll("br").forEach((br) => br.replaceWith(" "));
+          const cleanSibText = curr.textContent.trim();
+
+          const closes = /\]\s*$/.test(cleanSibText);
+          if (closes) {
+            rhsParts.push(cleanSibText.replace(/\]\s*$/, "").trim());
+            curr.remove();
+            break;
+          } else if (cleanSibText.endsWith("]")) {
+            rhsParts.push(cleanSibText.slice(0, -1).trim());
+            curr.remove();
+            break;
+          } else {
+            rhsParts.push(cleanSibText);
+            curr.remove();
+            curr = nextSib;
           }
         }
-        const latex = (rhs ? `${lhs} ${op} ${rhs}` : lhs)
+
+        const rhs = rhsParts.join(" ").trim();
+        let latex = (rhs ? `${lhs} ${op} ${rhs}` : lhs)
           .replace(/\s+/g, " ")
           .trim();
+        latex = latex.replace(/^\[\s*/, "").replace(/\s*\]$/, "").trim();
+
         const p = doc.createElement("p");
         const span = doc.createElement("span");
         span.setAttribute("data-latex", extractLatex(latex));

@@ -5,6 +5,7 @@ import {
   sanitizeLatex,
   stripUnknownChars,
   normalizeLatexPaste,
+  fixMatrixRowBreaks,
 } from "./mathUtils";
 import { transformMathHtml, extractMarkdownFromHtml } from "./htmlParser";
 import { reconstructPdfParagraphs } from "./pdfParser";
@@ -134,4 +135,5 @@ export {
   sanitizeLatex,
   convUnicodeMath,
   stripUnknownChars,
+  fixMatrixRowBreaks,
 };

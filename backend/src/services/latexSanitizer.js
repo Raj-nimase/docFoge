@@ -221,7 +221,16 @@ function sanitizeLatex(latex) {
   cleaned = cleaned.replace(/(?<!\\left)\\\[|(?<!\\right)\\\]|\\\(|\\\)/g, '');
 
   // 5. Strip all unescaped $ signs to prevent nested math mode compilation errors
-  return cleaned.replace(/\\\$|(\$)/g, (match, group1) => group1 ? '' : match);
+  cleaned = cleaned.replace(/\\\$|(\$)/g, (match, group1) => group1 ? '' : match);
+
+  // 6. Fix squashed single-backslash row breaks in matrix / cases / array environments
+  if (/\\begin\{(?:bmatrix|pmatrix|vmatrix|Vmatrix|matrix|cases|aligned|array)\}/i.test(cleaned)) {
+    cleaned = cleaned.replace(/(\\begin\{(?:bmatrix|pmatrix|vmatrix|Vmatrix|matrix|cases|aligned|array)\}[\s\S]*?\\end\{(?:bmatrix|pmatrix|vmatrix|Vmatrix|matrix|cases|aligned|array)\})/gi, (env) => {
+      return env.replace(/(?<!\\)\\(?!\\)\s*(\r?\n|\s+)(?!begin|end|\{|\[)/gi, " \\\\ ");
+    });
+  }
+
+  return cleaned;
 }
 
 module.exports = { escapeLatex, auditLatexSource, sanitizeLatex };

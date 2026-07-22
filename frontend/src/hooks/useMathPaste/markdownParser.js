@@ -34,8 +34,6 @@ function mmMathScore(L) {
   const hasOps = /[=+×÷±√]|[-](?=[0-9a-zA-Z(])/.test(L);
   return hasStruct || (hasOps && mmWordy(L) <= 3);
 }
-
-// "LHS = description" or "LHS: description" legend line (e.g. "(\beta_0): Intercept", "(S) = Slip (%)", "T = Torque (N·m)")
 function mmDefLine(s) {
   const cleanS = (s || "")
     .trim()
@@ -55,6 +53,10 @@ function mmDefLine(s) {
   let lhs = cleanS.slice(0, eq).trim();
   const rhs = cleanS.slice(eq + 1).trim();
   if (!lhs || !rhs) return null;
+
+  // Reject LHS containing Markdown formatting (bold **, italic *, code `, etc.)
+  if (/\*\*|\*|__|`/.test(lhs)) return null;
+
   lhs = lhs.replace(/^\(+(.*)\)+$/, "$1").trim();
 
   // Strip any leading/trailing math delimiters from LHS (e.g. $N_s$ -> N_s)
@@ -75,7 +77,7 @@ function mmDefLine(s) {
   const lhsOk =
     mmIsVar(lhs) ||
     (/\\[a-zA-Z]/.test(lhs) && mmWordy(lhs) <= 3) ||
-    (lhs.length <= 12 && mmWordy(lhs) === 0);
+    (/[\^_]/.test(lhs) && mmWordy(lhs) <= 1);
   if (!lhsOk) return null;
   if (mmWordy(rhs) < 1 || mmMathScore(rhs)) return null;
   return { lhs, sep, rhs };
@@ -168,7 +170,11 @@ function mmScanInline(str) {
       const e = str.indexOf(d, i + d.length);
       if (e !== -1) {
         pushText();
-        tokens.push({ t: "math", v: str.slice(i + d.length, e).trim(), display: dbl });
+        let mathVal = str.slice(i + d.length, e).trim();
+        while (mathVal.startsWith("$") && mathVal.endsWith("$")) {
+          mathVal = mathVal.slice(1, -1).trim();
+        }
+        tokens.push({ t: "math", v: mathVal, display: dbl });
         i = e + d.length;
         continue;
       }
@@ -177,27 +183,30 @@ function mmScanInline(str) {
       const e = mmMatchBalanced(str, i, "(", ")");
       if (e !== -1) {
         let inner = str.slice(i + 1, e);
-        let isDoubleParen = false;
-        if (inner.startsWith("(") && inner.endsWith(")")) {
-          inner = inner.slice(1, -1).trim();
-          isDoubleParen = true;
-        }
-
-        if (mmHasLatex(inner) || mmIsVar(inner)) {
-          pushText();
-          if (isDoubleParen) {
-            tokens.push({ t: "text", v: "(" });
-            tokens.push({ t: "math", v: inner.trim() });
-            tokens.push({ t: "text", v: ")" });
-          } else if (mmIsVar(inner) && !inner.includes("=")) {
-            tokens.push({ t: "text", v: "(" });
-            tokens.push({ t: "math", v: inner.trim() });
-            tokens.push({ t: "text", v: ")" });
-          } else {
-            tokens.push({ t: "math", v: inner.trim() });
+        // If inner content contains explicit math delimiters ($, \(, \[]), do NOT treat parens as math wrapper
+        if (!inner.includes("$") && !inner.includes("\\(") && !inner.includes("\\[")) {
+          let isDoubleParen = false;
+          if (inner.startsWith("(") && inner.endsWith(")")) {
+            inner = inner.slice(1, -1).trim();
+            isDoubleParen = true;
           }
-          i = e + 1;
-          continue;
+
+          if (mmHasLatex(inner) || mmIsVar(inner)) {
+            pushText();
+            if (isDoubleParen) {
+              tokens.push({ t: "text", v: "(" });
+              tokens.push({ t: "math", v: inner.trim() });
+              tokens.push({ t: "text", v: ")" });
+            } else if (mmIsVar(inner) && !inner.includes("=")) {
+              tokens.push({ t: "text", v: "(" });
+              tokens.push({ t: "math", v: inner.trim() });
+              tokens.push({ t: "text", v: ")" });
+            } else {
+              tokens.push({ t: "math", v: inner.trim() });
+            }
+            i = e + 1;
+            continue;
+          }
         }
       }
     }
@@ -205,7 +214,7 @@ function mmScanInline(str) {
       const e = mmMatchBalanced(str, i, "[", "]");
       if (e !== -1) {
         const inner = str.slice(i + 1, e);
-        if (mmHasLatex(inner)) {
+        if (!inner.includes("$") && !inner.includes("\\(") && !inner.includes("\\[") && mmHasLatex(inner)) {
           pushText();
           tokens.push({ t: "math", v: inner.trim() });
           i = e + 1;
@@ -286,11 +295,11 @@ function mmInlineToHtml(raw) {
 // LaTeX with a legend line.)
 function stripHeadingPrefix(text) {
   let cleaned = mmCleanText(text);
-  // Strip digit prefixes followed by dot/paren and space: e.g. "1. ", "4.1. ", "10.2) "
-  cleaned = cleaned.replace(/^\s*\d+(?:\.\d+)*[.)]\s+/, "");
+  // Strip digit prefixes followed by optional dot/paren and space: e.g. "1. ", "4.1 ", "10.2) "
+  cleaned = cleaned.replace(/^\s*\d+(?:\.\d+)*[.)]?\s+/, "");
   // Strip letter/roman prefixes followed by dot/paren and space: e.g. "a) ", "A. ", "ix) ", "IV. "
   cleaned = cleaned.replace(
-    /^\s*(?:[a-zA-Z]|[iI][vV]|[vV]?[iI]{1,3}|[iI][xX])\s*[.)]\s+/,
+    /^\s*(?:[a-zA-Z]|[iI][vV]|[vV]?[iI]{1,3}|[iI][xX])\s*[.)]?\s+/,
     "",
   );
   return cleaned.trim();
@@ -483,55 +492,12 @@ export function parseMarkdownMathToHtml(text) {
         i++;
       }
 
-      // Group fenceLines into separate formula blocks if multiple formulas exist inside fence
-      const blocks = [];
-      let currentBlock = [];
-      let currentInEnv = false;
-      let state = { unclosed: false, inEnv: false };
-
-      for (let k = 0; k < fenceLines.length; k++) {
-        let lineK = fenceLines[k].replace(/={2,}/g, "=");
-        const hashMatch = lineK.match(/^\s*#{1,6}\s*(.+)$/);
-        if (hashMatch) {
-          const term1 = hashMatch[1].trim();
-          if (k + 1 < fenceLines.length && !fenceLines[k + 1].startsWith("#")) {
-            const term2 = fenceLines[k + 1].replace(/={2,}/g, "=").trim();
-            lineK = `${term1} - ${term2}`;
-            k++;
-          } else {
-            lineK = `- ${term1}`;
-          }
-        }
-
-        if (currentBlock.length === 0) {
-          currentBlock.push(lineK);
-          state = isUnclosedLatex(lineK, currentInEnv);
-          currentInEnv = state.inEnv;
-        } else {
-          const isContinuation =
-            state.unclosed ||
-            /^[})\],]/.test(lineK) ||
-            /^\s*\\(right|end)\b/.test(lineK);
-
-          if (isContinuation) {
-            currentBlock.push(lineK);
-            state = isUnclosedLatex(lineK, currentInEnv);
-            currentInEnv = state.inEnv;
-          } else {
-            blocks.push(currentBlock.join(" "));
-            currentBlock = [lineK];
-            state = isUnclosedLatex(lineK, currentInEnv);
-            currentInEnv = state.inEnv;
-          }
-        }
-      }
-      if (currentBlock.length > 0) {
-        blocks.push(currentBlock.join(" "));
-      }
-
       flushList();
-      for (const b of blocks) {
-        const spanHtml = mathSpan(b.replace(/\s+/g, " ").trim(), true);
+      if (fenceLines.length > 0) {
+        const combinedLatex = convUnicodeMath(
+          fenceLines.join(" ").replace(/={2,}/g, "=").replace(/\s+/g, " ").trim(),
+        );
+        const spanHtml = mathSpan(combinedLatex, true);
         html += `<p>${spanHtml}</p>`;
       }
       continue;
@@ -689,7 +655,7 @@ export function parseMarkdownMathToHtml(text) {
         const nextTrimmed = lines[i].trim();
         const isContinuation =
           state.unclosed ||
-          /^[})\],]/.test(nextTrimmed) ||
+          /^[})\],{=+\-/×÷]/.test(nextTrimmed) ||
           /^\s*\\(right|end)\b/.test(nextTrimmed);
 
         if (isContinuation) {

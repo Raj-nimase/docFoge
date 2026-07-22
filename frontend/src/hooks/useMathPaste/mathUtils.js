@@ -65,6 +65,22 @@ const UNICODE_MAP = {
 };
 
 /**
+ * Restores squashed matrix and cases row breaks (single backslash \ restored to double backslash \\)
+ */
+export function fixMatrixRowBreaks(latex) {
+  if (!latex || typeof latex !== "string") return latex;
+  if (!/\\begin\{(?:bmatrix|pmatrix|vmatrix|Vmatrix|matrix|cases|aligned|array|eqnarray|gather)\}/i.test(latex)) {
+    return latex;
+  }
+  return latex.replace(
+    /(\\begin\{(?:bmatrix|pmatrix|vmatrix|Vmatrix|matrix|cases|aligned|array|eqnarray|gather)\}[\s\S]*?\\end\{(?:bmatrix|pmatrix|vmatrix|Vmatrix|matrix|cases|aligned|array|eqnarray|gather)\})/gi,
+    (env) => {
+      return env.replace(/(?<!\\)\\(?!\\)\s*(\r?\n|\s+)(?!begin|end|\{|\[)/gi, " \\\\ ");
+    }
+  );
+}
+
+/**
  * Extracts clean LaTeX from a single formula string.
  * Only called on content already known to be a formula.
  */
@@ -75,6 +91,9 @@ export function extractLatex(formulaText) {
   for (const [unicode, latex] of Object.entries(UNICODE_MAP)) {
     cleaned = cleaned.replaceAll(unicode, latex);
   }
+
+  // Restore matrix & cases row breaks
+  cleaned = fixMatrixRowBreaks(cleaned);
 
   return cleaned;
 }
@@ -290,6 +309,27 @@ export function sanitizeLatex(latex) {
     )
     .replace(/(^|[^\\])%/g, "$1\\%");
 
+  // Strip outer math delimiters if present: $$, $, \[, \], \(, \)
+  while (true) {
+    const start = cleaned;
+    if (cleaned.startsWith("$$") && cleaned.endsWith("$$")) {
+      cleaned = cleaned.slice(2, -2).trim();
+    } else if (cleaned.startsWith("$") && cleaned.endsWith("$")) {
+      cleaned = cleaned.slice(1, -1).trim();
+    } else if (cleaned.startsWith("\\[") && cleaned.endsWith("\\]")) {
+      cleaned = cleaned.slice(2, -2).trim();
+    } else if (cleaned.startsWith("\\(") && cleaned.endsWith("\\)")) {
+      cleaned = cleaned.slice(2, -2).trim();
+    }
+    if (cleaned === start) break;
+  }
+
+  // Strip any remaining unescaped $ signs inside formula string
+  cleaned = cleaned.replace(/(^|[^\\])\$/g, "$1");
+
+  // Fix squashed single-backslash row breaks in matrix / cases / array environments
+  cleaned = fixMatrixRowBreaks(cleaned);
+
   // Convert unicode math symbols & Greek letters (η -> \eta, θ -> \theta, etc.)
   cleaned = convUnicodeMath(cleaned);
 
@@ -414,7 +454,7 @@ export function normalizeLatexPaste(text) {
         const nextTrimmed = rawLines[i].trim();
         const isContinuation =
           state.unclosed ||
-          /^[})\],]/.test(nextTrimmed) ||
+          /^[})\],{=+\-/×÷]/.test(nextTrimmed) ||
           /^\s*\\(right|end)\b/.test(nextTrimmed);
 
         if (isContinuation) {

@@ -22,6 +22,7 @@ import {
   sanitizeLatex,
   convUnicodeMath,
   stripUnknownChars,
+  fixMatrixRowBreaks,
 } from "@/hooks/useMathPaste/useMathPaste";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
@@ -54,10 +55,10 @@ const MathView = ({ node, updateAttributes, selected }) => {
       catch (e) { el.textContent = ""; }
       return;
     }
-    const s1 = sanitizeLatex(latex);
-    const s2 = convUnicodeMath(s1);
+    const fixed = fixMatrixRowBreaks(sanitizeLatex(latex));
+    const s2 = convUnicodeMath(fixed);
     const s3 = stripUnknownChars(s2);
-    const candidates = [latex, s1, s2, s3];
+    const candidates = [fixed, s2, s3, latex];
     let prev = null;
     for (const cand of candidates) {
       if (!cand || cand === prev) continue;
@@ -70,7 +71,7 @@ const MathView = ({ node, updateAttributes, selected }) => {
       }
     }
     try {
-      katex.render(s1 || s2 || latex, el, { throwOnError: false, displayMode });
+      katex.render(fixed || s2 || latex, el, { throwOnError: false, displayMode });
     } catch (e2) {
       el.textContent = latex;
     }
