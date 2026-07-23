@@ -667,7 +667,7 @@ export default function ChapterEditor({
       HeadingNumbering(chapterNumber),
       Image.configure({
         inline: false,
-        allowBase64: false, // Images are now stored in Cloudinary, not as data: URIs
+        allowBase64: true, // Allow base64 Data URIs from extracted PDF images
       }).extend({
         addAttributes() {
           return {

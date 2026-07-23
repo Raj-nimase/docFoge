@@ -12,6 +12,7 @@ import Editor from "@/features/Editor/pages/EditorPage";
 import Auth from "@/features/Auth/pages/AuthPage";
 import Toast from "@/components/Toast/Toast";
 import MobileEditorPage from "@/features/Editor/pages/MobileEditorPage";
+import PdfTesterPage from "@/pages/PdfTesterPage";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 
 
@@ -175,6 +176,10 @@ export default function App() {
               onSuccess={handleAuthSuccess}
             />
           }
+        />
+        <Route
+          path="/pdf-test"
+          element={<PdfTesterPage />}
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

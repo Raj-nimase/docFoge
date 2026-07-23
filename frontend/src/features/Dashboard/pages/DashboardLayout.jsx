@@ -15,7 +15,8 @@ import {
   Menu,
   CheckCircle,
   LogOut,
-  LogIn
+  LogIn,
+  FileText
 } from 'lucide-react';
 import { GUEST_TRIAL_DAYS } from '@/utils/guestTrial';
 
@@ -93,6 +94,15 @@ export default function DashboardLayout({ onNewProject, onLogout, onSignIn }) {
                 <span className={`sidebar-nav-item ${isActive ? 'sidebar-nav-item--active' : ''}`}>
                   <Settings className="sidebar-nav-item-icon" size={17} strokeWidth={2} />
                   <span className="sidebar-nav-item-label">{t('settings')}</span>
+                </span>
+              )}
+            </NavLink>
+
+            <NavLink to="/pdf-test" className="sidebar-nav-link">
+              {({ isActive }) => (
+                <span className={`sidebar-nav-item ${isActive ? 'sidebar-nav-item--active' : ''}`}>
+                  <FileText className="sidebar-nav-item-icon" size={17} strokeWidth={2} />
+                  <span className="sidebar-nav-item-label">PDF Tester</span>
                 </span>
               )}
             </NavLink>

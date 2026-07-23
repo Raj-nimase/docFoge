@@ -269,8 +269,9 @@ function mmInlineMd(escaped) {
     .replace(/&lt;u&gt;(.*?)&lt;\/u&gt;/gi, "<u>$1</u>");
 }
 
-// A line's inline content → HTML (formatted text interleaved with inline math).
+// A line's inline content → HTML (formatted text interleaved with inline math and images).
 function mmInlineToHtml(raw) {
+  if (!raw) return "";
   const tokens = mmScanInline(raw);
   const mathMap = [];
   let placeholderStr = "";
@@ -284,6 +285,10 @@ function mmInlineToHtml(raw) {
     }
   }
   let html = mmInlineMd(escapeHtml(placeholderStr));
+  // Convert Markdown images ![alt](src) into <img> HTML elements
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, src) => {
+    return `<img src="${src}" alt="${alt}" />`;
+  });
   for (let idx = 0; idx < mathMap.length; idx++) {
     html = html.replace(`___MATHTK_${idx}___`, mathMap[idx]);
   }
@@ -292,7 +297,7 @@ function mmInlineToHtml(raw) {
 
 // Does this plain text read like a markdown-with-math formula sheet worth
 // parsing with parseMarkdownMathToHtml? (Has a display fence, or is multi-line
-// LaTeX with a legend line.)
+// LaTeX with a legend line, or contains images.)
 function stripHeadingPrefix(text) {
   let cleaned = mmCleanText(text);
   // Strip digit prefixes followed by optional dot/paren and space: e.g. "1. ", "4.1 ", "10.2) "
@@ -314,9 +319,10 @@ export function looksLikeMarkdownMath(text) {
   const hasDisplayMath =
     /\\\[.+\\\]/s.test(clean) || /\$\$[\s\S]+\$\$/.test(clean);
   const hasMathSymbols = /[√∑∏∫∞±≤≥≠×÷∈∂]/.test(clean);
+  const hasImages = /!\[([^\]]*)\]\(([^)]+)\)/.test(clean);
 
   return (
-    hasFence || hasLatexCmd || hasInlineMath || hasDisplayMath || hasMathSymbols
+    hasFence || hasLatexCmd || hasInlineMath || hasDisplayMath || hasMathSymbols || hasImages
   );
 }
 
@@ -521,6 +527,17 @@ export function parseMarkdownMathToHtml(text) {
         i += 2; // consume both the text line and the underline
         continue;
       }
+    }
+
+    // Standalone Markdown Image Check: ![alt](url)
+    const imgMatch = trimmed.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+    if (imgMatch) {
+      flushList();
+      const alt = escapeAttr(imgMatch[1]);
+      const src = escapeAttr(imgMatch[2]);
+      html += `<p><img src="${src}" alt="${alt}" /></p>`;
+      i++;
+      continue;
     }
 
     // Markdown ATX heading (# ... ######)

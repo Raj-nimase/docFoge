@@ -56,6 +56,14 @@ console.log("=== HTML ===");
 const html = parseMarkdownMathToHtml(norm);
 console.log(html);
 
+const imgDoc = `Here is Figure 1:
+
+![](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==)
+
+Figure 1: Sample diagram.`;
+
+const imgHtml = parseMarkdownMathToHtml(imgDoc);
+
 const tests = [
   {
     name: "L_CE equation is ONE display formula block with =",
@@ -72,6 +80,10 @@ const tests = [
   {
     name: "Matrix bmatrix row breaks \\\\ are preserved cleanly",
     pass: html.includes('\\\\') && html.includes('1&amp;2&amp;3 \\\\ 4&amp;5&amp;6 \\\\ 7&amp;8&amp;9')
+  },
+  {
+    name: "Markdown image tag is converted to <img> tag",
+    pass: imgHtml.includes('<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" alt="" />')
   }
 ];
 
