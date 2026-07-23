@@ -598,6 +598,200 @@ function convertBareParenMathInTextNodes(doc) {
 }
 
 /**
+ * Detects and converts web math elements (MathJax v2/v3, MathML in attributes or tags,
+ * KaTeX, Wikipedia math, web math images, etc.) into TipTap math spans (<span data-latex>).
+ */
+function convertWebMathInHtml(doc) {
+  const getTopMathContainer = (node) => {
+    let container = node.closest(
+      ".MathJax_Display, .MathJax_Preview, .mjx-chtml, .MathJax, mjx-container, .katex-display, .katex, .mwe-math-element"
+    );
+    if (!container) return node;
+    let curr = container;
+    while (curr.parentElement) {
+      const parent = curr.parentElement;
+      if (
+        parent.classList?.contains("MJXc-display") ||
+        parent.classList?.contains("MathJax_Display") ||
+        parent.classList?.contains("mjx-display") ||
+        parent.classList?.contains("katex-display") ||
+        parent.tagName === "MJX-CONTAINER" ||
+        parent.classList?.contains("MathJax")
+      ) {
+        curr = parent;
+      } else {
+        break;
+      }
+    }
+    return curr;
+  };
+
+  const mathMLToCleanLatex = (mathmlInput) => {
+    if (!mathmlInput) return "";
+    let xmlStr = typeof mathmlInput === "string" ? mathmlInput : mathmlInput.outerHTML;
+    if (xmlStr.includes("&lt;math")) {
+      const dummy = doc.createElement("textarea");
+      dummy.innerHTML = xmlStr;
+      xmlStr = dummy.value;
+    }
+    try {
+      if (typeof mathmlInput !== "string") {
+        const ann = mathmlInput.querySelector('annotation[encoding="application/x-tex"]');
+        if (ann && ann.textContent.trim()) {
+          return ann.textContent.trim();
+        }
+      } else if (xmlStr.includes('annotation encoding="application/x-tex"')) {
+        const match = xmlStr.match(/<annotation[^>]*encoding="application\/x-tex"[^>]*>([\s\S]*?)<\/annotation>/i);
+        if (match && match[1].trim()) {
+          return match[1].trim();
+        }
+      }
+      const latex = MathMLToLaTeX.convert(xmlStr);
+      return latex ? latex.replace(/\s+/g, " ").trim() : "";
+    } catch (e) {
+      console.error("MathML conversion error:", e);
+      return "";
+    }
+  };
+
+  const createMathSpan = (latex, isDisplay) => {
+    const cleanLatex = extractLatex(latex).replace(/\s+/g, " ").trim();
+    if (!cleanLatex) return null;
+    const span = doc.createElement("span");
+    span.setAttribute("data-latex", cleanLatex);
+    if (isDisplay) {
+      span.setAttribute("data-display", "true");
+    }
+    return span;
+  };
+
+  const removePreviewsAround = (container) => {
+    const prev = container.previousElementSibling;
+    if (prev && (prev.classList?.contains("MathJax_Preview") || prev.classList?.contains("MathJax_Hover_Frame"))) {
+      prev.remove();
+    }
+    const next = container.nextElementSibling;
+    if (next && (next.classList?.contains("MathJax_Preview") || next.classList?.contains("MathJax_Hover_Frame"))) {
+      next.remove();
+    }
+    const parent = container.parentElement;
+    if (parent) {
+      parent.querySelectorAll(".MathJax_Preview").forEach((p) => p.remove());
+    }
+  };
+
+  // 1. Process elements with data-mathml attribute (MathJax v2/v3 CHTML)
+  const mathmlAttrElements = Array.from(doc.querySelectorAll("[data-mathml]"));
+  for (const el of mathmlAttrElements) {
+    if (!el.isConnected) continue;
+    const mathmlStr = el.getAttribute("data-mathml");
+    const latex = mathMLToCleanLatex(mathmlStr);
+    if (latex) {
+      const isDisplay =
+        /display=["']block["']/i.test(mathmlStr) ||
+        el.getAttribute("display") === "block" ||
+        !!el.closest(".MJXc-display, .MathJax_Display, .mjx-display, [display='block']");
+      const span = createMathSpan(latex, isDisplay);
+      if (span) {
+        const container = getTopMathContainer(el);
+        removePreviewsAround(container);
+        container.replaceWith(span);
+      }
+    }
+  }
+
+  // 2. Process MathJax script tags (<script type="math/tex">)
+  const mathJaxScripts = Array.from(doc.querySelectorAll('script[type^="math/tex"]'));
+  for (const script of mathJaxScripts) {
+    if (!script.isConnected) continue;
+    const scriptType = script.getAttribute("type") || "";
+    const isDisplay = scriptType.includes("mode=display") || !!script.closest(".MathJax_Display");
+    const latex = script.textContent.trim();
+    if (latex) {
+      const span = createMathSpan(latex, isDisplay);
+      if (span) {
+        const container = getTopMathContainer(script);
+        removePreviewsAround(container);
+        container.replaceWith(span);
+      }
+    }
+  }
+
+  // 3. Process KaTeX wrappers (.katex-display, .katex)
+  const katexElements = Array.from(doc.querySelectorAll(".katex-display, .katex"));
+  for (const katexEl of katexElements) {
+    if (!katexEl.isConnected) continue;
+    const ann = katexEl.querySelector('annotation[encoding="application/x-tex"]');
+    const latex = ann ? ann.textContent.trim() : "";
+    if (latex) {
+      const isDisplay = katexEl.classList.contains("katex-display") || !!katexEl.querySelector('math[display="block"]');
+      const span = createMathSpan(latex, isDisplay);
+      if (span) {
+        const container = getTopMathContainer(katexEl);
+        container.replaceWith(span);
+      }
+    }
+  }
+
+  // 4. Process standalone <math> tags
+  const mathNodes = Array.from(doc.querySelectorAll("math"));
+  for (const mathNode of mathNodes) {
+    if (!mathNode.isConnected) continue;
+    const latex = mathMLToCleanLatex(mathNode);
+    if (latex) {
+      const isDisplay = mathNode.getAttribute("display") === "block";
+      const span = createMathSpan(latex, isDisplay);
+      if (span) {
+        const container = getTopMathContainer(mathNode);
+        container.replaceWith(span);
+      }
+    }
+  }
+
+  // 5. Process Wikipedia & Web Math Images (<img class="mwe-math-fallback-image-inline" alt="..."> or img[alt])
+  const mathImgs = Array.from(doc.querySelectorAll("img[alt], .mwe-math-element"));
+  for (const item of mathImgs) {
+    if (!item.isConnected) continue;
+    let altText = "";
+    let targetEl = item;
+    if (item.classList?.contains("mwe-math-element")) {
+      const ann = item.querySelector('annotation[encoding="application/x-tex"]');
+      const img = item.querySelector("img");
+      altText = ann ? ann.textContent : (img ? img.getAttribute("alt") : "");
+    } else if (item.tagName === "IMG") {
+      altText = item.getAttribute("alt") || "";
+    }
+    altText = altText.trim();
+    if (!altText) continue;
+
+    const displayMatch = altText.match(/^\{\\displaystyle\s*([\s\S]+)\}$/);
+    let latex = displayMatch ? displayMatch[1].trim() : altText;
+    let isDisplay = !!displayMatch;
+
+    const isLatex =
+      isDisplay ||
+      altText.startsWith("\\") ||
+      altText.startsWith("{") ||
+      /\\[a-zA-Z]/.test(latex);
+
+    if (isLatex) {
+      const span = createMathSpan(latex, isDisplay);
+      if (span) {
+        targetEl.replaceWith(span);
+      }
+    }
+  }
+
+  // 6. Clean up remaining MathJax / KaTeX / MathML residual elements
+  doc.querySelectorAll(".MathJax_Preview, .MathJax_Hover_Frame, .MathJax_Error, .katex-html, .katex-mathml, .mjx-chtml, .MathJax_Display, .MathJax, mjx-container").forEach((el) => {
+    if (el.isConnected) el.remove();
+  });
+
+  // Ensure any newly added display math spans are wrapped in paragraph blocks
+  wrapDisplaySpansInParagraphs(doc);
+}
+
+/**
  * Transforms clipboard HTML to replace <math> nodes with TipTap math spans,
  * strip heading prefixes, remove <hr> / divider paragraphs, and convert
  * inline CSS styles (font-weight, font-style, text-decoration) into semantic tags.
@@ -618,6 +812,9 @@ export function transformMathHtml(html) {
     // ── Remove file:/// local temp images from Word clipboard ──────────
     doc.querySelectorAll("img[src^='file:///']").forEach((img) => img.remove());
 
+    // ── Convert Web Math (MathJax v2/v3, MathML, KaTeX, Wikipedia, Web Images) ──
+    convertWebMathInHtml(doc);
+
     // ── Convert inline CSS styles into semantic tags ───────────────────────
     const styledNodes = doc.querySelectorAll("[style]");
     styledNodes.forEach((node) => {
@@ -628,25 +825,25 @@ export function transformMathHtml(html) {
       const isUnderline = /text-decoration\s*:\s*[^;]*underline/i.test(style);
       const isStrikethrough = /text-decoration\s*:\s*[^;]*line-through/i.test(style);
 
-      if (isBold && !node.closest("strong, b")) {
+      if (isBold && !node.closest("strong, b") && node.tagName !== "STRONG" && node.tagName !== "B" && !node.querySelector("strong, b")) {
         const strong = doc.createElement("strong");
         while (node.firstChild) strong.appendChild(node.firstChild);
         node.appendChild(strong);
       }
 
-      if (isItalic && !node.closest("em, i")) {
+      if (isItalic && !node.closest("em, i") && node.tagName !== "EM" && node.tagName !== "I" && !node.querySelector("em, i")) {
         const em = doc.createElement("em");
         while (node.firstChild) em.appendChild(node.firstChild);
         node.appendChild(em);
       }
 
-      if (isUnderline && !node.closest("u")) {
+      if (isUnderline && !node.closest("u") && node.tagName !== "U" && !node.querySelector("u")) {
         const u = doc.createElement("u");
         while (node.firstChild) u.appendChild(node.firstChild);
         node.appendChild(u);
       }
 
-      if (isStrikethrough && !node.closest("s, del, strike")) {
+      if (isStrikethrough && !node.closest("s, del, strike") && node.tagName !== "S" && node.tagName !== "DEL" && node.tagName !== "STRIKE" && !node.querySelector("s, del, strike")) {
         const s = doc.createElement("s");
         while (node.firstChild) s.appendChild(node.firstChild);
         node.appendChild(s);

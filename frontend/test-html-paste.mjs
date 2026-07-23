@@ -8,8 +8,8 @@ import { transformMathHtml } from "./src/hooks/useMathPaste/htmlParser.js";
 import fs from "fs";
 
 const rawFile = fs.readFileSync("../backend/clipboard_debug.txt", "utf-8");
-const startIdx = rawFile.indexOf("<!--StartFragment-->");
-const endIdx = rawFile.indexOf("<!--EndFragment-->");
+const startIdx = rawFile.lastIndexOf("<!--StartFragment-->");
+const endIdx = rawFile.indexOf("<!--EndFragment-->", startIdx);
 const originalHtml = rawFile.slice(startIdx, endIdx + "<!--EndFragment-->".length);
 
 console.log("=== TRANSFORMING HTML ===");
@@ -19,20 +19,16 @@ console.log(result);
 
 const tests = [
   {
-    name: "L_CE equation is fully reconstructed into a single display math block",
-    pass: result.includes('data-latex="\\mathcal{L}_{CE} = -\\sum_{i=1}^{N}\\sum_{j=1}^{C} y_{ij}\\log(\\hat y_{ij})"')
+    name: "Web MathJax equation N_s = 120f / P is converted to display math span",
+    pass: result.includes('data-latex="N_{s} = \\frac{120 f}{P}"') || result.includes('data-latex="N_{s} = \\frac{120f}{P}"') || result.includes('data-latex="N_s = \\frac{120f}{P}"')
   },
   {
-    name: "J(theta) equation is fully reconstructed into a single display math block",
-    pass: result.includes('data-latex="\\nabla_\\theta J(\\theta) = \\frac{1}{m} \\sum_{i=1}^{m} \\left(h_\\theta(x_i)-y_i\\right)x_i"')
+    name: "MathJax display attribute data-display=\"true\" is present",
+    pass: result.includes('data-display="true"')
   },
   {
-    name: "P(A|B) equation is fully reconstructed into a single display math block",
-    pass: result.includes('data-latex="P(A|B) = \\frac{P(B|A)P(A)}{P(B)}"')
-  },
-  {
-    name: "No raw bullet point containing \\sum_{i=1}^{N} remains",
-    pass: !result.includes('<li>\\sum_{i=1}^{N}') && !result.includes('<li>-\\sum_{i=1}^{N}')
+    name: "No MathJax DOM elements (mjx-chtml, MathJax_Preview) remain",
+    pass: !result.includes('mjx-chtml') && !result.includes('MathJax_Preview')
   }
 ];
 
