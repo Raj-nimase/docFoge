@@ -17,15 +17,15 @@ function stripHeadingPrefix(text) {
 export function mergeChaptersToSingleDoc(frontMatter = [], chapters = []) {
   const mergedContent = [];
 
-  // 1. Process Front Matter (e.g. Title Page, Abstract)
+  // 1. Process Front Matter (include non-auto items like Abstract and Acknowledgement, skip Certificate and auto items)
   for (const fm of frontMatter) {
-    if (fm.auto) continue; // Skip auto-generated frontMatter like title_page or toc
-    
+    if (fm.auto || fm.id === "certificate" || fm.label?.toLowerCase() === "certificate") continue;
+
     // Add H1 Heading for Front Matter Section
     mergedContent.push({
       type: "heading",
       attrs: { level: 1 },
-      content: [{ type: "text", text: fm.label || fm.title || "Section" }],
+      content: [{ type: "text", text: (fm.label || fm.title || "Section").toUpperCase() }],
     });
 
     if (fm.content && fm.content.content && Array.isArray(fm.content.content)) {
@@ -52,7 +52,6 @@ export function mergeChaptersToSingleDoc(frontMatter = [], chapters = []) {
     });
 
     if (ch.content && ch.content.content && Array.isArray(ch.content.content)) {
-      // Append all nodes from chapter content, skipping duplicate initial H1 if present
       const nodes = ch.content.content;
       for (let i = 0; i < nodes.length; i++) {
         const node = nodes[i];
@@ -86,52 +85,89 @@ export function mergeChaptersToSingleDoc(frontMatter = [], chapters = []) {
 }
 
 /**
- * Splits a single unified Tiptap doc tree back into chapters array for storage & LaTeX generation.
+ * Splits a single unified Tiptap doc tree back into frontMatter and chapters arrays for storage & LaTeX generation.
  */
-export function splitSingleDocToChapters(singleDoc, existingChapters = []) {
+export function splitSingleDocToProject(singleDoc, existingFrontMatter = [], existingChapters = []) {
   if (!singleDoc || !singleDoc.content || !Array.isArray(singleDoc.content)) {
-    return existingChapters;
+    return { frontMatter: existingFrontMatter, chapters: existingChapters };
   }
 
+  const updatedFm = existingFrontMatter.map((fm) => ({
+    ...fm,
+    content: (fm.auto || fm.id === "certificate" || fm.label?.toLowerCase() === "certificate")
+      ? fm.content
+      : { type: "doc", content: [] },
+  }));
+
   const newChapters = [];
-  let currentChapter = null;
+  let currentTarget = null;
   let chIndex = 0;
 
   for (const node of singleDoc.content) {
     if (node.type === "heading" && node.attrs?.level === 1) {
-      // Start a new Chapter
-      chIndex++;
-      const text = node.content?.[0]?.text || `Chapter ${chIndex}`;
-      const cleanTitle = stripHeadingPrefix(text.replace(/^CHAPTER\s+\d+[:\s\-]*/i, ""));
-      const existingCh = existingChapters[chIndex - 1];
+      const text = (node.content?.[0]?.text || "").trim();
+      const normText = text.toLowerCase();
 
-      currentChapter = {
-        id: existingCh ? existingCh.id : `ch_${Date.now()}_${chIndex}`,
-        title: cleanTitle || `Chapter ${chIndex}`,
-        content: {
-          type: "doc",
-          content: [node], // Keep H1 heading in chapter content
-        },
-      };
-      newChapters.push(currentChapter);
-    } else {
-      if (!currentChapter) {
-        // Fallback: create first chapter if content appears before any H1
+      // Check if heading matches any non-auto frontMatter item (except certificate)
+      const matchedFm = updatedFm.find((fm) => {
+        if (fm.auto || fm.id === "certificate" || fm.label?.toLowerCase() === "certificate") return false;
+        const label = (fm.label || fm.title || "").toLowerCase();
+        return label && (normText === label || normText.includes(label));
+      });
+
+      if (matchedFm) {
+        currentTarget = { type: "fm", obj: matchedFm };
+      } else {
+        // Chapter heading
         chIndex++;
-        const existingCh = existingChapters[0];
-        currentChapter = {
-          id: existingCh ? existingCh.id : `ch_${Date.now()}_1`,
-          title: existingCh ? existingCh.title : "Introduction",
+        const cleanTitle = stripHeadingPrefix(text.replace(/^CHAPTER\s+\d+[:\s\-]*/i, ""));
+        const existingCh = existingChapters[chIndex - 1];
+
+        const newCh = {
+          id: existingCh ? existingCh.id : `ch_${Date.now()}_${chIndex}`,
+          title: cleanTitle || `Chapter ${chIndex}`,
           content: {
             type: "doc",
             content: [],
           },
         };
-        newChapters.push(currentChapter);
+        newChapters.push(newCh);
+        currentTarget = { type: "ch", obj: newCh };
       }
-      currentChapter.content.content.push(node);
+    } else {
+      if (currentTarget) {
+        if (currentTarget.type === "fm") {
+          currentTarget.obj.content.content.push(node);
+        } else if (currentTarget.type === "ch") {
+          currentTarget.obj.content.content.push(node);
+        }
+      } else {
+        // Fallback before any H1
+        if (existingChapters.length > 0) {
+          if (newChapters.length === 0) {
+            chIndex++;
+            const existingCh = existingChapters[0];
+            const newCh = {
+              id: existingCh ? existingCh.id : `ch_${Date.now()}_1`,
+              title: existingCh ? existingCh.title : "Introduction",
+              content: { type: "doc", content: [] },
+            };
+            newChapters.push(newCh);
+            currentTarget = { type: "ch", obj: newCh };
+          }
+          currentTarget.obj.content.content.push(node);
+        }
+      }
     }
   }
 
-  return newChapters.length > 0 ? newChapters : existingChapters;
+  return {
+    frontMatter: updatedFm,
+    chapters: newChapters.length > 0 ? newChapters : existingChapters,
+  };
+}
+
+export function splitSingleDocToChapters(singleDoc, existingChapters = []) {
+  const result = splitSingleDocToProject(singleDoc, [], existingChapters);
+  return result.chapters;
 }

@@ -171,7 +171,7 @@ function runTectonic(texPath, outDir, { multiPass = true } = {}) {
     const args = [
       '-Z', 'continue-on-errors',
       '--outdir', outDir,
-      '--reruns', multiPass ? '1' : '0',  // 0 = 1 pass, 1 = 2 passes
+      '--reruns', multiPass ? '2' : '0',  // 0 = 1 pass, 2 = 3 passes for full TOC/LOF/LOT page sync
     ];
 
     args.push(texPath);

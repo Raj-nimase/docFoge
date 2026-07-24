@@ -37,7 +37,7 @@ import katex from "katex";
 import useAcaStore from "@/contexts/projectStore/projectStore";
 import EditorToolbar from "@/features/Editor/components/Toolbar/Toolbar";
 import SelectionBubbleMenu from "@/features/Editor/components/SelectionBubbleMenu/SelectionBubbleMenu";
-import { mergeChaptersToSingleDoc, splitSingleDocToChapters } from "./docUtils";
+import { mergeChaptersToSingleDoc, splitSingleDocToChapters, splitSingleDocToProject } from "./docUtils";
 
 const MathView = ({ node, updateAttributes, selected }) => {
   const containerRef = useRef(null);
@@ -388,17 +388,221 @@ const TableView = (props) => {
   );
 };
 
-export default function ChapterEditor() {
+function findChapterForHeading(headingText, chapters = [], frontMatter = []) {
+  if (!headingText) return null;
+  const normText = headingText.trim().toLowerCase();
+
+  // 1. Match chapter number from "CHAPTER 3:" or "CHAPTER 3"
+  const chNumMatch = normText.match(/^chapter\s+(\d+)/i);
+  if (chNumMatch) {
+    const chIdx = parseInt(chNumMatch[1], 10) - 1;
+    if (chIdx >= 0 && chIdx < chapters.length) {
+      return chapters[chIdx].id;
+    }
+  }
+
+  // 2. Exact match of clean title
+  const cleanHead = stripAllPrefixes(normText.replace(/^chapter\s+\d+[:\s\-]*/i, "")).trim().toLowerCase();
+
+  for (const ch of chapters) {
+    const chClean = stripAllPrefixes(ch.title || "").trim().toLowerCase();
+    if (chClean && (cleanHead === chClean || normText === chClean)) {
+      return ch.id;
+    }
+  }
+
+  for (const fm of frontMatter) {
+    const fmLabel = (fm.label || fm.title || "").trim().toLowerCase();
+    if (fmLabel && (cleanHead === fmLabel || normText === fmLabel)) {
+      return fm.id;
+    }
+  }
+
+  // 3. Substring match prioritized by longest matching title
+  let bestMatchId = null;
+  let maxMatchLength = 0;
+  for (const ch of chapters) {
+    const chClean = stripAllPrefixes(ch.title || "").trim().toLowerCase();
+    if (chClean && normText.includes(chClean)) {
+      if (chClean.length > maxMatchLength) {
+        maxMatchLength = chClean.length;
+        bestMatchId = ch.id;
+      }
+    }
+  }
+
+  return bestMatchId;
+}
+
+function FrontMatterSectionEditor({ section }) {
+  const updateSectionContent = useAcaStore((s) => s.updateSectionContent);
+  const onUpdateTimer = useRef(null);
+
+  const initialContent = useMemo(() => {
+    if (section.content && section.content.content && Array.isArray(section.content.content)) {
+      return normalizeContent(section.content);
+    }
+    return {
+      type: "doc",
+      content: [
+        {
+          type: "heading",
+          attrs: { level: 1 },
+          content: [{ type: "text", text: section.label || "Section" }],
+        },
+        {
+          type: "paragraph",
+          content: [],
+        },
+      ],
+    };
+  }, [section.id]);
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({
+        heading: { levels: [1, 2, 3, 4] },
+        codeBlock: true,
+        blockquote: true,
+        history: true,
+      }),
+      Underline,
+      Placeholder.configure({
+        placeholder: `Write your ${section.label} content here…`,
+        emptyNodeClass: "tiptap-placeholder",
+      }),
+      Table.configure({ resizable: true }).extend({
+        addAttributes() {
+          return {
+            ...this.parent?.(),
+            caption: { default: null },
+          };
+        },
+        addNodeView() {
+          return ReactNodeViewRenderer(TableView);
+        },
+      }),
+      TableRow,
+      TableHeader,
+      TableCell,
+      MathExtension,
+      MathPasteHandler,
+      HeadingCleaner,
+      Image.configure({
+        inline: false,
+        allowBase64: true,
+      }).extend({
+        addAttributes() {
+          return {
+            ...this.parent?.(),
+            title: { default: null },
+          };
+        },
+        addNodeView() {
+          return ReactNodeViewRenderer(ImageView);
+        },
+      }),
+    ],
+    content: initialContent,
+    autofocus: false,
+    onUpdate: ({ editor }) => {
+      if (onUpdateTimer.current) clearTimeout(onUpdateTimer.current);
+      onUpdateTimer.current = setTimeout(() => {
+        updateSectionContent(section.id, editor.getJSON());
+      }, 500);
+    },
+  }, [section.id]);
+
+  useEffect(() => {
+    if (!editor) return;
+    const handleBlur = () => {
+      if (onUpdateTimer.current) {
+        clearTimeout(onUpdateTimer.current);
+        onUpdateTimer.current = null;
+        updateSectionContent(section.id, editor.getJSON());
+      }
+    };
+    editor.on("blur", handleBlur);
+    return () => {
+      editor.off("blur", handleBlur);
+      if (onUpdateTimer.current) {
+        clearTimeout(onUpdateTimer.current);
+        onUpdateTimer.current = null;
+      }
+    };
+  }, [editor, section.id, updateSectionContent]);
+
+  return (
+    <div className="chapter-editor">
+      <EditorToolbar editor={editor} />
+      <div className="chapter-editor-scroll">
+        <div className="chapter-paper">
+          {editor && <SelectionBubbleMenu editor={editor} />}
+          <EditorContent editor={editor} className="tiptap-editor" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FrontMatterAutoCard({ section }) {
+  const currentProject = useAcaStore((s) => s.getCurrentProject());
+  const metadata = currentProject?.metadata || {};
+
+  return (
+    <div className="chapter-editor">
+      <div className="chapter-editor-scroll" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '40px' }}>
+        <div style={{
+          maxWidth: '600px',
+          width: '100%',
+          backgroundColor: 'var(--color-bg-card, #ffffff)',
+          border: '1px solid var(--color-border, #e5e7eb)',
+          borderRadius: '12px',
+          padding: '32px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>
+            {section.id === 'toc' ? '📋' : '🎓'}
+          </div>
+          <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '12px', color: 'var(--color-text, #111827)' }}>
+            {section.label} (Auto-Generated Page)
+          </h2>
+          <p style={{ fontSize: '14px', color: 'var(--color-text-muted, #6b7280)', lineHeight: '1.6', marginBottom: '24px' }}>
+            {section.id === 'toc'
+              ? 'The Table of Contents, List of Figures, and List of Tables are automatically compiled into the PDF based on your document chapters and settings.'
+              : 'The Title Page is automatically generated during PDF compilation using your document settings.'}
+          </p>
+          {section.id === 'title_page' && (
+            <div style={{ textAlign: 'left', backgroundColor: 'var(--color-bg-subtle, #f9fafb)', padding: '16px', borderRadius: '8px', border: '1px solid var(--color-border, #e5e7eb)' }}>
+              <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '8px', color: 'var(--color-text, #374151)' }}>Title Page Summary:</div>
+              <div style={{ fontSize: '13px', color: 'var(--color-text-muted, #4b5563)', display: 'grid', gridTemplateColumns: '110px 1fr', gap: '6px' }}>
+                <strong>Title:</strong> <span>{metadata.title || 'Untitled Document'}</span>
+                <strong>Author(s):</strong> <span>{metadata.authors || 'Not specified'}</span>
+                <strong>Guide:</strong> <span>{metadata.guide || 'Not specified'}</span>
+                <strong>Department:</strong> <span>{metadata.department || 'Not specified'}</span>
+                <strong>Institution:</strong> <span>{metadata.institution || 'Not specified'}</span>
+                <strong>Year:</strong> <span>{metadata.year || new Date().getFullYear()}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MultiChapterEditor() {
   const currentProject = useAcaStore((s) => s.getCurrentProject());
   const activeChapterId = useAcaStore((s) => s.activeChapterId);
   const setActiveChapter = useAcaStore((s) => s.setActiveChapter);
-  const updateProjectChapters = useAcaStore((s) => s.updateProjectChapters);
+  const updateProjectDocument = useAcaStore((s) => s.updateProjectDocument);
 
   const scrollContainerRef = useRef(null);
   const isProgrammaticScrollRef = useRef(false);
   const onUpdateTimer = useRef(null);
 
-  // Initial combined document tree
+  // Initial combined document tree for chapters & frontmatter (except Certificate)
   const initialContent = useMemo(() => {
     return normalizeContent(
       mergeChaptersToSingleDoc(
@@ -463,11 +667,12 @@ export default function ChapterEditor() {
       if (onUpdateTimer.current) clearTimeout(onUpdateTimer.current);
       onUpdateTimer.current = setTimeout(() => {
         const fullJson = editor.getJSON();
-        const updatedChapters = splitSingleDocToChapters(
+        const res = splitSingleDocToProject(
           fullJson,
+          currentProject?.frontMatter || [],
           currentProject?.chapters || []
         );
-        updateProjectChapters(updatedChapters);
+        updateProjectDocument(res.frontMatter, res.chapters);
       }, 500);
     },
   });
@@ -480,11 +685,12 @@ export default function ChapterEditor() {
         clearTimeout(onUpdateTimer.current);
         onUpdateTimer.current = null;
         const fullJson = editor.getJSON();
-        const updatedChapters = splitSingleDocToChapters(
+        const res = splitSingleDocToProject(
           fullJson,
+          currentProject?.frontMatter || [],
           currentProject?.chapters || []
         );
-        updateProjectChapters(updatedChapters);
+        updateProjectDocument(res.frontMatter, res.chapters);
       }
     };
     editor.on("blur", handleBlur);
@@ -495,21 +701,22 @@ export default function ChapterEditor() {
         onUpdateTimer.current = null;
       }
     };
-  }, [editor, currentProject, updateProjectChapters]);
+  }, [editor, currentProject, updateProjectDocument]);
 
-  // Unique signature of current chapter structure (IDs, titles, count)
-  const chaptersSignature = (currentProject?.chapters || [])
-    .map((c) => `${c.id}:${c.title}`)
-    .join("|");
+  // Unique signature of current sections structure (frontMatter & chapters)
+  const sectionsSignature = [
+    ...(currentProject?.frontMatter || []).map((fm) => `${fm.id}:${fm.label}`),
+    ...(currentProject?.chapters || []).map((c) => `${c.id}:${c.title}`),
+  ].join("|");
 
-  const lastChaptersSignatureRef = useRef(chaptersSignature);
+  const lastSectionsSignatureRef = useRef(sectionsSignature);
 
-  // Sync editor content whenever chapters are deleted, added, renamed, or reordered from sidebar
+  // Sync editor content whenever sections are deleted, added, renamed, or reordered from sidebar
   useEffect(() => {
     if (!editor) return;
-    if (chaptersSignature === lastChaptersSignatureRef.current) return;
+    if (sectionsSignature === lastSectionsSignatureRef.current) return;
 
-    lastChaptersSignatureRef.current = chaptersSignature;
+    lastSectionsSignatureRef.current = sectionsSignature;
 
     const currentProj = useAcaStore.getState().getCurrentProject();
     const mergedDoc = normalizeContent(
@@ -520,30 +727,29 @@ export default function ChapterEditor() {
     );
 
     editor.commands.setContent(mergedDoc, false);
-  }, [chaptersSignature, editor]);
+  }, [sectionsSignature, editor]);
 
   const isScrollSpyUpdateRef = useRef(false);
 
-  // Smooth scroll to Chapter H1 ONLY when user clicks a chapter in left sidebar
+  // Smooth scroll to Chapter/Section H1 ONLY when user clicks an item in left sidebar
   useEffect(() => {
     if (!activeChapterId || !editor || !scrollContainerRef.current) return;
 
-    // Skip smooth-scroll if activeChapterId change was triggered by manual scrolling (Scroll-Spy)
     if (isScrollSpyUpdateRef.current) {
       isScrollSpyUpdateRef.current = false;
       return;
     }
 
     const currentProj = useAcaStore.getState().getCurrentProject();
-    const ch = currentProj?.chapters.find((c) => c.id === activeChapterId);
-    const fm = currentProj?.frontMatter.find((f) => f.id === activeChapterId);
-    const targetTitle = (ch?.title || fm?.label || "").toLowerCase();
-    if (!targetTitle) return;
-
     const headings = Array.from(editor.view.dom.querySelectorAll("h1"));
+
     const targetHeading = headings.find((h) => {
-      const text = (h.textContent || "").toLowerCase();
-      return text.includes(targetTitle);
+      const matchedId = findChapterForHeading(
+        h.textContent || "",
+        currentProj?.chapters || [],
+        currentProj?.frontMatter || []
+      );
+      return matchedId === activeChapterId;
     });
 
     if (targetHeading) {
@@ -571,12 +777,13 @@ export default function ChapterEditor() {
     for (const h of headings) {
       const rect = h.getBoundingClientRect();
       if (rect.top - containerTop <= 150) {
-        const text = h.textContent || "";
-        const matchedCh = currentProj?.chapters.find((c) =>
-          text.toLowerCase().includes((c.title || "").toLowerCase())
+        const matchedId = findChapterForHeading(
+          h.textContent || "",
+          currentProj?.chapters || [],
+          currentProj?.frontMatter || []
         );
-        if (matchedCh) {
-          currentActiveId = matchedCh.id;
+        if (matchedId) {
+          currentActiveId = matchedId;
         }
       }
     }
@@ -615,4 +822,24 @@ export default function ChapterEditor() {
       </div>
     </div>
   );
+}
+
+export default function ChapterEditor() {
+  const currentProject = useAcaStore((s) => s.getCurrentProject());
+  const activeChapterId = useAcaStore((s) => s.activeChapterId);
+
+  const activeFm = useMemo(() => {
+    return currentProject?.frontMatter?.find((fm) => fm.id === activeChapterId) || null;
+  }, [currentProject?.frontMatter, activeChapterId]);
+
+  if (activeFm) {
+    if (activeFm.auto) {
+      return <FrontMatterAutoCard section={activeFm} key={activeFm.id} />;
+    }
+    if (activeFm.id === "certificate" || activeFm.label?.toLowerCase() === "certificate") {
+      return <FrontMatterSectionEditor section={activeFm} key={activeFm.id} />;
+    }
+  }
+
+  return <MultiChapterEditor key={currentProject?.id || 'multi'} />;
 }

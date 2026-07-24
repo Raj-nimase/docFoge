@@ -62,7 +62,7 @@ function buildPreamble(templateId, metadata) {
   const author = escapeLatex(metadata.authors || "");
   const date = escapeLatex(metadata.year || "");
   const isIEEE = templateId === "ieee-paper";
-  const isReport = ["diploma-project-report", "thesis", "assignment"].includes(
+  const isReport = ["blank", "diploma-project-report", "thesis", "assignment"].includes(
     templateId,
   );
   const isDoubleSided = !!metadata.isDoubleSided;
@@ -79,16 +79,16 @@ function buildPreamble(templateId, metadata) {
   let geometryPackage;
   if (isReport) {
     if (isDoubleSided) {
-      geometryPackage = `\\usepackage[a4paper,top=${topMargin},bottom=22mm,inner=30mm,outer=20mm,headheight=14pt,headsep=12mm,footskip=13mm]{geometry}`;
+      geometryPackage = `\\usepackage[a4paper,top=2.5cm,bottom=1.25cm,inner=3.5cm,outer=1.25cm,headheight=14pt,headsep=8mm,footskip=8mm]{geometry}`;
     } else {
-      geometryPackage = `\\usepackage[a4paper,top=${topMargin},bottom=22mm,left=30mm,right=20mm,headheight=14pt,headsep=12mm,footskip=13mm]{geometry}`;
+      geometryPackage = `\\usepackage[a4paper,top=2.5cm,bottom=1.25cm,left=3.5cm,right=1.25cm,headheight=14pt,headsep=8mm,footskip=8mm]{geometry}`;
     }
   } else if (isIEEE) {
     geometryPackage =
       "\\usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=1.5cm,right=1.5cm]{geometry}";
   } else {
     geometryPackage =
-      "\\usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=3.5cm,right=1.25cm]{geometry}";
+      "\\usepackage[a4paper,top=2.5cm,bottom=1.25cm,left=3.5cm,right=1.25cm]{geometry}";
   }
 
   // Minimal, Tectonic-safe package set
@@ -187,35 +187,38 @@ function buildPreamble(templateId, metadata) {
   ];
 
   if (isReport) {
-    // Section 2.1.3: 1.5 line spacing
-    lines.push("\\onehalfspacing");
-    // Section 2.1.7: Clean Paragraph Spacing (0pt indent + 6pt parskip) & Widow/Orphan Control
+    // Rule g: Double line spacing
+    lines.push("\\doublespacing");
+    // Paragraph Spacing & Widow/Orphan Control
     lines.push("\\setlength{\\parindent}{0pt}");
     lines.push("\\setlength{\\parskip}{6pt}");
     lines.push("\\clubpenalty=10000");
     lines.push("\\widowpenalty=10000");
     lines.push("\\hyphenpenalty=1000");
     lines.push("");
-    // Section 2.2.1 & 2.2.2: Compact, Balanced Chapter and Section Headings
+    // Prominent, distinct visual hierarchy for Headings following typographical guidelines:
+    // e. Chapter Name: TNR-14 Capital Bold
+    // d. Section Heading: TNR-12 Capital Bold
+    // c. Subsection Heading: TNR-12 Bold Normal
     lines.push("\\usepackage{titlesec}");
     lines.push("\\titleformat{\\chapter}[display]");
     lines.push(
-      "  {\\normalfont\\fontsize{18pt}{22pt}\\selectfont\\bfseries\\centering}",
+      "  {\\normalfont\\fontsize{14pt}{18pt}\\selectfont\\bfseries\\centering}",
     );
-    lines.push("  {\\chaptertitlename\\ \\thechapter}");
+    lines.push("  {\\MakeUppercase{\\chaptertitlename\\ \\thechapter}}");
     lines.push("  {4mm}");
-    lines.push("  {\\fontsize{18pt}{22pt}\\selectfont\\bfseries}");
+    lines.push("  {\\MakeUppercase}");
     lines.push("\\titlespacing*{\\chapter}{0pt}{-10pt}{10mm}");
     lines.push("");
     lines.push("\\titleformat{\\section}");
-    lines.push("  {\\normalfont\\fontsize{16pt}{20pt}\\selectfont\\bfseries}");
+    lines.push("  {\\normalfont\\fontsize{12pt}{16pt}\\selectfont\\bfseries}");
     lines.push("  {\\thesection}");
     lines.push("  {1em}");
-    lines.push("  {}");
+    lines.push("  {\\MakeUppercase}");
     lines.push("\\titlespacing*{\\section}{0pt}{8mm}{3mm}");
     lines.push("");
     lines.push("\\titleformat{\\subsection}");
-    lines.push("  {\\normalfont\\fontsize{14pt}{18pt}\\selectfont\\bfseries}");
+    lines.push("  {\\normalfont\\fontsize{12pt}{16pt}\\selectfont\\bfseries}");
     lines.push("  {\\thesubsection}");
     lines.push("  {1em}");
     lines.push("  {}");
@@ -240,6 +243,12 @@ function buildPreamble(templateId, metadata) {
     lines.push("");
     lines.push("\\setcounter{secnumdepth}{3}");
     lines.push("\\setcounter{tocdepth}{3}");
+    lines.push("");
+    lines.push("% Table of Contents formatting with dot leaders (..........)");
+    lines.push("\\usepackage{tocloft}");
+    lines.push("\\renewcommand{\\cftchapleader}{\\cftdotfill{\\cftdotsep}}");
+    lines.push("\\renewcommand{\\cftsecleader}{\\cftdotfill{\\cftdotsep}}");
+    lines.push("\\renewcommand{\\cftsubsecleader}{\\cftdotfill{\\cftdotsep}}");
   } else if (!isIEEE) {
     lines.push("\\doublespacing");
     lines.push("\\setcounter{secnumdepth}{3}");
@@ -348,23 +357,55 @@ function buildBody(templateId, metadata, frontMatter, chapters) {
     const content = convertTipTapToLatex(section.content, templateId);
     if (content.trim()) {
       const label = escapeLatex(section.label);
+      const upperLabel = escapeLatex(section.label.toUpperCase());
       parts.push(
-        `\\chapter*{${label}}\n\\addcontentsline{toc}{chapter}{${label}}\n\n${content}`,
+        `\\chapter*{${upperLabel}}\n\\addcontentsline{toc}{chapter}{${label}}\n\n${content}`,
       );
     }
   }
 
-  // ── Table of Contents, Figures, and Tables ──
-  if (isReport && frontMatter.some((s) => s.id === "toc")) {
-    parts.push("\\newpage");
-    parts.push("{\\singlespacing\n\\tableofcontents\n}");
+function hasNodeType(projectData, nodeType) {
+  const checkDoc = (doc) => {
+    if (!doc || typeof doc !== "object") return false;
+    if (Array.isArray(doc)) return doc.some(checkDoc);
+    if (doc.type === nodeType) return true;
+    if (doc.content && Array.isArray(doc.content)) {
+      return doc.content.some(checkDoc);
+    }
+    return false;
+  };
 
-    if (metadata.enableListOfFigures !== false) {
+  const frontMatterHas = (projectData.frontMatter || []).some((fm) => checkDoc(fm.content));
+  const chaptersHas = (projectData.chapters || []).some((ch) => checkDoc(ch.content));
+  return frontMatterHas || chaptersHas;
+}
+
+  // ── Table of Contents, Figures, and Tables ──
+  const hasImages = hasNodeType({ frontMatter, chapters }, "image");
+  const hasTables = hasNodeType({ frontMatter, chapters }, "table");
+
+  if (isReport) {
+    if (frontMatter.some((s) => s.id === "toc")) {
+      parts.push("\\newpage");
+      parts.push("{\\singlespacing\n\\tableofcontents\n}");
+    }
+
+    if (metadata.enableListOfFigures !== false && hasImages) {
+      parts.push("\\newpage");
+      parts.push("{\\singlespacing\n\\addcontentsline{toc}{chapter}{\\listfigurename}\n\\listoffigures\n}");
+    }
+
+    if (metadata.enableListOfTables !== false && hasTables) {
+      parts.push("\\newpage");
+      parts.push("{\\singlespacing\n\\addcontentsline{toc}{chapter}{\\listtablename}\n\\listoftables\n}");
+    }
+  } else {
+    if (metadata.enableListOfFigures === true && hasImages) {
       parts.push("\\newpage");
       parts.push("{\\singlespacing\n\\listoffigures\n}");
     }
 
-    if (metadata.enableListOfTables !== false) {
+    if (metadata.enableListOfTables === true && hasTables) {
       parts.push("\\newpage");
       parts.push("{\\singlespacing\n\\listoftables\n}");
     }
@@ -398,7 +439,7 @@ function buildBody(templateId, metadata, frontMatter, chapters) {
   // ── Chapters / Sections ──
   for (const ch of chapters) {
     const title = escapeLatex(ch.title || "");
-    const content = convertTipTapToLatexWithLevelShift(ch.content, templateId);
+    const content = convertTipTapToLatexWithLevelShift(ch.content, templateId, ch.title || "");
     if (isIEEE) {
       parts.push(`\\section{${title}}\n\n${content}`);
     } else {
@@ -481,17 +522,45 @@ function convertTipTapToLatex(tiptapJson, templateId) {
   return joinBlocksWithSmartSpacing(blocks);
 }
 
+function isChapterHeaderNode(node, chapterTitle = "") {
+  if (!node || node.type !== "heading") return false;
+  const rawText = (node.content || [])
+    .map((n) => n.text || "")
+    .join("")
+    .trim();
+  if (!rawText) return false;
+  const upper = rawText.toUpperCase();
+  if (/^CHAPTER\s+\d+[:\s\-]*/i.test(upper)) return true;
+  if (/^CHAPTER[:\s\-]*/i.test(upper)) return true;
+  if (
+    chapterTitle &&
+    stripAllPrefixes(rawText).toUpperCase() ===
+      stripAllPrefixes(chapterTitle).toUpperCase()
+  ) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Like convertTipTapToLatex but auto-promotes headings so the smallest
  * heading level in the chapter always maps to \section (1.1) or \subsection (IEEE).
  * This prevents "1.0.1" when a user presses H2 as their first/only heading.
  */
-function convertTipTapToLatexWithLevelShift(tiptapJson, templateId) {
+function convertTipTapToLatexWithLevelShift(tiptapJson, templateId, chapterTitle = "") {
   if (!tiptapJson || !tiptapJson.content) return "";
+
+  // Filter out any leading heading node that repeats the Chapter Title/Number
+  const filteredNodes = tiptapJson.content.filter((node, index) => {
+    if (index === 0 && isChapterHeaderNode(node, chapterTitle)) {
+      return false;
+    }
+    return true;
+  });
 
   // Find minimum heading level used in this chapter
   let minLevel = 999;
-  for (const node of tiptapJson.content) {
+  for (const node of filteredNodes) {
     if (node.type === "heading" && node.attrs && node.attrs.level) {
       if (node.attrs.level < minLevel) minLevel = node.attrs.level;
     }
@@ -503,7 +572,7 @@ function convertTipTapToLatexWithLevelShift(tiptapJson, templateId) {
   const targetMinLevel = isIEEE ? 2 : 1;
   const shift = minLevel <= 3 ? targetMinLevel - minLevel : 0;
 
-  const blocks = tiptapJson.content
+  const blocks = filteredNodes
     .map((node) => convertNodeWithShift(node, shift, templateId))
     .filter(Boolean);
 
@@ -629,8 +698,8 @@ function convertNode(node, templateId) {
     case "image": {
       const src = node.attrs && node.attrs.src ? node.attrs.src : "";
       const caption =
-        node.attrs && node.attrs.title
-          ? escapeLatex(node.attrs.title)
+        node.attrs && (node.attrs.title || node.attrs.alt)
+          ? escapeLatex(node.attrs.title || node.attrs.alt)
           : "Figure";
       if (src === "katexmath") {
         // Unconverted image carrier from mobile editor — render as math
@@ -657,18 +726,25 @@ function convertNode(node, templateId) {
         extractedImages.push({ filename, base64: base64Data });
 
         return `\\begin{figure}[H]\n  \\centering\n  \\includegraphics[width=0.6\\textwidth,height=0.4\\textheight,keepaspectratio]{${filename}}\n  \\caption{${caption}}\n\\end{figure}`;
-      } else if (src.startsWith("http")) {
+      } else if (src) {
         imageCounter++;
         let extension = "png";
+        let fullUrl = src;
+
+        if (src.startsWith("/")) {
+          const baseUrl = process.env.BACKEND_URL || "http://localhost:3001";
+          fullUrl = `${baseUrl}${src}`;
+        }
+
         try {
-          const urlExt = new URL(src).pathname.split(".").pop().toLowerCase();
+          const urlExt = new URL(fullUrl).pathname.split(".").pop().toLowerCase();
           if (["png", "jpg", "jpeg", "gif", "webp"].includes(urlExt))
             extension = urlExt;
         } catch (e) {}
 
         const prefix = currentPrefix ? `${currentPrefix}_` : "";
         const filename = `${prefix}img_${imageCounter}.${extension}`;
-        extractedImages.push({ filename, url: src });
+        extractedImages.push({ filename, url: fullUrl });
 
         return `\\begin{figure}[H]\n  \\centering\n  \\includegraphics[width=0.6\\textwidth,height=0.4\\textheight,keepaspectratio]{${filename}}\n  \\caption{${caption}}\n\\end{figure}`;
       }

@@ -4,13 +4,13 @@ import useAcaStore from '@/contexts/projectStore/projectStore';
 
 export default function LeftPanel({ collapsed, onToggleCollapse }) {
   const currentProject   = useAcaStore(s => s.getCurrentProject());
-  const activeChapterId  = useAcaStore(s => s.activeChapterId);
-  const setActiveChapter = useAcaStore(s => s.setActiveChapter);
-  const addChapter       = useAcaStore(s => s.addChapter);
-  const deleteChapter    = useAcaStore(s => s.deleteChapter);
-  const renameChapter    = useAcaStore(s => s.renameChapter);
-  const reorderChapters  = useAcaStore(s => s.reorderChapters);
-
+  const activeChapterId   = useAcaStore(s => s.activeChapterId);
+  const setActiveChapter  = useAcaStore(s => s.setActiveChapter);
+  const addChapter        = useAcaStore(s => s.addChapter);
+  const deleteChapter     = useAcaStore(s => s.deleteChapter);
+  const deleteFrontMatter = useAcaStore(s => s.deleteFrontMatter);
+  const renameChapter     = useAcaStore(s => s.renameChapter);
+  const reorderChapters   = useAcaStore(s => s.reorderChapters);
   const [renamingId, setRenamingId] = useState(null);
   const [renameVal, setRenameVal]   = useState('');
   const [newChTitle, setNewChTitle] = useState('');
@@ -119,15 +119,26 @@ export default function LeftPanel({ collapsed, onToggleCollapse }) {
           <div className="left-panel-section">
             <div className="left-panel-section-title">Front Matter</div>
             {currentProject.frontMatter.map(section => (
-              <button
-                key={section.id}
-                className={`left-panel-item ${activeChapterId === section.id ? 'left-panel-item--active' : ''} ${section.auto ? 'left-panel-item--auto' : ''}`}
-                onClick={() => setActiveChapter(section.id)}
-              >
-                <span className="left-panel-item-icon">{section.auto ? '⚙' : '📄'}</span>
-                <span className="left-panel-item-label">{section.label}</span>
-                {section.auto && <span className="left-panel-item-badge">auto</span>}
-              </button>
+              <div key={section.id} className={`left-panel-item-wrap ${activeChapterId === section.id ? 'left-panel-item-wrap--active' : ''}`}>
+                <button
+                  className={`left-panel-item ${activeChapterId === section.id ? 'left-panel-item--active' : ''} ${section.auto ? 'left-panel-item--auto' : ''}`}
+                  onClick={() => setActiveChapter(section.id)}
+                >
+                  <span className="left-panel-item-icon">{section.auto ? '⚙' : '📄'}</span>
+                  <span className="left-panel-item-label">{section.label}</span>
+                  {section.auto && <span className="left-panel-item-badge">auto</span>}
+                </button>
+                {!section.auto && !section.required && (
+                  <button
+                    className="left-panel-delete-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteFrontMatter(section.id);
+                    }}
+                    title={`Delete ${section.label}`}
+                  >✕</button>
+                )}
+              </div>
             ))}
           </div>
         )}

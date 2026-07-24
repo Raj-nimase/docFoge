@@ -13,7 +13,8 @@ const LS_KEY = "acadoc_projects";
 function loadProjectsLocal() {
   try {
     const raw = localStorage.getItem(LS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const parsed = raw ? JSON.parse(raw) : [];
+    return parsed.map(cleanupProjectFrontMatter);
   } catch {
     return [];
   }
@@ -152,6 +153,47 @@ function createProjectFromTemplate(templateId, metadata) {
 }
 let _loadProjectsPromise = null;
 let _projectsLoadedOnce = false;  // true once any successful load completes
+
+function cleanupProjectFrontMatter(project) {
+  if (!project || !project.chapters) return project;
+  const fmLabels = new Set(["acknowledgement", "abstract", "certificate"]);
+
+  const misplacedChs = project.chapters.filter((ch) =>
+    fmLabels.has((ch.title || "").trim().toLowerCase())
+  );
+
+  if (misplacedChs.length === 0) return project;
+
+  const cleanChapters = project.chapters.filter(
+    (ch) => !fmLabels.has((ch.title || "").trim().toLowerCase())
+  );
+
+  const updatedFm = [...(project.frontMatter || [])];
+  for (const ch of misplacedChs) {
+    const label = ch.title.trim();
+    const existingIndex = updatedFm.findIndex(
+      (fm) => fm.label?.toLowerCase() === label.toLowerCase() || fm.id === label.toLowerCase()
+    );
+    if (existingIndex >= 0) {
+      if (!updatedFm[existingIndex].content && ch.content) {
+        updatedFm[existingIndex] = { ...updatedFm[existingIndex], content: ch.content };
+      }
+    } else {
+      updatedFm.push({
+        id: label.toLowerCase(),
+        label: label,
+        auto: false,
+        content: ch.content || null,
+      });
+    }
+  }
+
+  return {
+    ...project,
+    frontMatter: updatedFm,
+    chapters: cleanChapters,
+  };
+}
 
 export const useProjectStore = create((set, get) => ({
   projects: [],
@@ -461,6 +503,32 @@ export const useProjectStore = create((set, get) => ({
     dirtyProjectIds.add(currentProjectId);
   },
 
+  updateProjectDocument(newFrontMatter, newChapters) {
+    const { projects, currentProjectId } = get();
+    const updated = projects.map((p) => {
+      if (p.id !== currentProjectId) return p;
+      const existingChMap = new Map(p.chapters.map((c) => [c.id, c]));
+      const mergedChs = newChapters.map((newCh) => {
+        const oldCh = existingChMap.get(newCh.id) || {};
+        return { ...oldCh, ...newCh };
+      });
+      const existingFmMap = new Map((p.frontMatter || []).map((fm) => [fm.id, fm]));
+      const mergedFm = (newFrontMatter || []).map((newFm) => {
+        const oldFm = existingFmMap.get(newFm.id) || {};
+        return { ...oldFm, ...newFm };
+      });
+      return {
+        ...p,
+        updatedAt: Date.now(),
+        frontMatter: mergedFm,
+        chapters: mergedChs,
+      };
+    });
+    saveProjectsLocal(updated, false);
+    set({ projects: updated });
+    dirtyProjectIds.add(currentProjectId);
+  },
+
   updateMetadata(fields) {
     const { projects, currentProjectId } = get();
     const updated = projects.map((p) => {
@@ -510,6 +578,27 @@ export const useProjectStore = create((set, get) => ({
     set({
       projects: updated,
       activeChapterId: activeChapterId === chapterId ? nextId : activeChapterId,
+    });
+    dirtyProjectIds.add(currentProjectId);
+  },
+
+  deleteFrontMatter(sectionId) {
+    const { projects, currentProjectId, activeChapterId } = get();
+    const updated = projects.map((p) => {
+      if (p.id !== currentProjectId) return p;
+      return {
+        ...p,
+        updatedAt: Date.now(),
+        frontMatter: p.frontMatter.filter((s) => s.id !== sectionId),
+      };
+    });
+    saveProjectsLocal(updated, true); // immediate — structural change
+    const project = updated.find((p) => p.id === currentProjectId);
+    const nextId =
+      project?.chapters[0]?.id || project?.frontMatter[0]?.id || null;
+    set({
+      projects: updated,
+      activeChapterId: activeChapterId === sectionId ? nextId : activeChapterId,
     });
     dirtyProjectIds.add(currentProjectId);
   },
