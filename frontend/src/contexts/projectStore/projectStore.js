@@ -441,6 +441,26 @@ export const useProjectStore = create((set, get) => ({
     dirtyProjectIds.add(currentProjectId);
   },
 
+  updateProjectChapters(newChapters) {
+    const { projects, currentProjectId } = get();
+    const updated = projects.map((p) => {
+      if (p.id !== currentProjectId) return p;
+      const existingChMap = new Map(p.chapters.map((c) => [c.id, c]));
+      const mergedChs = newChapters.map((newCh) => {
+        const oldCh = existingChMap.get(newCh.id) || {};
+        return { ...oldCh, ...newCh };
+      });
+      return {
+        ...p,
+        updatedAt: Date.now(),
+        chapters: mergedChs,
+      };
+    });
+    saveProjectsLocal(updated, false);
+    set({ projects: updated });
+    dirtyProjectIds.add(currentProjectId);
+  },
+
   updateMetadata(fields) {
     const { projects, currentProjectId } = get();
     const updated = projects.map((p) => {
