@@ -727,8 +727,23 @@ function buildCertificateCanvasLatexFlow(certData, metadata) {
   for (const section of frontMatter) {
     if (section.id === "title_page" || section.id === "toc") continue;
 
-    if (section.content && section.content.isCertificateCanvas) {
-      parts.push(buildCertificateCanvasLatex(section.content, metadata));
+    const isCert =
+      section.id === "certificate" ||
+      section.type === "certificate" ||
+      (section.content &&
+        (section.content.isCertificateCanvas ||
+          section.content.objects ||
+          section.content.scene ||
+          section.content.vectorPdfFilename));
+
+    if (isCert) {
+      if (section.content && section.content.vectorPdfFilename) {
+        parts.push(
+          `\\clearpage\n\\thispagestyle{empty}\n\\includepdf[pages=-,fitpaper=true]{${section.content.vectorPdfFilename}}\n\\clearpage`,
+        );
+      } else if (section.content && section.content.isCertificateCanvas) {
+        parts.push(buildCertificateCanvasLatex(section.content, metadata));
+      }
       continue;
     }
 

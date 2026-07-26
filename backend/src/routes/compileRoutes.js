@@ -137,16 +137,37 @@ async function processCompile(jobId, project) {
     if (project.frontMatter && Array.isArray(project.frontMatter)) {
       for (let i = 0; i < project.frontMatter.length; i++) {
         const fm = project.frontMatter[i];
-        if (fm.content && (fm.content.isCertificateCanvas || fm.content.objects) && fm.content.mode !== "upload") {
-          try {
-            const vectorPdfFilename = `cert_vector_${i + 1}.pdf`;
-            const vectorPdfPath = path.join(tmpDir, vectorPdfFilename);
-            console.log(`${ts()} Pre-Step: Rendering pdf-lib Vector PDF (${vectorPdfFilename})...`);
-            await renderCertificateVectorPdf(fm.content, project.metadata || {}, vectorPdfPath);
-            fm.content.vectorPdfFilename = vectorPdfFilename;
-            console.log(`${ts()} Pre-Step: Pure Vector PDF Ready at ${vectorPdfPath}`);
-          } catch (pdfErr) {
-            console.warn("Vector Certificate Rendering Warning:", pdfErr.message);
+        if (fm.content) {
+          if (fm.content.mode === "upload" && fm.content.uploadedPdf) {
+            try {
+              const vectorPdfFilename = `cert_vector_${i + 1}.pdf`;
+              const vectorPdfPath = path.join(tmpDir, vectorPdfFilename);
+              const base64Data = fm.content.uploadedPdf
+                .replace(/^data:application\/pdf;base64,/, "")
+                .replace(/^data:image\/[a-z]+;base64,/, "");
+              fs.writeFileSync(vectorPdfPath, Buffer.from(base64Data, "base64"));
+              fm.content.vectorPdfFilename = vectorPdfFilename;
+              console.log(`${ts()} Pre-Step: Saved Uploaded Certificate PDF at ${vectorPdfPath}`);
+            } catch (err) {
+              console.warn("Failed to write uploaded certificate PDF:", err.message);
+            }
+          } else if (
+            fm.content.isCertificateCanvas ||
+            fm.content.objects ||
+            fm.content.scene ||
+            fm.id === "certificate" ||
+            fm.type === "certificate"
+          ) {
+            try {
+              const vectorPdfFilename = `cert_vector_${i + 1}.pdf`;
+              const vectorPdfPath = path.join(tmpDir, vectorPdfFilename);
+              console.log(`${ts()} Pre-Step: Rendering pdf-lib Vector PDF (${vectorPdfFilename})...`);
+              await renderCertificateVectorPdf(fm.content, project.metadata || {}, vectorPdfPath);
+              fm.content.vectorPdfFilename = vectorPdfFilename;
+              console.log(`${ts()} Pre-Step: Pure Vector PDF Ready at ${vectorPdfPath}`);
+            } catch (pdfErr) {
+              console.warn("Vector Certificate Rendering Warning:", pdfErr.message);
+            }
           }
         }
       }

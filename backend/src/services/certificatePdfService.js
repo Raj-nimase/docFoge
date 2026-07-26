@@ -64,6 +64,23 @@ function wrapText(text, font, fontSize, maxWidth) {
   return wrappedLines;
 }
 
+function truncateToWidth(text, font, fontSize, maxWidth) {
+  if (!text || maxWidth <= 0) return "";
+  if (font.widthOfTextAtSize(text, fontSize) <= maxWidth) return text;
+
+  const ellipsis = "…";
+  const ellipsisWidth = font.widthOfTextAtSize(ellipsis, fontSize);
+  const budget = maxWidth - ellipsisWidth;
+  if (budget <= 0) return "";
+
+  let out = "";
+  for (const char of text) {
+    if (font.widthOfTextAtSize(out + char, fontSize) > budget) break;
+    out += char;
+  }
+  return out ? `${out}${ellipsis}` : "";
+}
+
 /**
  * Render pure vector PDF for fixed layout / certificate document using pdf-lib (No Puppeteer)
  */
@@ -196,42 +213,71 @@ async function renderCertificateVectorPdf(certData, metadata = {}, outputPath) {
           const headers = obj.headers || [];
           const rows = obj.rows || [];
           const tableW = objW || pageW - 100;
-          const headerBg = hexToPdfRgb(obj.headerBg || "#f3f4f6");
-          const borderColor = hexToPdfRgb(obj.borderColor || "#d1d5db");
+          const headerBg = hexToPdfRgb(obj.headerBg || "#ffffff");
+          const borderColor = hexToPdfRgb(obj.borderColor || "#000000");
           const fontSize = Number(obj.fontSize || 11);
           const cellPadding = Number(obj.cellPadding || 8);
-          const rowHeight = fontSize + cellPadding * 2;
+          const lineHeightVal = fontSize * 1.25;
+
           const numCols = Math.max(headers.length, rows[0]?.length || 1);
           const colWidth = tableW / numCols;
+          const cellTextWidth = Math.max(0, colWidth - cellPadding * 2);
           let currentY = objY;
 
           if (headers.length > 0) {
-            const headerPdfY = pageH - currentY - rowHeight;
+            const headerLines = headers.map((h) =>
+              wrapText(replacePlaceholders(String(h || ""), metadata), fontHelveticaBold, fontSize, cellTextWidth)
+            );
+            const maxHeaderLines = Math.max(1, ...headerLines.map((l) => l.length));
+            const headerRowHeight = maxHeaderLines * lineHeightVal + cellPadding * 2;
+            const headerPdfY = pageH - currentY - headerRowHeight;
+
             page.drawRectangle({
               x: objX,
               y: headerPdfY,
               width: tableW,
-              height: rowHeight,
+              height: headerRowHeight,
               color: headerBg,
               borderColor: borderColor,
               borderWidth: 1,
             });
+
             for (let c = 0; c < headers.length; c++) {
-              const cellText = replacePlaceholders(String(headers[c] || ""), metadata);
-              page.drawText(cellText, {
-                x: objX + c * colWidth + cellPadding,
-                y: headerPdfY + cellPadding,
-                size: fontSize,
-                font: fontHelveticaBold,
-                color: hexToPdfRgb("#111827"),
-              });
+              const cellX = objX + c * colWidth + cellPadding;
+              const lines = headerLines[c];
+
+              for (let l = 0; l < lines.length; l++) {
+                const lineY = headerPdfY + headerRowHeight - cellPadding - fontSize - l * lineHeightVal;
+                page.drawText(lines[l], {
+                  x: cellX,
+                  y: lineY,
+                  size: fontSize,
+                  font: fontHelveticaBold,
+                  color: hexToPdfRgb("#111827"),
+                });
+              }
+
+              if (c > 0) {
+                page.drawLine({
+                  start: { x: objX + c * colWidth, y: headerPdfY },
+                  end: { x: objX + c * colWidth, y: headerPdfY + headerRowHeight },
+                  thickness: 1,
+                  color: borderColor,
+                });
+              }
             }
-            currentY += rowHeight;
+            currentY += headerRowHeight;
           }
 
           for (let r = 0; r < rows.length; r++) {
             const row = rows[r];
+            const rowLines = Array.from({ length: numCols }).map((_, c) =>
+              wrapText(replacePlaceholders(String(row[c] || ""), metadata), fontHelvetica, fontSize, cellTextWidth)
+            );
+            const maxRowLines = Math.max(1, ...rowLines.map((l) => l.length));
+            const rowHeight = maxRowLines * lineHeightVal + cellPadding * 2;
             const rowPdfY = pageH - currentY - rowHeight;
+
             page.drawRectangle({
               x: objX,
               y: rowPdfY,
@@ -241,15 +287,30 @@ async function renderCertificateVectorPdf(certData, metadata = {}, outputPath) {
               borderColor: borderColor,
               borderWidth: 1,
             });
+
             for (let c = 0; c < numCols; c++) {
-              const cellText = replacePlaceholders(String(row[c] || ""), metadata);
-              page.drawText(cellText, {
-                x: objX + c * colWidth + cellPadding,
-                y: rowPdfY + cellPadding,
-                size: fontSize,
-                font: fontHelvetica,
-                color: hexToPdfRgb("#374151"),
-              });
+              const cellX = objX + c * colWidth + cellPadding;
+              const lines = rowLines[c];
+
+              for (let l = 0; l < lines.length; l++) {
+                const lineY = rowPdfY + rowHeight - cellPadding - fontSize - l * lineHeightVal;
+                page.drawText(lines[l], {
+                  x: cellX,
+                  y: lineY,
+                  size: fontSize,
+                  font: fontHelvetica,
+                  color: hexToPdfRgb("#374151"),
+                });
+              }
+
+              if (c > 0) {
+                page.drawLine({
+                  start: { x: objX + c * colWidth, y: rowPdfY },
+                  end: { x: objX + c * colWidth, y: rowPdfY + rowHeight },
+                  thickness: 1,
+                  color: borderColor,
+                });
+              }
             }
             currentY += rowHeight;
           }

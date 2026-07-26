@@ -100,7 +100,7 @@ function QrItem({ shapeProps, registerNode, onSelect, onDragMove, onChange, merg
 
   useEffect(() => {
     let cancelled = false;
-    QRCode.toDataURL(rawText || " ", { margin: 1, color: { dark, light } })
+    QRCode.toDataURL(rawText || " ", { width: 400, margin: 1, color: { dark, light } })
       .then((url) => {
         const img = new window.Image();
         img.onload = () => {
@@ -161,24 +161,81 @@ function QrItem({ shapeProps, registerNode, onSelect, onDragMove, onChange, merg
    version anchored the group at 0,0 and reset position after each drag, which
    left the Transformer box in the wrong place mid-drag.                      */
 
+function estimateWrappedLines(text, fontSize, isBold, maxWidth) {
+  if (!text || maxWidth <= 0) return 1;
+  const fontRatio = isBold ? 0.58 : 0.52;
+  const approxCharWidth = fontSize * fontRatio;
+  const paragraphs = String(text).split("\n");
+  let totalLines = 0;
+
+  for (const para of paragraphs) {
+    if (!para) {
+      totalLines += 1;
+      continue;
+    }
+    const words = para.split(" ");
+    let currentLineWidth = 0;
+    let lines = 1;
+
+    for (const word of words) {
+      const wordWidth = word.length * approxCharWidth;
+      const spaceWidth = approxCharWidth;
+
+      if (currentLineWidth === 0) {
+        currentLineWidth = wordWidth;
+      } else if (currentLineWidth + spaceWidth + wordWidth <= maxWidth) {
+        currentLineWidth += spaceWidth + wordWidth;
+      } else {
+        lines += 1;
+        currentLineWidth = wordWidth;
+      }
+    }
+    totalLines += lines;
+  }
+  return Math.max(1, totalLines);
+}
+
 function TableItem({ shapeProps, registerNode, onSelect, onDragMove, onChange, mergeData, listening }) {
   const obj = shapeProps;
   const headers = obj.headers || [];
   const rows = obj.rows || [];
   const tableW = obj.width || 475;
-  const headerBg = obj.headerBg || "#f3f4f6";
-  const borderColor = obj.borderColor || "#d1d5db";
+  const headerBg = obj.headerBg || "#ffffff";
+  const borderColor = obj.borderColor || "#000000";
   const fontSize = obj.fontSize || 11;
   const cellPadding = obj.cellPadding || 8;
-  const rowHeight = fontSize + cellPadding * 2;
   const numCols = Math.max(headers.length, rows[0]?.length || 1);
   const colWidth = tableW / numCols;
+  const cellWidth = Math.max(4, colWidth - cellPadding * 2);
+  const lineHeightVal = 1.25;
+  const singleLineH = fontSize * lineHeightVal;
 
   const attach = useCallback((node) => registerNode(obj.id, node), [registerNode, obj.id]);
 
-  // Cells get an explicit width + ellipsis so text clips at the column edge,
-  // matching where the PDF exporter truncates it.
-  const cellWidth = Math.max(4, colWidth - cellPadding * 2);
+  let headerRowHeight = fontSize + cellPadding * 2;
+  if (headers.length > 0) {
+    const maxHeaderLines = Math.max(
+      1,
+      ...headers.map((h) =>
+        estimateWrappedLines(replacePlaceholders(String(h || ""), mergeData), fontSize, true, cellWidth)
+      )
+    );
+    headerRowHeight = maxHeaderLines * singleLineH + cellPadding * 2;
+  }
+
+  let currentY = headers.length > 0 ? headerRowHeight : 0;
+  const computedRows = rows.map((row) => {
+    const maxLines = Math.max(
+      1,
+      ...Array.from({ length: numCols }).map((_, cIdx) =>
+        estimateWrappedLines(replacePlaceholders(String(row[cIdx] || ""), mergeData), fontSize, false, cellWidth)
+      )
+    );
+    const rHeight = maxLines * singleLineH + cellPadding * 2;
+    const rY = currentY;
+    currentY += rHeight;
+    return { row, rY, rHeight };
+  });
 
   return (
     <Group
@@ -193,12 +250,32 @@ function TableItem({ shapeProps, registerNode, onSelect, onDragMove, onChange, m
       onDragEnd={(e) =>
         onChange({ x: Math.round(e.target.x()), y: Math.round(e.target.y()) })
       }
+      onTransform={(e) => {
+        const node = e.target;
+        const scaleX = node.scaleX();
+        node.scaleX(1);
+        node.scaleY(1);
+        const newWidth = Math.max(40, Math.round(tableW * scaleX));
+        onChange({ width: newWidth });
+      }}
+      onTransformEnd={(e) => {
+        const node = e.target;
+        const scaleX = node.scaleX();
+        node.scaleX(1);
+        node.scaleY(1);
+        const newWidth = Math.max(40, Math.round(tableW * scaleX));
+        onChange({
+          x: Math.round(node.x()),
+          y: Math.round(node.y()),
+          width: newWidth,
+        });
+      }}
     >
       {headers.length > 0 && (
         <Group y={0}>
           <Rect
             width={tableW}
-            height={rowHeight}
+            height={headerRowHeight}
             fill={headerBg}
             stroke={borderColor}
             strokeWidth={1}
@@ -212,14 +289,14 @@ function TableItem({ shapeProps, registerNode, onSelect, onDragMove, onChange, m
                 text={replacePlaceholders(String(h || ""), mergeData)}
                 fontSize={fontSize}
                 fontStyle="bold"
+                lineHeight={lineHeightVal}
                 fill="#111827"
-                ellipsis
-                wrap="none"
+                wrap="word"
                 listening={false}
               />
               {cIdx > 0 && (
                 <Line
-                  points={[cIdx * colWidth, 0, cIdx * colWidth, rowHeight]}
+                  points={[cIdx * colWidth, 0, cIdx * colWidth, headerRowHeight]}
                   stroke={borderColor}
                   strokeWidth={1}
                   listening={false}
@@ -230,43 +307,40 @@ function TableItem({ shapeProps, registerNode, onSelect, onDragMove, onChange, m
         </Group>
       )}
 
-      {rows.map((row, rIdx) => {
-        const rY = (headers.length > 0 ? rIdx + 1 : rIdx) * rowHeight;
-        return (
-          <Group key={rIdx} y={rY}>
-            <Rect
-              width={tableW}
-              height={rowHeight}
-              fill={rIdx % 2 === 1 ? "#f9fafb" : "#ffffff"}
-              stroke={borderColor}
-              strokeWidth={1}
-            />
-            {Array.from({ length: numCols }).map((_, cIdx) => (
-              <React.Fragment key={cIdx}>
-                <KonvaText
-                  x={cIdx * colWidth + cellPadding}
-                  y={cellPadding}
-                  width={cellWidth}
-                  text={replacePlaceholders(String(row[cIdx] || ""), mergeData)}
-                  fontSize={fontSize}
-                  fill="#374151"
-                  ellipsis
-                  wrap="none"
+      {computedRows.map(({ row, rY, rHeight }, rIdx) => (
+        <Group key={rIdx} y={rY}>
+          <Rect
+            width={tableW}
+            height={rHeight}
+            fill={rIdx % 2 === 1 ? "#f9fafb" : "#ffffff"}
+            stroke={borderColor}
+            strokeWidth={1}
+          />
+          {Array.from({ length: numCols }).map((_, cIdx) => (
+            <React.Fragment key={cIdx}>
+              <KonvaText
+                x={cIdx * colWidth + cellPadding}
+                y={cellPadding}
+                width={cellWidth}
+                text={replacePlaceholders(String(row[cIdx] || ""), mergeData)}
+                fontSize={fontSize}
+                lineHeight={lineHeightVal}
+                fill="#374151"
+                wrap="word"
+                listening={false}
+              />
+              {cIdx > 0 && (
+                <Line
+                  points={[cIdx * colWidth, 0, cIdx * colWidth, rHeight]}
+                  stroke={borderColor}
+                  strokeWidth={1}
                   listening={false}
                 />
-                {cIdx > 0 && (
-                  <Line
-                    points={[cIdx * colWidth, 0, cIdx * colWidth, rowHeight]}
-                    stroke={borderColor}
-                    strokeWidth={1}
-                    listening={false}
-                  />
-                )}
-              </React.Fragment>
-            ))}
-          </Group>
-        );
-      })}
+              )}
+            </React.Fragment>
+          ))}
+        </Group>
+      ))}
     </Group>
   );
 }
@@ -597,6 +671,7 @@ export default function KonvaStage({
             height={stageH}
             scaleX={zoom}
             scaleY={zoom}
+            pixelRatio={Math.min(Math.max((typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1) * 2, 2.5), 4)}
             onMouseDown={handleStageMouseDown}
             onTouchStart={handleStageMouseDown}
           >
@@ -925,7 +1000,7 @@ export default function KonvaStage({
                 // The full-list default is spelled out because react-konva
                 // won't reliably restore it when a prop reverts to undefined.
                 enabledAnchors={
-                  selectedType === "text"
+                  selectedType === "text" || selectedType === "table"
                     ? ["middle-left", "middle-right"]
                     : selectedType === "qr"
                       ? ["top-left", "top-right", "bottom-left", "bottom-right"]

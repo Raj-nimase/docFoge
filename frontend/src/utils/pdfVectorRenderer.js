@@ -369,62 +369,74 @@ export async function generateVectorPdfFromScene(sceneData, mergeData = {}) {
         const headers = obj.headers || [];
         const rows = obj.rows || [];
         const tableW = objW || pageW - 100;
-        const headerBg = hexToPdfRgb(obj.headerBg || "#f3f4f6");
-        const borderColor = hexToPdfRgb(obj.borderColor || "#d1d5db");
+        const headerBg = hexToPdfRgb(obj.headerBg || "#ffffff");
+        const borderColor = hexToPdfRgb(obj.borderColor || "#000000");
         const font = getFont(obj.fontFamily, "normal");
         const fontBold = getFont(obj.fontFamily, "bold");
         const fontSize = Number(obj.fontSize || 11);
         const cellPadding = Number(obj.cellPadding || 8);
-        const rowHeight = fontSize + cellPadding * 2;
+        const lineHeightVal = fontSize * 1.25;
 
         const numCols = Math.max(headers.length, rows[0]?.length || 1);
         const colWidth = tableW / numCols;
-        // Cells clip at the column boundary, matching the canvas preview.
         const cellTextWidth = Math.max(0, colWidth - cellPadding * 2);
 
         let currentY = objY;
 
         // Draw Table Header
         if (headers.length > 0) {
-          const headerPdfY = pageH - currentY - rowHeight;
+          const headerLines = headers.map((h) =>
+            wrapText(replacePlaceholders(String(h || ""), mergeData), fontBold, fontSize, cellTextWidth)
+          );
+          const maxHeaderLines = Math.max(1, ...headerLines.map((l) => l.length));
+          const headerRowHeight = maxHeaderLines * lineHeightVal + cellPadding * 2;
+          const headerPdfY = pageH - currentY - headerRowHeight;
+
           page.drawRectangle({
             x: objX,
             y: headerPdfY,
             width: tableW,
-            height: rowHeight,
+            height: headerRowHeight,
             color: headerBg,
             borderColor: borderColor,
             borderWidth: 1,
           });
 
           for (let c = 0; c < headers.length; c++) {
-            const rawCell = replacePlaceholders(String(headers[c] || ""), mergeData);
-            const cellText = truncateToWidth(rawCell, fontBold, fontSize, cellTextWidth);
             const cellX = objX + c * colWidth + cellPadding;
-            page.drawText(cellText, {
-              x: cellX,
-              y: headerPdfY + cellPadding,
-              size: fontSize,
-              font: fontBold,
-              color: hexToPdfRgb("#111827"),
-            });
+            const lines = headerLines[c];
 
-            // Column Vertical Line
+            for (let l = 0; l < lines.length; l++) {
+              const lineY = headerPdfY + headerRowHeight - cellPadding - fontSize - l * lineHeightVal;
+              page.drawText(lines[l], {
+                x: cellX,
+                y: lineY,
+                size: fontSize,
+                font: fontBold,
+                color: hexToPdfRgb("#111827"),
+              });
+            }
+
             if (c > 0) {
               page.drawLine({
                 start: { x: objX + c * colWidth, y: headerPdfY },
-                end: { x: objX + c * colWidth, y: headerPdfY + rowHeight },
+                end: { x: objX + c * colWidth, y: headerPdfY + headerRowHeight },
                 thickness: 1,
                 color: borderColor,
               });
             }
           }
-          currentY += rowHeight;
+          currentY += headerRowHeight;
         }
 
         // Draw Table Rows
         for (let r = 0; r < rows.length; r++) {
           const row = rows[r];
+          const rowLines = Array.from({ length: numCols }).map((_, c) =>
+            wrapText(replacePlaceholders(String(row[c] || ""), mergeData), font, fontSize, cellTextWidth)
+          );
+          const maxRowLines = Math.max(1, ...rowLines.map((l) => l.length));
+          const rowHeight = maxRowLines * lineHeightVal + cellPadding * 2;
           const rowPdfY = pageH - currentY - rowHeight;
 
           page.drawRectangle({
@@ -438,16 +450,19 @@ export async function generateVectorPdfFromScene(sceneData, mergeData = {}) {
           });
 
           for (let c = 0; c < numCols; c++) {
-            const rawCell = replacePlaceholders(String(row[c] || ""), mergeData);
-            const cellText = truncateToWidth(rawCell, font, fontSize, cellTextWidth);
             const cellX = objX + c * colWidth + cellPadding;
-            page.drawText(cellText, {
-              x: cellX,
-              y: rowPdfY + cellPadding,
-              size: fontSize,
-              font: font,
-              color: hexToPdfRgb("#374151"),
-            });
+            const lines = rowLines[c];
+
+            for (let l = 0; l < lines.length; l++) {
+              const lineY = rowPdfY + rowHeight - cellPadding - fontSize - l * lineHeightVal;
+              page.drawText(lines[l], {
+                x: cellX,
+                y: lineY,
+                size: fontSize,
+                font: font,
+                color: hexToPdfRgb("#374151"),
+              });
+            }
 
             if (c > 0) {
               page.drawLine({

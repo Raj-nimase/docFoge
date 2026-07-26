@@ -556,14 +556,14 @@ function TableProperties({ obj, onUpdate, keyFor }) {
         <div className="cs-row">
           <ColorField
             label="Header fill"
-            value={obj.headerBg || "#f3f4f6"}
-            fallback="#f3f4f6"
+            value={obj.headerBg || "#ffffff"}
+            fallback="#ffffff"
             onChange={(v) => onUpdate({ headerBg: v }, keyFor("headerBg"))}
           />
           <ColorField
             label="Borders"
-            value={obj.borderColor || "#d1d5db"}
-            fallback="#d1d5db"
+            value={obj.borderColor || "#000000"}
+            fallback="#000000"
             onChange={(v) => onUpdate({ borderColor: v }, keyFor("borderColor"))}
           />
         </div>

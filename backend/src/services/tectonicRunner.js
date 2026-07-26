@@ -111,7 +111,26 @@ async function compileTex(latexSource, jobId) {
   const ts  = (label) => console.log(`[TECTONIC][${new Date().toISOString()}][+${Date.now() - t0}ms] ${label}`);
 
   // ── 1. Cache check ────────────────────────────────────────────────────────
-  const hash = crypto.createHash('sha256').update(latexSource).digest('hex');
+  const hashBuilder = crypto.createHash('sha256').update(latexSource);
+
+  // Include hashes of any cert_vector_*.pdf files in TMP_DIR so certificate updates invalidate cache
+  try {
+    if (fs.existsSync(TMP_DIR)) {
+      const files = fs.readdirSync(TMP_DIR);
+      for (const file of files) {
+        if (file.startsWith('cert_vector_') && file.endsWith('.pdf')) {
+          const filePath = path.join(TMP_DIR, file);
+          if (fs.existsSync(filePath)) {
+            hashBuilder.update(fs.readFileSync(filePath));
+          }
+        }
+      }
+    }
+  } catch (e) {
+    // Ignore read errors
+  }
+
+  const hash = hashBuilder.digest('hex');
   const shortHash = hash.slice(0, 8);
 
   if (memCache.has(hash)) {

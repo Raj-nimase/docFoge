@@ -164,8 +164,8 @@ export function createObject(type, opts = {}) {
           ["Software Engineering", "4", "A+"],
           ["Database Systems", "4", "O"],
         ],
-        headerBg: "#eff6ff",
-        borderColor: "#93c5fd",
+        headerBg: "#ffffff",
+        borderColor: "#000000",
         fontSize: 11,
         cellPadding: 8,
       };
