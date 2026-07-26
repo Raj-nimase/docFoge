@@ -3698,3 +3698,14 @@ body {
   line-height: 1.45;
   margin: -4px 0 0;
 }
+
+/* ── FULL SCREEN CERTIFICATE DESIGNER MODE ── */
+.editor-body--certificate .editor-panel {
+  flex: 1 1 100% !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.editor-body--certificate .preview-panel {
+  display: none !important;
+}

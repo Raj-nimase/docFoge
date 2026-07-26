@@ -515,6 +515,13 @@ export const useProjectStore = create((set, get) => ({
       const existingFmMap = new Map((p.frontMatter || []).map((fm) => [fm.id, fm]));
       const mergedFm = (newFrontMatter || []).map((newFm) => {
         const oldFm = existingFmMap.get(newFm.id) || {};
+        // The Certificate canvas is not a Tiptap doc — it is a positioned
+        // layout owned solely by CertificateCanvasEditor. Document-level saves
+        // must never overwrite it, or the measured geometry the PDF depends on
+        // is lost and the certificate silently reverts to a flowed layout.
+        if (oldFm.content?.isCertificateCanvas && !newFm.content?.isCertificateCanvas) {
+          return { ...oldFm, ...newFm, content: oldFm.content };
+        }
         return { ...oldFm, ...newFm };
       });
       return {

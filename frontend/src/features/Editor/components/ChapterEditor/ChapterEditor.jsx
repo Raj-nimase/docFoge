@@ -38,6 +38,7 @@ import useAcaStore from "@/contexts/projectStore/projectStore";
 import EditorToolbar from "@/features/Editor/components/Toolbar/Toolbar";
 import SelectionBubbleMenu from "@/features/Editor/components/SelectionBubbleMenu/SelectionBubbleMenu";
 import { mergeChaptersToSingleDoc, splitSingleDocToChapters, splitSingleDocToProject } from "./docUtils";
+import CertificateCanvasEditor from "./CertificateCanvasEditor";
 
 const MathView = ({ node, updateAttributes, selected }) => {
   const containerRef = useRef(null);
@@ -667,10 +668,15 @@ function MultiChapterEditor() {
       if (onUpdateTimer.current) clearTimeout(onUpdateTimer.current);
       onUpdateTimer.current = setTimeout(() => {
         const fullJson = editor.getJSON();
+        // Read the project from the store, NOT the render-time closure. This
+        // editor instance outlives many store updates (e.g. the Certificate
+        // designer saving its layout), and a stale snapshot here would write
+        // old section content back over those saves.
+        const live = useAcaStore.getState().getCurrentProject();
         const res = splitSingleDocToProject(
           fullJson,
-          currentProject?.frontMatter || [],
-          currentProject?.chapters || []
+          live?.frontMatter || [],
+          live?.chapters || []
         );
         updateProjectDocument(res.frontMatter, res.chapters);
       }, 500);
@@ -685,10 +691,11 @@ function MultiChapterEditor() {
         clearTimeout(onUpdateTimer.current);
         onUpdateTimer.current = null;
         const fullJson = editor.getJSON();
+        const live = useAcaStore.getState().getCurrentProject();
         const res = splitSingleDocToProject(
           fullJson,
-          currentProject?.frontMatter || [],
-          currentProject?.chapters || []
+          live?.frontMatter || [],
+          live?.chapters || []
         );
         updateProjectDocument(res.frontMatter, res.chapters);
       }
@@ -837,7 +844,7 @@ export default function ChapterEditor() {
       return <FrontMatterAutoCard section={activeFm} key={activeFm.id} />;
     }
     if (activeFm.id === "certificate" || activeFm.label?.toLowerCase() === "certificate") {
-      return <FrontMatterSectionEditor section={activeFm} key={activeFm.id} />;
+      return <CertificateCanvasEditor section={activeFm} key={activeFm.id} />;
     }
   }
 

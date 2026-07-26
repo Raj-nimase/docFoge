@@ -10,6 +10,7 @@ const express = require("express");
 const { v4: uuidv4 } = require("uuid");
 const { generateProjectLatex } = require("../services/latexGenerator");
 const { compileTex, cleanupJob, warmUp } = require("../services/tectonicRunner");
+const { renderCertificateVectorPdf } = require("../services/certificatePdfService");
 const { logger } = require("../utils/logger");
 const path = require("path");
 const os = require("os");
@@ -129,6 +130,28 @@ async function processCompile(jobId, project) {
   console.log(`${ts()} ── processCompile START jobId=${jobId}`);
 
   try {
+    const tmpDir = path.join(os.tmpdir(), "docforge");
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+
+    // ── Pre-Step: Render Pure pdf-lib Vector PDF for Certificate/Fixed Document pages ──
+    if (project.frontMatter && Array.isArray(project.frontMatter)) {
+      for (let i = 0; i < project.frontMatter.length; i++) {
+        const fm = project.frontMatter[i];
+        if (fm.content && (fm.content.isCertificateCanvas || fm.content.objects) && fm.content.mode !== "upload") {
+          try {
+            const vectorPdfFilename = `cert_vector_${i + 1}.pdf`;
+            const vectorPdfPath = path.join(tmpDir, vectorPdfFilename);
+            console.log(`${ts()} Pre-Step: Rendering pdf-lib Vector PDF (${vectorPdfFilename})...`);
+            await renderCertificateVectorPdf(fm.content, project.metadata || {}, vectorPdfPath);
+            fm.content.vectorPdfFilename = vectorPdfFilename;
+            console.log(`${ts()} Pre-Step: Pure Vector PDF Ready at ${vectorPdfPath}`);
+          } catch (pdfErr) {
+            console.warn("Vector Certificate Rendering Warning:", pdfErr.message);
+          }
+        }
+      }
+    }
+
     // ── Step A: LaTeX generation ──────────────────────────────────────────────
     console.log(`${ts()} Step A: Generating LaTeX...`);
     // Use a stable imagePrefix derived from project content — NOT jobId.
@@ -140,9 +163,6 @@ async function processCompile(jobId, project) {
     if (!safe) throw new Error(`LaTeX safety check failed: ${reason}`);
 
     // ── Step B: Write temp dir & save images ─────────────────────────────────
-    const tmpDir = path.join(os.tmpdir(), "docforge");
-    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-
     if (images && images.length > 0) {
       console.log(`${ts()} Step B: Saving ${images.length} image(s)...`);
       for (const img of images) {

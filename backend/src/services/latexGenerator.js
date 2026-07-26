@@ -120,6 +120,7 @@ function buildPreamble(templateId, metadata) {
     "]",
     "\\usepackage{setspace}",
     "\\usepackage{graphicx}",
+    "\\usepackage{pdfpages}",
     "\\usepackage{caption}",
     "\\captionsetup[table]{position=below, skip=10pt}",
     "\\captionsetup[figure]{position=below, skip=10pt}",
@@ -131,6 +132,10 @@ function buildPreamble(templateId, metadata) {
     "\\usepackage{listings}",
     "\\usepackage{xcolor}",
     "\\usepackage[framemethod=default]{mdframed}",
+    "\\usepackage[absolute,overlay]{textpos}",
+    "\\setlength{\\TPHorizModule}{1mm}",
+    "\\setlength{\\TPVertModule}{1mm}",
+    "\\textblockorigin{0mm}{0mm}",
     "\\usepackage[normalem]{ulem}",
     "\\usepackage{hyperref}",
     "\\usepackage{enumitem}",
@@ -351,9 +356,382 @@ function buildBody(templateId, metadata, frontMatter, chapters) {
     }
   }
 
+// ─── Certificate: absolute (WYSIWYG) renderer ────────────────────────────────
+//
+// The editor canvas is a 650x920 px element with A4 proportions, and it records
+// the painted pixel rect of every block into certData.layout. Rather than
+// re-flowing that content and hoping it lands in the same place, we replay each
+// rect as a `textpos` block at the exact same coordinate. Nothing flows, so
+// nothing can drift, overlap, or be pushed off the page.
+
+const A4_W_MM = 210;
+const A4_H_MM = 297;
+const PT_PER_MM = 1 / 0.3527777778;
+
+// Font sizes used by the canvas, in px. Keep in sync with
+// CertificateCanvasEditor.jsx — these are what make the PDF text match visually.
+const CANVAS_FONT_PX = {
+  college: 15,
+  institution: 12,
+  title: 22,
+  body: 14,
+  tableTitle: 12,
+  tableCell: 11,
+  sigTitle: 12,
+  sigName: 11,
+  datePlace: 12,
+};
+
+function certScale(layout) {
+  const pw = layout?.paperW || 650;
+  const ph = layout?.paperH || 920;
+  return { sx: A4_W_MM / pw, sy: A4_H_MM / ph };
+}
+
+// Round to 2dp — sub-0.01mm precision is meaningless and bloats the source
+// (which would also churn the content-hash PDF cache).
+function mm(v) {
+  return (Math.round(v * 100) / 100).toFixed(2);
+}
+
+// px on canvas → pt in the PDF, via the physical mm size of a canvas pixel.
+function pxToPt(px, sx) {
+  return (Math.round(px * sx * PT_PER_MM * 10) / 10).toFixed(1);
+}
+
+// Emit a sized font selection: \fontsize{size}{leading}\selectfont
+function fontCmd(px, sx, lineHeightRatio = 1.25) {
+  const size = pxToPt(px, sx);
+  const lead = pxToPt(px * lineHeightRatio, sx);
+  return `\\fontsize{${size}pt}{${lead}pt}\\selectfont`;
+}
+
+/**
+ * Wrap content in an absolutely-positioned textpos block.
+ * Coordinates are the block's top-left, in mm from the page's top-left corner.
+ *
+ * The document body sets \parskip=6pt and \doublespacing, and LaTeX's `center`
+ * environment adds its own glue above and below. Inside an absolutely-placed
+ * block all of that is pure error — it pushes content below the coordinate we
+ * measured. So every block resets vertical spacing to zero and uses
+ * \centering rather than the center environment.
+ */
+function textblock(xMm, yMm, wMm, content) {
+  return [
+    `\\begin{textblock}{${mm(wMm)}}(${mm(xMm)},${mm(yMm)})`,
+    "\\setlength{\\parskip}{0pt}\\setlength{\\parindent}{0pt}\\setstretch{1}%",
+    content,
+    "\\end{textblock}",
+  ].join("\n");
+}
+
+function buildCertificateBorder(borderStyle) {
+  if (!borderStyle || borderStyle === "none") return null;
+
+  // Match the canvas: the frame hugs the paper edge. Inset by a few mm so the
+  // rule is not clipped by printer non-printable margins.
+  const inset = 8;
+  const w = A4_W_MM - inset * 2;
+  const h = A4_H_MM - inset * 2;
+
+  const rule = (lw, ww, hh) =>
+    `\\setlength{\\fboxrule}{${lw}}\\setlength{\\fboxsep}{0pt}\\framebox[${mm(ww)}mm]{\\rule{0pt}{${mm(hh)}mm}}`;
+
+  if (borderStyle === "single") {
+    return textblock(inset, inset, w, `\\noindent${rule("1.5pt", w, h)}`);
+  }
+
+  // "double" — an outer heavy rule with a lighter inner rule, mirroring the
+  // CSS `6px double` frame.
+  const gap = 2.2;
+  return [
+    textblock(inset, inset, w, `\\noindent${rule("1.2pt", w, h)}`),
+    textblock(
+      inset + gap,
+      inset + gap,
+      w - gap * 2,
+      `\\noindent${rule("0.6pt", w - gap * 2, h - gap * 2)}`,
+    ),
+  ].join("\n\n");
+}
+
+function buildCertificateCanvasLatex(certData, metadata) {
+  // ── Mode 1: Uploaded Signed Hardcopy Certificate (PDF or Image) ──
+  if ((certData.mode === "upload" || certData.isUploadedPdf) && certData.uploadedPdf) {
+    const rawData = certData.uploadedPdf;
+    const isPdf = rawData.startsWith("data:application/pdf") || rawData.startsWith("JVBERi");
+
+    if (isPdf) {
+      imageCounter++;
+      const prefix = currentPrefix ? `${currentPrefix}_` : "";
+      const pdfFilename = `${prefix}cert_page_${imageCounter}.pdf`;
+      const base64Data = rawData.includes(",") ? rawData.split(",")[1] : rawData;
+      extractedImages.push({ filename: pdfFilename, base64: base64Data });
+
+      const out = [
+        "\\addcontentsline{toc}{chapter}{Certificate}",
+        `\\includepdf[pages=1, pagecommand={\\thispagestyle{empty}}]{${pdfFilename}}`
+      ];
+      return out.join("\n\n");
+    } else if (rawData.startsWith("data:image")) {
+      imageCounter++;
+      let extension = "png";
+      if (rawData.includes("image/jpeg") || rawData.includes("image/jpg")) extension = "jpg";
+      const prefix = currentPrefix ? `${currentPrefix}_` : "";
+      const imgFilename = `${prefix}cert_page_${imageCounter}.${extension}`;
+      const base64Data = rawData.includes(",") ? rawData.split(",")[1] : rawData;
+      extractedImages.push({ filename: imgFilename, base64: base64Data });
+
+      const out = [
+        "\\addcontentsline{toc}{chapter}{Certificate}",
+        `\\includepdf[pages=1, pagecommand={\\thispagestyle{empty}}]{${imgFilename}}`
+      ];
+      return out.join("\n\n");
+    }
+  }
+
+  // ── Mode 2: Puppeteer HTML-to-Vector PDF Engine ──
+  if (certData.vectorPdfFilename) {
+    const out = [
+      "\\addcontentsline{toc}{chapter}{Certificate}",
+      `\\includepdf[pages=1, pagecommand={\\thispagestyle{empty}}]{${certData.vectorPdfFilename}}`
+    ];
+    return out.join("\n\n");
+  }
+
+  // ── Mode 3: Clean Native Vector TeX Flow Renderer (Fallback) ──
+  return buildCertificateCanvasLatexFlow(certData, metadata);
+}
+
+// Flow-based certificate renderer with non-overlapping elements
+function buildCertificateCanvasLatexFlow(certData, metadata) {
+  const lines = [];
+
+  lines.push("\\clearpage");
+  lines.push("\\newgeometry{top=2.2cm, bottom=2cm, left=2.2cm, right=2.2cm}"); // Remove document left=3.5cm margin for Certificate page only
+  lines.push("\\thispagestyle{empty}"); // Suppress running header/footer for Certificate page
+  lines.push("\\addcontentsline{toc}{chapter}{Certificate}");
+
+  // Optional Frame / Border
+  const useBorder = certData.borderStyle && certData.borderStyle !== "none";
+  if (useBorder) {
+    lines.push("\\begin{mdframed}[linewidth=1.5pt, innerleftmargin=20pt, innerrightmargin=20pt, innertopmargin=15pt, innerbottommargin=15pt]");
+  }
+
+  const offsets = certData.offsets || {};
+
+  // 1. Logo
+  if (certData.logo?.url) {
+    const alignEnv = certData.logo.alignment === "left" ? "flushleft" : certData.logo.alignment === "right" ? "flushright" : "center";
+    const logoCm = ((certData.logo.width || 120) / 40).toFixed(1); // convert px to cm
+    const logoXmm = Math.round((certData.logo.x || 0) / 4);
+    const logoYmm = Math.max(0, Math.round((certData.logo.y || 0) / 4));
+
+    let logoFilename = certData.logo.url;
+    if (logoFilename.startsWith("data:image")) {
+      imageCounter++;
+      let extension = logoFilename.split(";")[0].split("/")[1]?.split("+")[0] || "png";
+      if (extension === "webp" || extension === "svg" || extension === "bmp") {
+        extension = "png";
+      }
+      const prefix = currentPrefix ? `${currentPrefix}_` : "";
+      logoFilename = `${prefix}cert_logo_${imageCounter}.${extension}`;
+      const base64Data = certData.logo.url.split(",")[1];
+      extractedImages.push({ filename: logoFilename, base64: base64Data });
+    }
+
+    if (logoYmm > 0) {
+      lines.push(`\\vspace*{${logoYmm}mm}`);
+    }
+
+    let logoContent = `\\begin{${alignEnv}}\n\\includegraphics[width=${logoCm}cm,height=3.5cm,keepaspectratio]{${logoFilename}}\n\\end{${alignEnv}}`;
+    if (logoXmm !== 0) {
+      logoContent = `\\noindent\\hspace*{${logoXmm}mm}\\parbox{\\textwidth}{\n${logoContent}\n}`;
+    }
+    lines.push(logoContent);
+    lines.push("\\vspace{2mm}");
+  }
+
+  // 2. Header (College & Department)
+  const college = certData.college || (certData.institution ? certData.college : "");
+  const dept = certData.institution || "";
+
+  if (college || dept) {
+    const headerXmm = Math.round((offsets.header?.x || 0) / 4);
+    const headerYmm = Math.max(0, Math.round((offsets.header?.y || 0) / 4));
+    
+    if (headerYmm > 0) {
+      lines.push(`\\vspace*{${headerYmm}mm}`);
+    }
+
+    let headerLines = [];
+    headerLines.push("\\begin{center}");
+    if (college) {
+      headerLines.push(`{\\fontsize{14pt}{18pt}\\selectfont\\bfseries ${escapeLatex(college.toUpperCase())}}\\\\[3pt]`);
+    }
+    if (dept) {
+      headerLines.push(`{\\fontsize{11pt}{15pt}\\selectfont\\bfseries ${escapeLatex(dept.toUpperCase())}}\\\\[8pt]`);
+    }
+    headerLines.push("\\end{center}");
+
+    let headerContent = headerLines.join("\n");
+    if (headerXmm !== 0) {
+      headerContent = `\\noindent\\hspace*{${headerXmm}mm}\\parbox{\\textwidth}{\n${headerContent}\n}`;
+    }
+    lines.push(headerContent);
+  }
+
+  // 3. Title
+  if (certData.title) {
+    const titleXmm = Math.round((offsets.title?.x || 0) / 4);
+    const titleYmm = Math.max(0, Math.round((offsets.title?.y || 0) / 4));
+
+    if (titleYmm > 0) {
+      lines.push(`\\vspace*{${titleYmm}mm}`);
+    }
+
+    let titleContent = `\\begin{center}\n{\\fontsize{18pt}{22pt}\\selectfont\\bfseries \\uline{${escapeLatex(certData.title.toUpperCase())}}}\\\\[12pt]\n\\end{center}`;
+    if (titleXmm !== 0) {
+      titleContent = `\\noindent\\hspace*{${titleXmm}mm}\\parbox{\\textwidth}{\n${titleContent}\n}`;
+    }
+    lines.push(titleContent);
+  }
+
+  // 4. Body Paragraph
+  if (certData.body) {
+    const bodyXmm = Math.round((offsets.body?.x || 0) / 4);
+    const bodyYmm = Math.max(0, Math.round((offsets.body?.y || 0) / 4));
+
+    if (bodyYmm > 0) {
+      lines.push(`\\vspace*{${bodyYmm}mm}`);
+    }
+
+    let bodyText = certData.body;
+    bodyText = bodyText.replace(/\[PROJECT TITLE\]/gi, metadata.title || "Untitled Project");
+    bodyText = bodyText.replace(/\[CANDIDATE NAME\]/gi, metadata.authors || "Candidate Name");
+    
+    let bodyContent = `{\\onehalfspacing\n${escapeLatex(bodyText)}\n}`;
+    if (bodyXmm !== 0) {
+      bodyContent = `\\noindent\\hspace*{${bodyXmm}mm}\\parbox{\\textwidth}{\n${bodyContent}\n}`;
+    }
+    lines.push(bodyContent);
+    lines.push("\\vspace{6mm}");
+  }
+
+  // 5. Custom Data Tables
+  if (certData.customTables && certData.customTables.length > 0) {
+    for (const tbl of certData.customTables) {
+      if (!tbl.headers || tbl.headers.length === 0) continue;
+      const vSpaceXmm = Math.round((tbl.x || 0) / 4);
+      const vSpaceYmm = Math.max(0, Math.round((tbl.y || 0) / 4));
+
+      if (vSpaceYmm > 0) {
+        lines.push(`\\vspace*{${vSpaceYmm}mm}`);
+      }
+      
+      let tblLines = [];
+      tblLines.push("\\begin{center}");
+      if (tbl.title) {
+        tblLines.push(`{\\small\\textbf{${escapeLatex(tbl.title)}}}\\\\[4pt]`);
+      }
+      const colCount = tbl.headers.length;
+      const alignSpec = `|${new Array(colCount).fill("c").join("|")}|`;
+      tblLines.push(`\\begin{tabular}{${alignSpec}}`);
+      tblLines.push("\\hline");
+
+      const headerCells = tbl.headers.map((h) => `\\textbf{${escapeLatex(h)}}`).join(" & ");
+      tblLines.push(`${headerCells} \\\\ \\hline`);
+
+      for (const row of tbl.rows || []) {
+        const rowCells = row.map((c) => escapeLatex(c || "")).join(" & ");
+        tblLines.push(`${rowCells} \\\\ \\hline`);
+      }
+
+      tblLines.push("\\end{tabular}");
+      tblLines.push("\\end{center}");
+      
+      let tblContent = tblLines.join("\n");
+      if (vSpaceXmm !== 0) {
+        tblContent = `\\noindent\\hspace*{${vSpaceXmm}mm}\\parbox{\\textwidth}{\n${tblContent}\n}`;
+      }
+      lines.push(tblContent);
+      lines.push("\\vspace{4mm}");
+    }
+  }
+
+  // 6. Signatures Grid
+  const sigs = certData.signatures || [];
+  if (sigs.length > 0) {
+    const sigXmm = Math.round((offsets.signatures?.x || 0) / 4);
+    const sigYmm = Math.max(0, Math.round((offsets.signatures?.y || 0) / 4));
+    
+    // Always push signatures & Date/Place footer to bottom of page initially
+    lines.push("\\vfill"); 
+    if (sigYmm > 0) {
+      lines.push(`\\vspace*{${sigYmm}mm}`);
+    }
+
+    const colCount = Math.min(sigs.length, 3);
+    const colSpec = colCount === 3 ? ">{\\centering\\arraybackslash}p{0.31\\textwidth} >{\\centering\\arraybackslash}p{0.31\\textwidth} >{\\centering\\arraybackslash}p{0.31\\textwidth}" : colCount === 2 ? ">{\\centering\\arraybackslash}p{0.46\\textwidth} >{\\centering\\arraybackslash}p{0.46\\textwidth}" : ">{\\centering\\arraybackslash}p{0.9\\textwidth}";
+
+    let sigLines = [];
+    sigLines.push("\\noindent");
+    sigLines.push(`\\begin{tabular}{@{} ${colSpec} @{}}`);
+
+    const lineCells = sigs.map(() => "\\rule{0.85\\linewidth}{0.6pt}").join(" & ");
+    sigLines.push(`${lineCells} \\\\[4pt]`);
+
+    const titleCells = sigs.map((s) => `\\textbf{${escapeLatex(s.title)}}`).join(" & ");
+    sigLines.push(`${titleCells} \\\\[2pt]`);
+
+    const nameCells = sigs.map((s) => s.name ? `{\\small (${escapeLatex(s.name)})}` : "").join(" & ");
+    sigLines.push(`${nameCells}`);
+
+    sigLines.push("\\end{tabular}");
+    
+    let sigContent = sigLines.join("\n");
+    if (sigXmm !== 0) {
+      sigContent = `\\noindent\\hspace*{${sigXmm}mm}\\parbox{\\textwidth}{\n${sigContent}\n}`;
+    }
+    lines.push(sigContent);
+    lines.push("\\vspace{4mm}");
+  }
+
+  // 7. Date & Place Footer
+  if (certData.datePlace) {
+    const datePlaceXmm = Math.round((offsets.datePlace?.x || 0) / 4);
+    const datePlaceYmm = Math.max(0, Math.round((offsets.datePlace?.y || 0) / 4));
+    
+    if (datePlaceYmm > 0) {
+      lines.push(`\\vspace*{${datePlaceYmm}mm}`);
+    }
+
+    let dpContent = `\\noindent\n{\\singlespacing\\small\n${escapeLatex(certData.datePlace).replace(/\n/g, "\\\\ ")}\n}`;
+    if (datePlaceXmm !== 0) {
+      dpContent = `\\noindent\\hspace*{${datePlaceXmm}mm}\\parbox{\\textwidth}{\n${dpContent}\n}`;
+    }
+    lines.push(dpContent);
+  }
+
+  if (useBorder) {
+    lines.push("\\end{mdframed}");
+  }
+
+  lines.push("\\clearpage");
+  lines.push("\\restoregeometry"); // Restore standard 3.5cm document left margin for Chapter 1 and rest of document
+
+  return lines.join("\n\n");
+}
+
   // ── Front matter sections (certificate, acknowledgement, etc.) ──
   for (const section of frontMatter) {
     if (section.id === "title_page" || section.id === "toc") continue;
+
+    if (section.content && section.content.isCertificateCanvas) {
+      parts.push(buildCertificateCanvasLatex(section.content, metadata));
+      continue;
+    }
+
     const content = convertTipTapToLatex(section.content, templateId);
     if (content.trim()) {
       const label = escapeLatex(section.label);
@@ -489,7 +867,6 @@ function buildTitlePage(meta) {
     "\\vfill",
     year ? `{\\large ${year}\\par}` : "",
     "\\end{titlepage}",
-    "\\newpage",
   ]
     .filter((l) => l !== "")
     .join("\n");

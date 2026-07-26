@@ -43,16 +43,19 @@ const DANGEROUS_PATTERNS = [
 function escapeLatex(text) {
   if (!text || typeof text !== 'string') return '';
 
-  // 1. Strip emoji characters and unprintable control characters
+  // 1. Strip emoji characters, invalid surrogates, U+FFFD, and control characters
   let cleaned = text
-    .replace(/[\uFFFD\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '') // Control chars
+    .replace(/[\uFFFD\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\uD800-\uDFFF]/g, '') // Control & surrogate chars
     .replace(/[\u{1F000}-\u{1FFFF}]/gu, '')   // Emoticons, symbols, etc.
     .replace(/[\u{2600}-\u{27BF}]/gu, '')      // Misc symbols, dingbats
     .replace(/[\u{FE00}-\u{FE0F}]/gu, '')      // Variation selectors
     .replace(/[\u{E0020}-\u{E007F}]/gu, '');   // Tags
 
-  // 2. Map common unicode arrows and symbols before stripping
+  // 2. Normalize smart quotes, dashes, and common unicode symbols
   cleaned = cleaned
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[–—]/g, '-')
     .replace(/→/g, '$\\rightarrow$')
     .replace(/←/g, '$\\leftarrow$')
     .replace(/↓/g, '$\\downarrow$')

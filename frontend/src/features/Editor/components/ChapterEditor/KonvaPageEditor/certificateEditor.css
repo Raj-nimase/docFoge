@@ -1,0 +1,961 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   Certificate canvas studio
+
+   Scoped under .cert-studio so nothing here reaches the Tiptap editor.
+   Colours come from the app's theme tokens; local tokens below only cover
+   canvas-specific surfaces (the workspace backdrop, guides) that the global
+   palette has no entry for.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.cert-studio {
+  --cs-panel: #ffffff;
+  --cs-workspace: #eceff3;
+  --cs-hairline: var(--border, rgba(198, 198, 205, 0.35));
+  --cs-hairline-strong: var(--border-hover, #c6c6cd);
+  --cs-ink: var(--text, #0f172a);
+  --cs-ink-muted: var(--text-muted, #505f76);
+  --cs-ink-faint: var(--text-faint, #94a3b8);
+  --cs-brand: #2563eb;
+  --cs-brand-soft: #eff6ff;
+  --cs-danger: #dc2626;
+  --cs-danger-soft: #fef2f2;
+  --cs-radius: 8px;
+  --cs-radius-sm: 6px;
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--cs-workspace);
+  font-family: var(--font-sans, system-ui, sans-serif);
+  color: var(--cs-ink);
+}
+
+/* ── Shared control primitives ───────────────────────────────────────────── */
+
+.cs-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--cs-hairline-strong);
+  border-radius: var(--cs-radius-sm);
+  background: #ffffff;
+  color: var(--cs-ink);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.cs-btn:hover:not(:disabled) {
+  background: #f6f8fa;
+  border-color: var(--cs-ink-faint);
+}
+
+.cs-btn:active:not(:disabled) {
+  background: #eef1f5;
+}
+
+/* Selection-dependent controls are disabled, never hidden — hiding them made
+   the toolbar reflow and buttons jump out from under the cursor mid-click. */
+.cs-btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.cs-btn:focus-visible,
+.cs-tab:focus-visible,
+.cs-field input:focus-visible,
+.cs-field select:focus-visible,
+.cs-field textarea:focus-visible,
+.cs-layer-row:focus-visible,
+.cs-icon-btn:focus-visible {
+  outline: 2px solid var(--cs-brand);
+  outline-offset: 1px;
+}
+
+.cs-btn--icon {
+  width: 32px;
+  padding: 0;
+}
+
+.cs-btn--primary {
+  background: var(--cs-brand);
+  border-color: var(--cs-brand);
+  color: #ffffff;
+  font-weight: 600;
+  padding: 0 14px;
+}
+
+.cs-btn--primary:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.cs-btn--danger {
+  color: var(--cs-danger);
+  border-color: #fca5a5;
+  background: var(--cs-danger-soft);
+}
+
+.cs-btn--danger:hover:not(:disabled) {
+  background: #fee2e2;
+  border-color: var(--cs-danger);
+}
+
+.cs-btn--active {
+  background: var(--cs-brand-soft);
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.cs-btn--ghost {
+  border-color: transparent;
+  background: transparent;
+}
+
+.cs-btn--ghost:hover:not(:disabled) {
+  background: rgba(15, 23, 42, 0.06);
+  border-color: transparent;
+}
+
+.cs-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--cs-ink-faint);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.cs-icon-btn:hover {
+  background: rgba(15, 23, 42, 0.07);
+  color: var(--cs-ink);
+}
+
+.cs-icon-btn--on {
+  color: var(--cs-brand);
+}
+
+.cs-icon-btn--danger:hover {
+  background: var(--cs-danger-soft);
+  color: var(--cs-danger);
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+
+.cs-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 14px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-hairline);
+  flex-shrink: 0;
+}
+
+.cs-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cs-toolbar-spacer {
+  flex: 1 1 auto;
+}
+
+.cs-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--cs-hairline);
+  flex-shrink: 0;
+}
+
+/* ── Dropdown menus (shapes, zoom) ───────────────────────────────────────── */
+
+.cs-menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.cs-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  min-width: 190px;
+  padding: 4px;
+  background: #ffffff;
+  border: 1px solid var(--cs-hairline-strong);
+  border-radius: var(--cs-radius);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+}
+
+.cs-menu--right {
+  left: auto;
+  right: 0;
+}
+
+.cs-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border: none;
+  border-radius: var(--cs-radius-sm);
+  background: transparent;
+  color: var(--cs-ink);
+  font-family: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cs-menu-item:hover {
+  background: #f3f5f8;
+}
+
+.cs-menu-item--on {
+  color: var(--cs-brand);
+  font-weight: 600;
+}
+
+.cs-zoom {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: #f1f3f6;
+  border-radius: var(--cs-radius-sm);
+}
+
+.cs-zoom-value {
+  min-width: 52px;
+  height: 28px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--cs-ink);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.cs-zoom-value:hover {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+/* ── Workspace + canvas ──────────────────────────────────────────────────── */
+
+.cs-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.cs-canvas-wrap {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: auto;
+  background: var(--cs-workspace);
+  /* Subtle grid so the page edge is legible against the backdrop. */
+  background-image:
+    linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.cs-canvas-wrap--panning {
+  cursor: grab;
+}
+
+.cs-canvas-wrap--panning-active {
+  cursor: grabbing;
+}
+
+/* align-items:flex-start with auto side margins centres the page when it fits
+   and lets it scroll when it doesn't. `center` clipped the top of tall pages. */
+.cs-canvas-inner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  width: fit-content;
+  min-width: 100%;
+  padding: 32px;
+  box-sizing: border-box;
+}
+
+.cs-page-shadow {
+  margin: 0 auto;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.1), 0 16px 48px rgba(15, 23, 42, 0.12);
+  background: #ffffff;
+  flex-shrink: 0;
+}
+
+/* Overlay used for double-click-to-edit text. Mirrors the Konva node's
+   typography so editing looks like the result. */
+.cs-text-overlay {
+  position: absolute;
+  z-index: 30;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--cs-brand);
+  border-radius: 2px;
+  outline: none;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+  overflow: hidden;
+  resize: none;
+  box-sizing: border-box;
+}
+
+.cs-canvas-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #ffffff;
+  font-size: 11.5px;
+  font-weight: 500;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+}
+
+/* ── Inspector ───────────────────────────────────────────────────────────── */
+
+.cs-inspector {
+  width: 312px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--cs-panel);
+  border-left: 1px solid var(--cs-hairline);
+}
+
+.cs-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 8px 8px 0;
+  border-bottom: 1px solid var(--cs-hairline);
+  flex-shrink: 0;
+}
+
+.cs-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--cs-ink-muted);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.cs-tab:hover {
+  color: var(--cs-ink);
+}
+
+.cs-tab--active {
+  color: var(--cs-brand);
+  border-bottom-color: var(--cs-brand);
+}
+
+.cs-tab-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cs-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cs-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--cs-ink-faint);
+}
+
+.cs-hint {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--cs-ink-muted);
+}
+
+.cs-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--cs-ink-faint);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.cs-row {
+  display: flex;
+  gap: 8px;
+}
+
+.cs-row > * {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Fields ──────────────────────────────────────────────────────────────── */
+
+.cs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cs-field label,
+.cs-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--cs-ink-muted);
+}
+
+.cs-field input[type="text"],
+.cs-field input[type="number"],
+.cs-field select,
+.cs-field textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--cs-hairline-strong);
+  border-radius: var(--cs-radius-sm);
+  background: #ffffff;
+  color: var(--cs-ink);
+  font-family: inherit;
+  font-size: 12.5px;
+  box-sizing: border-box;
+  transition: border-color 0.12s ease;
+}
+
+.cs-field input:hover,
+.cs-field select:hover,
+.cs-field textarea:hover {
+  border-color: var(--cs-ink-faint);
+}
+
+.cs-field textarea {
+  resize: vertical;
+  min-height: 72px;
+  line-height: 1.5;
+}
+
+.cs-field select {
+  cursor: pointer;
+}
+
+/* Colour swatch + hex entry pair. */
+.cs-color {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cs-color input[type="color"] {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  padding: 2px;
+  border: 1px solid var(--cs-hairline-strong);
+  border-radius: var(--cs-radius-sm);
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.cs-color input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 11.5px;
+  text-transform: lowercase;
+}
+
+.cs-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cs-range input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--cs-brand);
+  cursor: pointer;
+}
+
+.cs-range-value {
+  min-width: 38px;
+  text-align: right;
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--cs-ink-muted);
+}
+
+/* Segmented control — text alignment, orientation. */
+.cs-segments {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: #f1f3f6;
+  border-radius: var(--cs-radius-sm);
+}
+
+.cs-segment {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--cs-ink-muted);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.cs-segment:hover {
+  color: var(--cs-ink);
+}
+
+.cs-segment--active {
+  background: #ffffff;
+  color: var(--cs-brand);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.1);
+}
+
+/* Placeholder chips. */
+.cs-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.cs-chip {
+  padding: 4px 8px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: var(--cs-brand-soft);
+  color: #1d4ed8;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.cs-chip:hover {
+  background: #dbeafe;
+}
+
+/* ── Layers list ─────────────────────────────────────────────────────────── */
+
+.cs-layers {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cs-layer-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 6px 7px;
+  border: 1px solid transparent;
+  border-radius: var(--cs-radius-sm);
+  background: transparent;
+  color: var(--cs-ink);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.cs-layer-row:hover {
+  background: #f3f5f8;
+}
+
+.cs-layer-row--active {
+  background: var(--cs-brand-soft);
+  border-color: #bfdbfe;
+}
+
+.cs-layer-row--dragging {
+  opacity: 0.45;
+}
+
+.cs-layer-row--drop-target {
+  border-color: var(--cs-brand);
+  border-style: dashed;
+}
+
+.cs-layer-grip {
+  color: var(--cs-ink-faint);
+  cursor: grab;
+  display: flex;
+  flex-shrink: 0;
+}
+
+.cs-layer-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--cs-ink-muted);
+}
+
+.cs-layer-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cs-layer-row--hidden .cs-layer-name,
+.cs-layer-row--hidden .cs-layer-icon {
+  opacity: 0.45;
+}
+
+.cs-layer-actions {
+  display: flex;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+/* ── Table cell editor ───────────────────────────────────────────────────── */
+
+.cs-table-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cs-table-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.cs-table-tag {
+  width: 22px;
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--cs-ink-faint);
+}
+
+.cs-table-line input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid var(--cs-hairline-strong);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11.5px;
+  box-sizing: border-box;
+}
+
+.cs-table-card {
+  padding: 8px;
+  border: 1px solid var(--cs-hairline);
+  border-radius: var(--cs-radius-sm);
+  background: #f9fafb;
+}
+
+.cs-table-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--cs-ink-muted);
+}
+
+/* ── Storage meter ───────────────────────────────────────────────────────── */
+
+.cs-meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--cs-hairline);
+  border-radius: var(--cs-radius-sm);
+  background: #f9fafb;
+  font-size: 11px;
+  color: var(--cs-ink-muted);
+}
+
+.cs-meter--warn {
+  border-color: #fcd34d;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+/* ── Template gallery modal ──────────────────────────────────────────────── */
+
+.cs-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.cs-modal {
+  width: min(760px, 100%);
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.28);
+  overflow: hidden;
+}
+
+.cs-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--cs-hairline);
+}
+
+.cs-modal-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.cs-modal-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--cs-ink-muted);
+}
+
+.cs-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 20px;
+}
+
+.cs-template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.cs-template-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  border: 1px solid var(--cs-hairline-strong);
+  border-radius: var(--cs-radius);
+  background: #ffffff;
+  cursor: pointer;
+  overflow: hidden;
+  text-align: left;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease;
+}
+
+.cs-template-card:hover {
+  border-color: var(--cs-brand);
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.16);
+  transform: translateY(-2px);
+}
+
+.cs-template-card:focus-visible {
+  outline: 2px solid var(--cs-brand);
+  outline-offset: 2px;
+}
+
+/* Miniature wireframe of the template layout — enough to tell them apart
+   without paying to render four full Konva stages. */
+.cs-template-thumb {
+  position: relative;
+  height: 148px;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--cs-hairline);
+  overflow: hidden;
+}
+
+.cs-template-page {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.16);
+  overflow: hidden;
+}
+
+.cs-template-mark {
+  position: absolute;
+  border-radius: 1px;
+}
+
+.cs-template-meta {
+  padding: 10px 12px;
+}
+
+.cs-template-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--cs-ink);
+}
+
+.cs-template-dims {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--cs-ink-faint);
+}
+
+.cs-modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--cs-hairline);
+  background: #f9fafb;
+}
+
+.cs-warn-text {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: #92400e;
+}
+
+/* ── Toast ───────────────────────────────────────────────────────────────── */
+
+.cs-toast {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: 380px;
+  padding: 10px 14px;
+  border-radius: var(--cs-radius);
+  background: #1f2937;
+  color: #ffffff;
+  font-size: 12.5px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.3);
+}
+
+.cs-toast--error {
+  background: #991b1b;
+}
+
+.cs-spin {
+  animation: cs-spin 0.9s linear infinite;
+}
+
+@keyframes cs-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cs-spin {
+    animation-duration: 2.4s;
+  }
+  .cs-template-card,
+  .cs-btn,
+  .cs-tab {
+    transition: none;
+  }
+  .cs-template-card:hover {
+    transform: none;
+  }
+}
+
+/* ── Narrow viewports ────────────────────────────────────────────────────── */
+
+@media (max-width: 1180px) {
+  .cs-inspector {
+    width: 272px;
+  }
+}
+
+@media (max-width: 900px) {
+  .cs-body {
+    flex-direction: column;
+  }
+  .cs-inspector {
+    width: 100%;
+    max-height: 46%;
+    border-left: none;
+    border-top: 1px solid var(--cs-hairline);
+  }
+}

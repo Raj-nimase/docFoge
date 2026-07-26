@@ -33,7 +33,18 @@ export default function Editor({ onGoToDashboard, onLogout }) {
     }
   }, [compileStatus, isStandalone]);
 
-  const bodyClassName = `editor-body ${isStandalone ? (activeTab === 'editor' ? 'pwa-view-editor' : 'pwa-view-preview') : ''}`;
+  const activeChapterId = useAcaStore((s) => s.activeChapterId);
+  const getActiveSection = useAcaStore((s) => s.getActiveSection);
+
+  const activeSection = getActiveSection();
+  const isCertificateActive =
+    activeChapterId === "certificate" ||
+    (activeSection &&
+      (activeSection.id === "certificate" ||
+        activeSection.id?.toLowerCase().includes("certificate") ||
+        activeSection.label?.toLowerCase() === "certificate"));
+
+  const bodyClassName = `editor-body ${isCertificateActive ? 'editor-body--certificate' : ''} ${isStandalone ? (activeTab === 'editor' ? 'pwa-view-editor' : 'pwa-view-preview') : ''}`;
 
   return (
     <div className="editor-layout">
@@ -41,7 +52,7 @@ export default function Editor({ onGoToDashboard, onLogout }) {
       <div className={bodyClassName}>
         <LeftPanel collapsed={leftCollapsed} onToggleCollapse={() => setLeftCollapsed(v => !v)} />
         <EditorPanel />
-        <PreviewPanel />
+        {!isCertificateActive && <PreviewPanel />}
       </div>
 
       {isStandalone && (

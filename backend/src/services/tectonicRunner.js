@@ -134,7 +134,14 @@ async function compileTex(latexSource, jobId) {
   const cachedPdfPath = path.join(PDF_CACHE_DIR, `${hash}.pdf`);
 
   ts(`Writing .tex (${latexSource.length} bytes)`);
-  fs.writeFileSync(texPath, latexSource, 'utf8');
+  const cleanLatexSource = (latexSource || "")
+    .replace(/[\uFFFD]/g, "")
+    .replace(/[\uD800-\uDFFF]/g, "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'");
+
+  fs.writeFileSync(texPath, cleanLatexSource, 'utf8');
   ts('Write done. Spawning Tectonic…');
 
   // ── 3. Determine pass count ───────────────────────────────────────────────
@@ -183,8 +190,14 @@ function runTectonic(texPath, outDir, { multiPass = true } = {}) {
     let stdout = '';
     let stderr = '';
 
-    proc.stdout.on('data', d => { stdout += d.toString(); });
-    proc.stderr.on('data', d => { stderr += d.toString(); });
+    proc.stdout.on('data', d => {
+      stdout += d.toString();
+      if (stdout.length > 500000) stdout = stdout.slice(-250000);
+    });
+    proc.stderr.on('data', d => {
+      stderr += d.toString();
+      if (stderr.length > 500000) stderr = stderr.slice(-250000);
+    });
 
     proc.on('error', err => {
       reject(new Error(`Failed to spawn tectonic: ${err.message}`));
