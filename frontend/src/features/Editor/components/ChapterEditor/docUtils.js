@@ -105,7 +105,7 @@ export function splitSingleDocToProject(singleDoc, existingFrontMatter = [], exi
 
   for (const node of singleDoc.content) {
     if (node.type === "heading" && node.attrs?.level === 1) {
-      const text = (node.content?.[0]?.text || "").trim();
+      const text = (node.content ? node.content.map(c => c.text || '').join('') : '').trim();
       const normText = text.toLowerCase();
 
       // Check if heading matches any non-auto frontMatter item (except certificate)

@@ -40,6 +40,113 @@ const DANGEROUS_PATTERNS = [
  * @param {string} text
  * @returns {string}
  */
+const UNICODE_LATEX_MAP = {
+  'α': '$\\alpha$',
+  'β': '$\\beta$',
+  'γ': '$\\gamma$',
+  'δ': '$\\delta$',
+  'ε': '$\\varepsilon$',
+  'ζ': '$\\zeta$',
+  'η': '$\\eta$',
+  'θ': '$\\theta$',
+  'ι': '$\\iota$',
+  'κ': '$\\kappa$',
+  'λ': '$\\lambda$',
+  'μ': '$\\mu$',
+  'ν': '$\\nu$',
+  'ξ': '$\\xi$',
+  'π': '$\\pi$',
+  'ρ': '$\\rho$',
+  'σ': '$\\sigma$',
+  'τ': '$\\tau$',
+  'υ': '$\\upsilon$',
+  'φ': '$\\phi$',
+  'χ': '$\\chi$',
+  'ψ': '$\\psi$',
+  'ω': '$\\omega$',
+  'Γ': '$\\Gamma$',
+  'Δ': '$\\Delta$',
+  'Θ': '$\\Theta$',
+  'Λ': '$\\Lambda$',
+  'Ξ': '$\\Xi$',
+  'Π': '$\\Pi$',
+  'Σ': '$\\Sigma$',
+  'Φ': '$\\Phi$',
+  'Ψ': '$\\Psi$',
+  'Ω': '$\\Omega$',
+  '∞': '$\\infty$',
+  '∇': '$\\nabla$',
+  '∂': '$\\partial$',
+  '∑': '$\\sum$',
+  '∫': '$\\int$',
+  '∏': '$\\prod$',
+  '√': '$\\sqrt{}$',
+  '⊗': '$\\otimes$',
+  '⊕': '$\\oplus$',
+  '≤': '$\\le$',
+  '≥': '$\\ge$',
+  '≈': '$\\approx$',
+  '≠': '$\\ne$',
+  '≡': '$\\equiv$',
+  '±': '$\\pm$',
+  '∓': '$\\mp$',
+  '×': '$\\times$',
+  '÷': '$\\div$',
+  '·': '$\\cdot$',
+  '⋅': '$\\cdot$',
+  '∈': '$\\in$',
+  '∉': '$\\notin$',
+  '⊂': '$\\subset$',
+  '⊆': '$\\subseteq$',
+  '∪': '$\\cup$',
+  '∩': '$\\cap$',
+  '∅': '$\\emptyset$',
+  '∀': '$\\forall$',
+  '∃': '$\\exists$',
+  '∝': '$\\propto$',
+  '°': '$^{\\circ}$',
+  '✔': '$\\checkmark$',
+  '✓': '$\\checkmark$',
+  '☑': '$\\checkmark$',
+  '✅': '$\\checkmark$',
+  '❌': '$\\times$',
+  '✗': '$\\times$',
+  '✕': '$\\times$',
+  '✖': '$\\times$',
+  '✘': '$\\times$',
+  '❎': '$\\times$',
+  '⚠️': '$\\mathbf{!}$',
+  '⚠': '$\\mathbf{!}$',
+  '•': '$\\bullet$',
+  '◦': '$\\circ$',
+  '▪': '$\\blacksquare$',
+  '▫': '$\\square$',
+  '★': '$\\star$',
+  '☆': '$\\star$',
+  '→': '$\\rightarrow$',
+  '←': '$\\leftarrow$',
+  '↓': '$\\downarrow$',
+  '↑': '$\\uparrow$',
+  '↔': '$\\leftrightarrow$',
+  '⇒': '$\\Rightarrow$',
+  '⇐': '$\\Leftarrow$',
+  '⇔': '$\\Leftrightarrow$',
+  '▼': '$\\downarrow$',
+  '▲': '$\\uparrow$',
+  '◄': '$\\leftarrow$',
+  '►': '$\\rightarrow$',
+};
+
+const UNICODE_MATH_REGEX = new RegExp(
+  Object.keys(UNICODE_LATEX_MAP).map(k => k.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')).join('|'),
+  'g'
+);
+
+/**
+ * Escape special LaTeX characters in a user-provided string.
+ * @param {string} text
+ * @returns {string}
+ */
 function escapeLatex(text) {
   if (!text || typeof text !== 'string') return '';
 
@@ -47,35 +154,14 @@ function escapeLatex(text) {
   let cleaned = text
     .replace(/[\uFFFD\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\uD800-\uDFFF]/g, '') // Control & surrogate chars
     .replace(/[\u{1F000}-\u{1FFFF}]/gu, '')   // Emoticons, symbols, etc.
-    .replace(/[\u{2600}-\u{27BF}]/gu, '')      // Misc symbols, dingbats
     .replace(/[\u{FE00}-\u{FE0F}]/gu, '')      // Variation selectors
     .replace(/[\u{E0020}-\u{E007F}]/gu, '');   // Tags
 
-  // 2. Normalize smart quotes, dashes, and common unicode symbols
+  // 2. Normalize smart quotes and dashes
   cleaned = cleaned
     .replace(/[“”]/g, '"')
     .replace(/[‘’]/g, "'")
-    .replace(/[–—]/g, '-')
-    .replace(/→/g, '$\\rightarrow$')
-    .replace(/←/g, '$\\leftarrow$')
-    .replace(/↓/g, '$\\downarrow$')
-    .replace(/↑/g, '$\\uparrow$')
-    .replace(/↔/g, '$\\leftrightarrow$')
-    .replace(/⇒/g, '$\\Rightarrow$')
-    .replace(/⇐/g, '$\\Leftarrow$')
-    .replace(/⇔/g, '$\\Leftrightarrow$')
-    .replace(/▼/g, '$\\downarrow$')
-    .replace(/▲/g, '$\\uparrow$')
-    .replace(/◄/g, '$\\leftarrow$')
-    .replace(/►/g, '$\\rightarrow$');
-
-  // 3. Strip mathematical operator symbols that crash in text mode
-  //    ∫ (U+222B), ∑ (U+2211), ∏ (U+220F), √ (U+221A), ∞ (U+221E),
-  //    ± (U+00B1), × (U+00D7), ÷ (U+00F7), etc.
-  cleaned = cleaned
-    .replace(/[\u2200-\u22FF]/g, '')   // Mathematical Operators block
-    .replace(/[\u2190-\u21FF]/g, '')   // Arrows block
-    .replace(/[\u2100-\u214F]/g, '');  // Letterlike Symbols block
+    .replace(/[–—]/g, '-');
 
   // 3. Normalize unicode whitespace to regular spaces
   cleaned = cleaned.replace(/[\u00A0\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u202F\u205F]/g, ' ');
@@ -84,7 +170,12 @@ function escapeLatex(text) {
   cleaned = cleaned.replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
 
   // 5. Standard LaTeX character escaping
-  return cleaned.replace(ESCAPE_REGEX, char => ESCAPE_MAP[char] || char);
+  cleaned = cleaned.replace(ESCAPE_REGEX, char => ESCAPE_MAP[char] || char);
+
+  // 6. Convert Unicode math symbols to LaTeX math mode AFTER character escaping
+  cleaned = cleaned.replace(UNICODE_MATH_REGEX, m => UNICODE_LATEX_MAP[m] || m);
+
+  return cleaned;
 }
 
 /**

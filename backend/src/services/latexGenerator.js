@@ -122,13 +122,14 @@ function buildPreamble(templateId, metadata) {
     "\\usepackage{graphicx}",
     "\\usepackage{pdfpages}",
     "\\usepackage{caption}",
-    "\\captionsetup[table]{position=below, skip=10pt}",
+    "\\captionsetup[table]{position=above, skip=8pt}",
     "\\captionsetup[figure]{position=below, skip=10pt}",
     "\\usepackage{booktabs}",
     "\\usepackage{array}",
     "\\usepackage{longtable}",
     "\\usepackage{verbatim}",
     "\\usepackage{tabularx}",
+    "\\usepackage{xltabular}",
     "\\usepackage{listings}",
     "\\usepackage{xcolor}",
     "\\usepackage[framemethod=default]{mdframed}",
@@ -1162,20 +1163,105 @@ function buildList(node, env, templateId) {
 function convertTable(tableNode, templateId) {
   const rows = tableNode.content || [];
   if (!rows.length) return "";
-  const caption =
-    tableNode.attrs && tableNode.attrs.caption
-      ? escapeLatex(tableNode.attrs.caption)
-      : "Table";
+  const rawCaption = tableNode.attrs && tableNode.attrs.caption
+    ? tableNode.attrs.caption.trim()
+    : "";
+  const caption = rawCaption ? escapeLatex(rawCaption) : "Table";
   const colCount = rows[0] && rows[0].content ? rows[0].content.length : 1;
-  const colSpec = Array(colCount).fill("X").join(" | ");
+
+  // Calculate max text length per column to determine column types (short vs expanding)
+  const getCellRawLength = (cell) => {
+    if (!cell || !cell.content) return 0;
+    let len = 0;
+    const walk = (n) => {
+      if (n.text) len += n.text.length;
+      if (n.attrs && n.attrs.latex) len += n.attrs.latex.length;
+      if (n.content && Array.isArray(n.content)) {
+        n.content.forEach(walk);
+      }
+    };
+    cell.content.forEach(walk);
+    return len;
+  };
+
+  const colMaxLens = Array(colCount).fill(0);
+  for (const row of rows) {
+    const cells = row.content || [];
+    cells.forEach((cell, idx) => {
+      if (idx < colCount) {
+        const len = getCellRawLength(cell);
+        if (len > colMaxLens[idx]) {
+          colMaxLens[idx] = len;
+        }
+      }
+    });
+  }
+
+  const maxLenInTable = Math.max(...colMaxLens, 1);
+  const colSpecs = colMaxLens.map((len) => {
+    if (colCount >= 4 && len <= 10 && len < maxLenInTable) {
+      return "c";
+    }
+    return "X";
+  });
+
+  // Guarantee at least one X column
+  if (!colSpecs.includes("X")) {
+    let maxIdx = 0;
+    for (let i = 1; i < colCount; i++) {
+      if (colMaxLens[i] > colMaxLens[maxIdx]) maxIdx = i;
+    }
+    colSpecs[maxIdx] = "X";
+  }
+
+  const colSpec = colSpecs.join(" | ");
 
   const isIEEE = templateId === "ieee-paper";
   const tableWidth = isIEEE ? "\\columnwidth" : "\\textwidth";
 
-  let tex = `\\begin{table}[H]\n\\centering\n`;
-  tex += `\\begin{tabularx}{${tableWidth}}{| ${colSpec} |}\n\\hline\n`;
+  const hasHeaderRow = rows[0] && rows[0].content && rows[0].content.some(c => c.type === "tableHeader");
 
-  for (const row of rows) {
+  const isWideTable = colCount >= 6;
+  let tex = "\n";
+  if (isWideTable) {
+    tex += `{\\small\\setlength{\\tabcolsep}{4pt}\n`;
+  }
+
+  tex += `\\begin{xltabular}{${tableWidth}}{| ${colSpec} |}\n`;
+
+  if (caption) {
+    tex += `\\caption{${caption}} \\\\[6pt]\n`;
+  }
+
+  let startIdx = 0;
+  if (hasHeaderRow) {
+    const headerCells = (rows[0].content || []).map((cell) => {
+      const cellText = (cell.content || [])
+        .map((n) => convertNode(n, templateId))
+        .join(" ")
+        .trim();
+      return `\\textbf{${cellText}}`;
+    });
+    const headerRowStr = headerCells.join(" & ") + " \\\\\n\\hline\n";
+
+    tex += `\\hline\n` + headerRowStr + `\\endfirsthead\n\n`;
+
+    tex += `\\hline\n`;
+    if (caption) {
+      tex += `\\multicolumn{${colCount}}{c}{{\\small\\itshape Table \\thetable\\ -- continued from previous page}} \\\\\n\\hline\n`;
+    }
+    tex += headerRowStr + `\\endhead\n\n`;
+
+    tex += `\\hline\\multicolumn{${colCount}}{r}{{\\small\\itshape Continued on next page}} \\\\\n\\endfoot\n`;
+    tex += `\\endlastfoot\n\n`;
+
+    startIdx = 1;
+  } else {
+    tex += `\\hline\n\\endfirsthead\n\\hline\n\\endhead\n\\endfoot\n\\endlastfoot\n`;
+  }
+
+  for (let i = startIdx; i < rows.length; i++) {
+    const row = rows[i];
     const cells = (row.content || []).map((cell) => {
       const cellText = (cell.content || [])
         .map((n) => convertNode(n, templateId))
@@ -1189,7 +1275,11 @@ function convertTable(tableNode, templateId) {
     tex += cells.join(" & ") + " \\\\\n\\hline\n";
   }
 
-  tex += `\\end{tabularx}\n\\vspace{6pt}\n\\caption{${caption}}\n\\end{table}`;
+  tex += `\\end{xltabular}\n`;
+  if (isWideTable) {
+    tex += `}\n`;
+  }
+  tex += `\n`;
   return tex;
 }
 

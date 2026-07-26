@@ -418,6 +418,7 @@ export function normalizeLatexPaste(text) {
   const isLatexPart = (l) => {
     const tr = (l || "").trim();
     if (!tr) return false;
+    if (tr.includes("|")) return false; // Markdown table rows must NOT be grouped as latex formula blocks
     if (/^\s*[*+\-•◦▪]\s/.test(tr) || /^\s*\d+[.)]\s/.test(tr)) return false; // Markdown list items must NOT be grouped as latex formula blocks
     if (/^\*[a-zA-Z]/.test(tr)) return false; // Markdown emphasis (*Text...) must NOT be latex lines
     if (/^[\[\]$$]/.test(tr)) return false;

@@ -252,6 +252,7 @@ async function warmUp() {
 \\usepackage{longtable}
 \\usepackage{verbatim}
 \\usepackage{tabularx}
+\\usepackage{xltabular}
 \\usepackage{listings}
 \\usepackage{xcolor}
 \\usepackage[framemethod=default]{mdframed}

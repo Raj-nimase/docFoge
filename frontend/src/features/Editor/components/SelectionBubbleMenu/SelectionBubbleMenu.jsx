@@ -9,6 +9,7 @@ import {
   Heading3,
   Pilcrow,
   Eraser,
+  Sigma,
 } from 'lucide-react';
 import {
   HEADING_LEVELS,
@@ -84,6 +85,19 @@ export default function SelectionBubbleMenu({ editor }) {
             title="Strikethrough"
           >
             <Strikethrough size={15} strokeWidth={2.25} />
+          </BubbleBtn>
+          <BubbleBtn
+            onClick={() => {
+              const { from, to } = editor.state.selection;
+              const text = editor.state.doc.textBetween(from, to, ' ');
+              editor.chain().focus().deleteSelection().insertContent({
+                type: 'math',
+                attrs: { latex: text.trim() || 'x', display: false },
+              }).run();
+            }}
+            title="Convert to math equation"
+          >
+            <Sigma size={15} strokeWidth={2.25} />
           </BubbleBtn>
         </div>
       </div>

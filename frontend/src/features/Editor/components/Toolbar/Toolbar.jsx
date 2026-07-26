@@ -156,10 +156,75 @@ export default function EditorToolbar({ editor }) {
     else if (selectedText.includes('|')) delimiter = '|';
     else if (selectedText.includes(',')) delimiter = ',';
 
-    const lines = selectedText.split('\n').filter(l => l.trim());
+    const lines = selectedText
+      .split('\n')
+      .map(l => l.trim())
+      .filter(l => l && !/^\s*\|?[\s:|\\-]*-[\s:|\\-]*\|?\s*$/.test(l));
+
     if (lines.length < 1) return;
 
-    const rows = lines.map(line => line.split(delimiter).map(cell => cell.trim()));
+    const parseLine = (line) => {
+      let s = line;
+      if (delimiter === '|' && s.startsWith('|')) s = s.slice(1);
+      if (delimiter === '|' && s.endsWith('|')) s = s.slice(0, -1);
+
+      if (delimiter !== '|') {
+        return s.split(delimiter).map((c) => c.trim());
+      }
+
+      const cells = [];
+      let currentCell = '';
+      let inMath = false;
+      let inDoubleMath = false;
+      let inCode = false;
+      let i = 0;
+
+      while (i < s.length) {
+        const char = s[i];
+        const nextChar = s[i + 1];
+
+        if (char === '\\' && (nextChar === '|' || nextChar === '$' || nextChar === '`')) {
+          currentCell += char + nextChar;
+          i += 2;
+          continue;
+        }
+
+        if (char === '`' && !inMath && !inDoubleMath) {
+          inCode = !inCode;
+          currentCell += char;
+          i++;
+          continue;
+        }
+
+        if (char === '$' && !inCode) {
+          if (nextChar === '$') {
+            inDoubleMath = !inDoubleMath;
+            currentCell += '$$';
+            i += 2;
+            continue;
+          } else {
+            inMath = !inMath;
+            currentCell += '$';
+            i++;
+            continue;
+          }
+        }
+
+        if (char === '|' && !inMath && !inDoubleMath && !inCode) {
+          cells.push(currentCell.trim());
+          currentCell = '';
+          i++;
+          continue;
+        }
+
+        currentCell += char;
+        i++;
+      }
+      cells.push(currentCell.trim());
+      return cells;
+    };
+
+    const rows = lines.map(parseLine);
     const maxCols = Math.max(...rows.map(r => r.length), 1);
     const normalized = rows.map(r => {
       while (r.length < maxCols) r.push('');
@@ -223,6 +288,15 @@ export default function EditorToolbar({ editor }) {
       {divider()}
 
       {group('Insert', <>
+        <button
+          type="button"
+          className="toolbar-btn toolbar-btn--icon"
+          title="Insert Math Equation (Ctrl+Shift+M)"
+          onClick={() => editor.chain().focus().insertContent({ type: 'math', attrs: { latex: 'x', display: false } }).run()}
+        >
+          <Sigma size={15} />
+          <span className="toolbar-btn-label">Equation</span>
+        </button>
         <button
           type="button"
           className="toolbar-btn toolbar-btn--icon"

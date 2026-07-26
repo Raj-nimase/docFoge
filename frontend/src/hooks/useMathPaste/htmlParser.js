@@ -1066,9 +1066,9 @@ export function transformMathHtml(html) {
         else t.textContent = " ";
         continue;
       }
-      let collapsed = t.textContent.replace(/\s+/g, " ");
-      if (atBlockStart) collapsed = collapsed.replace(/^\s+/, "");
-      if (atBlockEnd) collapsed = collapsed.replace(/\s+$/, "");
+      let collapsed = t.textContent.replace(/[ \t\f\v]+/g, " ");
+      if (atBlockStart) collapsed = collapsed.replace(/^[ \t]+/, "");
+      if (atBlockEnd) collapsed = collapsed.replace(/[ \t]+$/, "");
       if (collapsed !== t.textContent) t.textContent = collapsed;
     }
 

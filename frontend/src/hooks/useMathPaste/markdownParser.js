@@ -320,9 +320,10 @@ export function looksLikeMarkdownMath(text) {
     /\\\[.+\\\]/s.test(clean) || /\$\$[\s\S]+\$\$/.test(clean);
   const hasMathSymbols = /[√∑∏∫∞±≤≥≠×÷∈∂]/.test(clean);
   const hasImages = /!\[([^\]]*)\]\(([^)]+)\)/.test(clean);
+  const hasTable = /^\s*\|.*\|/m.test(clean) && /\|?[\s:|\\-]*-[\s:|\\-]*\|?/.test(clean);
 
   return (
-    hasFence || hasLatexCmd || hasInlineMath || hasDisplayMath || hasMathSymbols || hasImages
+    hasFence || hasLatexCmd || hasInlineMath || hasDisplayMath || hasMathSymbols || hasImages || hasTable
   );
 }
 
@@ -335,12 +336,63 @@ function isTableRow(l) {
 function isTableSep(l) {
   return /^\s*\|?[\s:|\\-]*-[\s:|\\-]*\|?\s*$/.test(l) && l.includes("-");
 }
-// Split "| a | b |" into ["a", "b"] (drop the leading/trailing pipe).
+// Split "| a | b |" into ["a", "b"] while ignoring pipes inside math ($...$, $$...$$) and code blocks.
 function splitTableRow(l) {
   let s = l.trim();
   if (s.startsWith("|")) s = s.slice(1);
   if (s.endsWith("|")) s = s.slice(0, -1);
-  return s.split("|").map((c) => c.trim());
+
+  const cells = [];
+  let currentCell = "";
+  let inMath = false;
+  let inDoubleMath = false;
+  let inCode = false;
+  let i = 0;
+
+  while (i < s.length) {
+    const char = s[i];
+    const nextChar = s[i + 1];
+
+    if (char === "\\" && (nextChar === "|" || nextChar === "$" || nextChar === "`")) {
+      currentCell += char + nextChar;
+      i += 2;
+      continue;
+    }
+
+    if (char === "`" && !inMath && !inDoubleMath) {
+      inCode = !inCode;
+      currentCell += char;
+      i++;
+      continue;
+    }
+
+    if (char === "$" && !inCode) {
+      if (nextChar === "$") {
+        inDoubleMath = !inDoubleMath;
+        currentCell += "$$";
+        i += 2;
+        continue;
+      } else {
+        inMath = !inMath;
+        currentCell += "$";
+        i++;
+        continue;
+      }
+    }
+
+    if (char === "|" && !inMath && !inDoubleMath && !inCode) {
+      cells.push(currentCell.trim());
+      currentCell = "";
+      i++;
+      continue;
+    }
+
+    currentCell += char;
+    i++;
+  }
+  cells.push(currentCell.trim());
+
+  return cells;
 }
 
 // Main parser: pasted markdown-with-math → HTML (headings, lists, tables, math).
@@ -638,6 +690,7 @@ export function parseMarkdownMathToHtml(text) {
     const isLatexLine = (l) => {
       const tr = (l || "").trim();
       if (!tr) return false;
+      if (tr.includes("|")) return false; // Markdown table rows must NOT be grouped as latex formula blocks
       if (/^\s*[*+\-•◦▪]\s/.test(tr) || /^\s*\d+[.)]\s/.test(tr)) return false; // Markdown list items must NOT be grouped as latex formula blocks
       if (/^\*[a-zA-Z]/.test(tr)) return false; // Markdown emphasis (*Text...) must NOT be latex lines
       if (/^[\[\]$$]/.test(tr)) return false; // display fence handled above

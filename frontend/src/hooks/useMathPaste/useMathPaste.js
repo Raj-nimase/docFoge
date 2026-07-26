@@ -70,22 +70,24 @@ export function handleRichPaste(view, event, editor) {
   // Normalize multi-line raw LaTeX pastes into a single unified formula string first
   const plainText = normalizeLatexPaste(preProcessedText);
 
-  // Case 1: Clipboard contains HTML (MS Word, Google Docs, Webpage, MathML, KaTeX)
-  if (htmlText && htmlText.trim()) {
-    event.preventDefault();
-    const transformedHtml = transformMathHtml(htmlText);
-    insertHtmlContent(view, editor, transformedHtml);
-    return true;
-  }
+  const hasStructuredHtml = /<(table|ul|ol|li|h[1-6]|img|math|svg|pre|code|blockquote|section|article|figure|figcaption)[>\s]/i.test(htmlText);
 
-  // Case 2: Plain text contains math formulas ($, \[, $$, math fences, LaTeX commands)
-  if (looksLikeMarkdownMath(plainText)) {
+  // Case 1: Plain text contains markdown math/tables/fences and clipboard HTML is un-structured (plain text wrapped in html/body)
+  if (looksLikeMarkdownMath(plainText) && !hasStructuredHtml) {
     event.preventDefault();
     const cleanPlainText = plainText.includes("\n")
       ? plainText
       : reconstructPdfParagraphs(plainText);
     const resultHtml = parseMarkdownMathToHtml(cleanPlainText);
     insertHtmlContent(view, editor, resultHtml);
+    return true;
+  }
+
+  // Case 2: Clipboard contains structured HTML (MS Word, Google Docs, Webpage, MathML, KaTeX)
+  if (htmlText && htmlText.trim()) {
+    event.preventDefault();
+    const transformedHtml = transformMathHtml(htmlText);
+    insertHtmlContent(view, editor, transformedHtml);
     return true;
   }
 

@@ -141,9 +141,20 @@ const MathView = ({ node, updateAttributes, selected }) => {
             rows={Math.min(draft.split("\n").length + 1, 6)}
             spellCheck={false}
           />
-          <div className="math-edit-actions">
-            <button type="button" className="math-edit-btn math-edit-cancel" onClick={handleCancel}>Cancel</button>
-            <button type="button" className="math-edit-btn math-edit-save" onClick={handleSave}>Save</button>
+          <div className="math-edit-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="math-edit-btn"
+              style={{ fontSize: '12px', padding: '2px 8px', background: 'var(--color-bg-subtle, #f3f4f6)' }}
+              onClick={() => updateAttributes({ display: !display })}
+              title="Toggle inline or block display mode"
+            >
+              Mode: {display ? "Display" : "Inline"}
+            </button>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button type="button" className="math-edit-btn math-edit-cancel" onClick={handleCancel}>Cancel</button>
+              <button type="button" className="math-edit-btn math-edit-save" onClick={handleSave}>Save</button>
+            </div>
           </div>
         </div>
       ) : (
@@ -194,11 +205,27 @@ const MathExtension = Node.create({
   addInputRules() {
     return [
       nodeInputRule({
+        find: /\$\$([\s\S]+?)\$\$$/,
+        type: this.type,
+        getAttributes: (match) => ({ latex: match[1].trim(), display: true }),
+      }),
+      nodeInputRule({
         find: /\$([\s\S]+?)\$$/,
         type: this.type,
-        getAttributes: (match) => ({ latex: match[1].trim() }),
+        getAttributes: (match) => ({ latex: match[1].trim(), display: false }),
       }),
     ];
+  },
+
+  addKeyboardShortcuts() {
+    return {
+      "Mod-Shift-m": () => {
+        return this.editor.commands.insertContent({
+          type: this.name,
+          attrs: { latex: "x", display: false },
+        });
+      },
+    };
   },
 
   addPasteRules() {
@@ -661,6 +688,63 @@ function MultiChapterEditor() {
     editorProps: {
       transformPastedText: (text) => text.replace(/^[^\S\n]*[-*_]{3,}[^\S\n]*\n?/gm, ""),
       transformPastedHTML: (html) => transformMathHtml(html),
+      handleDrop: (view, event, slice, moved) => {
+        if (!moved && event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files.length > 0) {
+          const file = event.dataTransfer.files[0];
+          if (file && file.type.startsWith("image/")) {
+            event.preventDefault();
+            const showToast = useAcaStore.getState().showToast;
+            showToast("info", "Uploading dropped image...");
+            import("@/services/api").then(({ uploadImage }) => {
+              uploadImage(file)
+                .then((url) => {
+                  const { schema } = view.state;
+                  const node = schema.nodes.image?.create({ src: url });
+                  if (node) {
+                    const coordinates = view.posAtCoords({ left: event.clientX, top: event.clientY });
+                    const tr = view.state.tr.insert(coordinates ? coordinates.pos : view.state.selection.to, node);
+                    view.dispatch(tr);
+                    showToast("success", "Image uploaded ✓");
+                  }
+                })
+                .catch((err) => {
+                  showToast("error", "Image upload failed: " + err.message);
+                });
+            });
+            return true;
+          }
+        }
+        return false;
+      },
+      handlePaste: (view, event) => {
+        const items = Array.from(event.clipboardData?.items || []);
+        const imageItem = items.find((item) => item.type.startsWith("image/"));
+        if (imageItem) {
+          const file = imageItem.getAsFile();
+          if (file) {
+            event.preventDefault();
+            const showToast = useAcaStore.getState().showToast;
+            showToast("info", "Uploading pasted image...");
+            import("@/services/api").then(({ uploadImage }) => {
+              uploadImage(file)
+                .then((url) => {
+                  const { schema } = view.state;
+                  const node = schema.nodes.image?.create({ src: url });
+                  if (node) {
+                    const tr = view.state.tr.replaceSelectionWith(node);
+                    view.dispatch(tr);
+                    showToast("success", "Image uploaded ✓");
+                  }
+                })
+                .catch((err) => {
+                  showToast("error", "Image upload failed: " + err.message);
+                });
+            });
+            return true;
+          }
+        }
+        return false;
+      },
     },
     content: initialContent,
     autofocus: false,
