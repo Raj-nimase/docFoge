@@ -187,9 +187,15 @@ export default function PdfViewer({ blobUrl, stale = false }) {
 
       {/* ── Toolbar ── */}
       <div className="pdf-toolbar">
-        <span className="pdf-page-indicator">
-          {totalPages > 0 ? `${currentPage} / ${totalPages}` : '—'}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className="preview-status-chip" style={{ position: 'static', top: 'auto', right: 'auto', pointerEvents: 'auto' }}>
+            <span className="preview-panel-dot" />
+            PDF Preview
+          </span>
+          <span className="pdf-page-indicator">
+            {totalPages > 0 ? `${currentPage} / ${totalPages}` : '—'}
+          </span>
+        </div>
 
         <div className="pdf-toolbar-group">
           <button className="pdf-toolbar-btn" onClick={zoomOut}  disabled={zoom <= MIN_ZOOM} title="Zoom out (Ctrl −)">−</button>

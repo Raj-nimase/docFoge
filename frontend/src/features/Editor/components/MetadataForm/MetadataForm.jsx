@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Settings, X, FileText, LayoutGrid, PanelTop, Ruler } from 'lucide-react';
 import useAcaStore from '@/contexts/projectStore/projectStore';
 import { TEMPLATES } from '@/utils/templates';
 
@@ -17,25 +18,32 @@ export default function MetadataForm({ onDone }) {
 
   if (!open) {
     return (
-      <button id="tour-doc-settings" type="button" className="sidebar-settings-btn" onClick={() => setOpen(true)} title="Document Settings">
-        ⚙ Settings
+      <button id="tour-doc-settings" type="button" className="ribbon-action-btn ribbon-action-btn--primary" onClick={() => setOpen(true)} title="Document Settings">
+        <Settings size={15} /><span className="ribbon-action-label">Settings</span>
       </button>
     );
   }
 
   return (
-    <div className="metadata-overlay">
-      <div className="metadata-panel" style={{ maxWidth: '840px', width: '90%' }}>
+    <div className="metadata-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
+      <div className="metadata-panel metadata-panel--wide">
         <div className="metadata-header">
-          <span className="metadata-title">⚙ Document Settings</span>
-          <button className="metadata-close" onClick={() => setOpen(false)}>✕</button>
+          <span className="metadata-title">
+            <span className="metadata-title-icon"><Settings size={16} /></span>
+            Document Settings
+          </span>
+          <button className="metadata-close" onClick={() => setOpen(false)} title="Close">
+            <X size={16} />
+          </button>
         </div>
-        <div className="metadata-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', maxHeight: '75vh', overflowY: 'auto' }}>
+        <div className="metadata-body metadata-body--grid">
           {/* LEFT COLUMN: Document Details + Page Setup & Margins */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div className="settings-column">
             {/* Document Details */}
-            <div>
-              <h3 className="settings-section-title" style={{ marginTop: 0, marginBottom: '12px' }}>📋 Document Details</h3>
+            <div className="settings-card">
+              <h3 className="settings-section-title">
+                <FileText size={14} /> Document Details
+              </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {(template?.metadataFields || []).map(field => (
                   <div key={field.key} className="metadata-field">
@@ -63,15 +71,15 @@ export default function MetadataForm({ onDone }) {
               </div>
             </div>
 
-            <div className="settings-section-divider" style={{ margin: '4px 0' }} />
-
             {/* Page Setup & Margins */}
-            <div>
-              <h3 className="settings-section-title" style={{ marginTop: 0, marginBottom: '12px' }}>📐 Page Setup & Margins</h3>
+            <div className="settings-card">
+              <h3 className="settings-section-title">
+                <Ruler size={14} /> Page Setup & Margins
+              </h3>
               <div className="settings-subsection" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 
                 {/* Page Size & Base Font Size */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
                   <div className="metadata-field">
                     <label className="metadata-label">Page Size</label>
                     <select
@@ -153,7 +161,7 @@ export default function MetadataForm({ onDone }) {
 
                 {/* Custom Margin Inputs */}
                 {fields.marginPreset === 'custom' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 4, background: 'var(--bg)', padding: 10, borderRadius: 'var(--radius-md)' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, marginTop: 4, background: 'var(--bg)', padding: 10, borderRadius: 'var(--radius-md)' }}>
                     <div className="metadata-field">
                       <label className="metadata-label">Top Margin</label>
                       <input
@@ -202,10 +210,12 @@ export default function MetadataForm({ onDone }) {
           </div>
 
           {/* RIGHT COLUMN: Document Layout Options + Headers & Footers */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div className="settings-column">
             {/* Document Layout Options */}
-            <div>
-              <h3 className="settings-section-title" style={{ marginTop: 0, marginBottom: '12px' }}>📄 Document Layout Options</h3>
+            <div className="settings-card">
+              <h3 className="settings-section-title">
+                <LayoutGrid size={14} /> Document Layout Options
+              </h3>
               <div className="settings-subsection" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <label className="checkbox-label">
                   <input
@@ -234,11 +244,11 @@ export default function MetadataForm({ onDone }) {
               </div>
             </div>
 
-            <div className="settings-section-divider" style={{ margin: '4px 0' }} />
-
             {/* Custom Headers & Footers Settings */}
-            <div>
-              <h3 className="settings-section-title" style={{ marginTop: 0, marginBottom: '12px' }}>✨ Headers & Footers</h3>
+            <div className="settings-card">
+              <h3 className="settings-section-title">
+                <PanelTop size={14} /> Headers & Footers
+              </h3>
 
               {/* Header Configuration */}
               <div className="settings-subsection" style={{ marginBottom: 14 }}>

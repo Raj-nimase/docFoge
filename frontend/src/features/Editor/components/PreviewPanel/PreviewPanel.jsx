@@ -62,34 +62,17 @@ export default function PreviewPanel() {
     ? 100
     : Math.min(90, 5 + elapsed * 6);
 
-  const handleDownload = () => {
-    if (!compileJob?.blobUrl) return;
-    const a = document.createElement('a');
-    a.href = compileJob.blobUrl;
-    a.download = 'document.pdf';
-    a.click();
-  };
-
   return (
     <div id="tour-preview-panel" className="preview-panel">
-      <div className="preview-panel-header">
-        <span className="preview-panel-label">
-          <span className="preview-panel-dot" />
-          PDF Preview
-        </span>
-        {isDone && compileJob?.blobUrl && (
-          <button className="btn-download" onClick={handleDownload} title="Download PDF">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-              <polyline points="7 10 12 15 17 10"/>
-              <line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
-            Download PDF
-          </button>
-        )}
-      </div>
-
       <div className="preview-body">
+
+        {/* ── Floating status chip (shown when no active PDF viewer toolbar) ── */}
+        {!lastBlobUrl && (
+          <span className="preview-status-chip">
+            <span className="preview-panel-dot" />
+            PDF Preview
+          </span>
+        )}
 
         {/* ── Idle: no compile yet ── */}
         {!compileJob && !lastBlobUrl && (

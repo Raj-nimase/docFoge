@@ -22,6 +22,7 @@ import {
   Sigma,
   FileText,
 } from 'lucide-react';
+import { useEditorState } from '@tiptap/react';
 import { HEADING_LEVELS, getActiveHeadingLevel, toggleHeading, clearHeading } from '@/features/Editor/utils/editorFormatActions';
 import useAcaStore from '@/contexts/projectStore/projectStore';
 
@@ -92,10 +93,34 @@ function convertTextToParagraphsAndLists(lines) {
   return blocks;
 }
 
-export default function EditorToolbar({ editor }) {
-  if (!editor) return null;
+export default function ToolbarGroups({ editor }) {
+  // Subscribe to editor transactions so active states track the selection
+  // even though this component is mounted outside MultiChapterEditor.
+  const state = useEditorState({
+    editor,
+    selector: ({ editor: e }) => {
+      if (!e) return null;
+      return {
+        bold: e.isActive('bold'),
+        italic: e.isActive('italic'),
+        underline: e.isActive('underline'),
+        strike: e.isActive('strike'),
+        bulletList: e.isActive('bulletList'),
+        orderedList: e.isActive('orderedList'),
+        codeBlock: e.isActive('codeBlock'),
+        blockquote: e.isActive('blockquote'),
+        table: e.isActive('table'),
+        math: e.isActive('math'),
+        image: e.isActive('image'),
+        activeHeadingLevel: getActiveHeadingLevel(e),
+        mathDisplay: !!e.getAttributes('math').display,
+      };
+    },
+  });
 
-  const activeLevel = getActiveHeadingLevel(editor);
+  if (!editor || !state) return null;
+
+  const activeLevel = state.activeHeadingLevel;
 
   const iconBtn = (action, icon, label, title, isActive = false) => (
     <button
@@ -246,12 +271,12 @@ export default function EditorToolbar({ editor }) {
   };
 
   return (
-    <div id="tour-editor-toolbar" className="editor-toolbar">
+    <div className="toolbar-groups-row">
       {group('Text', <>
-        {iconBtn(() => editor.chain().focus().toggleBold().run(), <Bold size={15} />, 'Bold', 'Bold (Ctrl+B)', editor.isActive('bold'))}
-        {iconBtn(() => editor.chain().focus().toggleItalic().run(), <Italic size={15} />, 'Italic', 'Italic (Ctrl+I)', editor.isActive('italic'))}
-        {iconBtn(() => editor.chain().focus().toggleUnderline().run(), <Underline size={15} />, 'Underline', 'Underline (Ctrl+U)', editor.isActive('underline'))}
-        {iconBtn(() => editor.chain().focus().toggleStrike().run(), <Strikethrough size={15} />, 'Strike', 'Strikethrough', editor.isActive('strike'))}
+        {iconBtn(() => editor.chain().focus().toggleBold().run(), <Bold size={15} />, 'Bold', 'Bold (Ctrl+B)', state.bold)}
+        {iconBtn(() => editor.chain().focus().toggleItalic().run(), <Italic size={15} />, 'Italic', 'Italic (Ctrl+I)', state.italic)}
+        {iconBtn(() => editor.chain().focus().toggleUnderline().run(), <Underline size={15} />, 'Underline', 'Underline (Ctrl+U)', state.underline)}
+        {iconBtn(() => editor.chain().focus().toggleStrike().run(), <Strikethrough size={15} />, 'Strike', 'Strikethrough', state.strike)}
       </>)}
 
       {divider()}
@@ -274,15 +299,15 @@ export default function EditorToolbar({ editor }) {
       {divider()}
 
       {group('Lists', <>
-        {iconBtn(() => editor.chain().focus().toggleBulletList().run(), <List size={15} />, 'Bullets', 'Bullet list', editor.isActive('bulletList'))}
-        {iconBtn(() => editor.chain().focus().toggleOrderedList().run(), <ListOrdered size={15} />, 'Numbered', 'Numbered list', editor.isActive('orderedList'))}
+        {iconBtn(() => editor.chain().focus().toggleBulletList().run(), <List size={15} />, 'Bullets', 'Bullet list', state.bulletList)}
+        {iconBtn(() => editor.chain().focus().toggleOrderedList().run(), <ListOrdered size={15} />, 'Numbered', 'Numbered list', state.orderedList)}
       </>)}
 
       {divider()}
 
       {group('Blocks', <>
-        {iconBtn(() => editor.chain().focus().toggleCodeBlock().run(), <Code2 size={15} />, 'Code', 'Code block', editor.isActive('codeBlock'))}
-        {iconBtn(() => editor.chain().focus().toggleBlockquote().run(), <Quote size={15} />, 'Quote', 'Blockquote', editor.isActive('blockquote'))}
+        {iconBtn(() => editor.chain().focus().toggleCodeBlock().run(), <Code2 size={15} />, 'Code', 'Code block', state.codeBlock)}
+        {iconBtn(() => editor.chain().focus().toggleBlockquote().run(), <Quote size={15} />, 'Quote', 'Blockquote', state.blockquote)}
       </>)}
 
       {divider()}
@@ -290,8 +315,8 @@ export default function EditorToolbar({ editor }) {
       {group('Insert', <>
         <button
           type="button"
-          className={`toolbar-btn toolbar-btn--icon${editor.isActive('math') ? ' toolbar-btn--active' : ''}`}
-          title={editor.isActive('math') ? "Convert Math formula back to plain text" : "Insert Math Equation (Ctrl+Shift+M)"}
+          className={`toolbar-btn toolbar-btn--icon${state.math ? ' toolbar-btn--active' : ''}`}
+          title={state.math ? "Convert Math formula back to plain text" : "Insert Math Equation (Ctrl+Shift+M)"}
           onClick={() => {
             if (editor.isActive('math')) {
               const { $from } = editor.state.selection;
@@ -309,7 +334,7 @@ export default function EditorToolbar({ editor }) {
           }}
         >
           <Sigma size={15} />
-          <span className="toolbar-btn-label">{editor.isActive('math') ? 'To Text' : 'Equation'}</span>
+          <span className="toolbar-btn-label">{state.math ? 'To Text' : 'Equation'}</span>
         </button>
         <button
           type="button"
@@ -399,7 +424,7 @@ export default function EditorToolbar({ editor }) {
         </button>
       </>)}
 
-      {editor.isActive('table') && (
+      {state.table && (
         <>
           {divider()}
           {group('Table edit', <>
@@ -436,7 +461,7 @@ export default function EditorToolbar({ editor }) {
         </>
       )}
 
-      {editor.isActive('math') && (
+      {state.math && (
         <>
           {divider()}
           {group('Equation', <>
@@ -450,7 +475,7 @@ export default function EditorToolbar({ editor }) {
               }}
             >
               <Sigma size={15} />
-              <span className="toolbar-btn-label">{editor.getAttributes('math').display ? 'Inline' : 'Display'}</span>
+              <span className="toolbar-btn-label">{state.mathDisplay ? 'Inline' : 'Display'}</span>
             </button>
             <button
               type="button"
@@ -464,7 +489,7 @@ export default function EditorToolbar({ editor }) {
         </>
       )}
 
-      {editor.isActive('image') && (
+      {state.image && (
         <>
           {divider()}
           {group('Figure', <>

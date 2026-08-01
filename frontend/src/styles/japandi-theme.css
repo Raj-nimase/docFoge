@@ -594,8 +594,7 @@ body {
   background: var(--bg);
 }
 
-.topbar,
-.editor-panel-topbar {
+.topbar {
   background: var(--card);
   border-color: var(--border);
 }
@@ -614,6 +613,10 @@ body {
 .editor-toolbar {
   background: var(--card);
   border-color: var(--border);
+}
+
+.ribbon-action-btn:hover {
+  border-color: var(--accent-light);
 }
 
 .preview-panel {

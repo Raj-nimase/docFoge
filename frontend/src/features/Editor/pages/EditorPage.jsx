@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import TopBar from '@/features/Editor/components/TopBar/TopBar';
+import Ribbon from '@/features/Editor/components/Ribbon/Ribbon';
 import LeftPanel from '@/features/Editor/components/LeftPanel/LeftPanel';
 import EditorPanel from '@/features/Editor/components/EditorPanel/EditorPanel';
 import PreviewPanel from '@/features/Editor/components/PreviewPanel/PreviewPanel';
@@ -48,7 +49,8 @@ export default function Editor({ onGoToDashboard, onLogout }) {
 
   return (
     <div className="editor-layout">
-      <TopBar onGoToDashboard={onGoToDashboard} onLogout={onLogout} onStartTour={() => runTour(true)} />
+      <TopBar onGoToDashboard={onGoToDashboard} onLogout={onLogout} />
+      <Ribbon onGoToDashboard={onGoToDashboard} onStartTour={() => runTour(true)} />
       <div className={bodyClassName}>
         <LeftPanel collapsed={leftCollapsed} onToggleCollapse={() => setLeftCollapsed(v => !v)} />
         <EditorPanel />

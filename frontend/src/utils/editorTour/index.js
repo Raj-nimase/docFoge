@@ -63,7 +63,7 @@ export function startEditorTour(options = {}) {
         popover: {
           title: 'Formatting toolbar',
           description:
-            '<p>Use this toolbar to style your content: <strong>bold</strong>, <em>italic</em>, headings, lists, tables, code blocks, quotes, and math (Σ).</p>' +
+            '<p>This full-width ribbon holds everything you need: style your content with <strong>bold</strong>, <em>italic</em>, headings, lists, tables, code blocks, quotes and math (Σ) — plus Compile, Search (⌘K), Settings and the tour, all in one place.</p>' +
             '<p>Formatting applies to the chapter you selected in the outline on the left.</p>',
           side: 'bottom',
           align: 'start',
@@ -86,8 +86,8 @@ export function startEditorTour(options = {}) {
         popover: {
           title: 'PDF preview',
           description:
-            '<p>After you click <strong>Compile</strong> in the top bar, your PDF appears here. Compilation usually takes 5–15 seconds.</p>' +
-            '<p>When the build succeeds, you can preview the document and download the PDF from this panel.</p>',
+            '<p>After you click <strong>Compile</strong> in the ribbon, your PDF appears here. Compilation usually takes 5–15 seconds.</p>' +
+            '<p>When the build succeeds, you can preview the document and download the PDF from the ribbon.</p>',
           side: 'left',
           align: 'start',
         },

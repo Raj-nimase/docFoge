@@ -35,8 +35,8 @@ import Image from "@tiptap/extension-image";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import katex from "katex";
 import useAcaStore from "@/contexts/projectStore/projectStore";
-import EditorToolbar from "@/features/Editor/components/Toolbar/Toolbar";
 import SelectionBubbleMenu from "@/features/Editor/components/SelectionBubbleMenu/SelectionBubbleMenu";
+import SlashCommandMenu from "@/features/Editor/components/SlashCommandMenu/SlashCommandMenu";
 import { mergeChaptersToSingleDoc, splitSingleDocToChapters, splitSingleDocToProject } from "./docUtils";
 import CertificateCanvasEditor from "./CertificateCanvasEditor";
 
@@ -596,7 +596,6 @@ function FrontMatterSectionEditor({ section }) {
 
   return (
     <div className="chapter-editor">
-      <EditorToolbar editor={editor} />
       <div className="chapter-editor-scroll">
         <div className="chapter-paper">
           {editor && <SelectionBubbleMenu editor={editor} />}
@@ -967,6 +966,18 @@ function MultiChapterEditor() {
     editorRef.current = editor;
   }, [editor]);
 
+  // Publish the editor instance so the Ribbon / CommandPalette (mounted at
+  // EditorPage level) can drive formatting commands.
+  useEffect(() => {
+    useAcaStore.getState().setEditorInstance(editor || null);
+    return () => {
+      // Guard against races when a new MultiChapterEditor mounts before the old unmounts
+      if (useAcaStore.getState().editorInstance === editor) {
+        useAcaStore.getState().setEditorInstance(null);
+      }
+    };
+  }, [editor]);
+
   // Flush pending save on unmount or blur
   useEffect(() => {
     if (!editor) return;
@@ -1126,7 +1137,6 @@ function MultiChapterEditor() {
 
   return (
     <div className="chapter-editor">
-      <EditorToolbar editor={editor} />
       <div
         id="tour-editor-content"
         className="chapter-editor-scroll"
@@ -1141,6 +1151,7 @@ function MultiChapterEditor() {
           style={{ cursor: "text" }}
         >
           {editor && <SelectionBubbleMenu editor={editor} />}
+          {editor && <SlashCommandMenu editor={editor} />}
           <EditorContent editor={editor} className="tiptap-editor" />
         </div>
       </div>

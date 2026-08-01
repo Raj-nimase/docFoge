@@ -221,6 +221,12 @@ export const useProjectStore = create((set, get) => ({
   activeChapterId: null,
   compileJob: null,
   toast: null,
+  // Transient TipTap editor instance published by MultiChapterEditor (never persisted)
+  editorInstance: null,
+
+  setEditorInstance(editor) {
+    set({ editorInstance: editor });
+  },
 
   getCurrentProject() {
     return get().projects.find((p) => p.id === get().currentProjectId) || null;
