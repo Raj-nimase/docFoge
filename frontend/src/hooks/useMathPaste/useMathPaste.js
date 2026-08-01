@@ -19,9 +19,13 @@ import { DOMParser as PMDOMParser } from "prosemirror-model";
 
 function insertHtmlContent(view, editor, html) {
   if (editor?.commands?.insertContent) {
-    // insertContent defaults to preserveWhitespace: 'full', which turns the
-    // raw newlines inside pasted HTML (e.g. "<li>\nPseudocode\n</li>") into
-    // extra blank lines. Collapse whitespace like a normal HTML parse instead.
+    const isHeadingPaste = /<(h[1-6]|div|section)[>\s]/i.test(html) || /^(CHAPTER\s+\d+|#\s+)/i.test(html.replace(/<[^>]*>/g, '').trim());
+    if (isHeadingPaste && editor.isActive('listItem')) {
+      try {
+        editor.chain().focus().liftListItem('listItem').run();
+      } catch (_) {}
+    }
+
     editor.commands.insertContent(html, {
       parseOptions: { preserveWhitespace: false },
     });
@@ -40,7 +44,7 @@ function insertHtmlContent(view, editor, html) {
 }
 
 export function handleRichPaste(view, event, editor) {
-  const rawText = (event.clipboardData?.getData("text/plain") || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const rawText = (event.clipboardData?.getData("text/plain") || "").replace(/<\/?mark(?:\s+[^>]*)?>/gi, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const htmlText = event.clipboardData?.getData("text/html") || "";
 
   if (!rawText && !htmlText) return false;
@@ -72,8 +76,17 @@ export function handleRichPaste(view, event, editor) {
 
   const hasStructuredHtml = /<(table|ul|ol|li|h[1-6]|img|math|svg|pre|code|blockquote|section|article|figure|figcaption)[>\s]/i.test(htmlText);
 
-  // Case 1: Plain text contains markdown math/tables/fences and clipboard HTML is un-structured (plain text wrapped in html/body)
-  if (looksLikeMarkdownMath(plainText) && !hasStructuredHtml) {
+  const looksLikeMarkdownDoc = (text) => {
+    if (!text) return false;
+    return (
+      /^(#{1,6}\s+|[*\-+•◦▪]\s+|\d+[.)]\s+|\*\*|```)/m.test(text) ||
+      looksLikeMarkdownMath(text)
+    );
+  };
+
+  // Case 1: Plain text contains markdown document structure (headings, lists, bold, math, tables)
+  // Handles Markdown copied from ChatGPT, text files, or web pages with rich structure
+  if (looksLikeMarkdownDoc(plainText) && (!hasStructuredHtml || !/<(table|img|math|svg)[>\s]/i.test(htmlText))) {
     event.preventDefault();
     const cleanPlainText = plainText.includes("\n")
       ? plainText

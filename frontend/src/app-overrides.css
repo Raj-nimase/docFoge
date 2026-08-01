@@ -474,9 +474,12 @@
   flex: 1;
   overflow-y: auto;
   padding: 32px 24px 64px 24px;
-  scroll-behavior: smooth;
   display: flex;
   justify-content: center;
+  user-select: text;
+  -webkit-user-select: text;
+  will-change: scroll-position;
+  contain: layout style;
 }
 
 .chapter-paper {
@@ -489,6 +492,9 @@
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.05);
   padding: 48px 56px;
   box-sizing: border-box;
+  user-select: text;
+  -webkit-user-select: text;
+  contain: content;
 }
 
 .chapter-paper .tiptap-editor {
@@ -497,9 +503,9 @@
 }
 
 .chapter-paper h1 {
-  margin-top: 36px;
-  padding-top: 24px;
-  border-top: 1px dashed var(--border, #e2e8f0);
+  margin-top: 44px;
+  padding-top: 28px;
+  border-top: 1.5px dashed rgba(45, 106, 79, 0.35);
   color: var(--accent, #2d6a4f);
 }
 
@@ -507,6 +513,14 @@
   margin-top: 0;
   padding-top: 0;
   border-top: none;
+}
+
+/* ── GPU HARDWARE ACCELERATED FLOATING CONTROLS ── */
+.editor-bubble-menu,
+.tippy-box {
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
 }
 
 

@@ -12,7 +12,7 @@ import {
   nodeInputRule,
   nodePasteRule,
 } from "@tiptap/core";
-import { Plugin, PluginKey } from "prosemirror-state";
+import { Plugin, PluginKey, TextSelection } from "prosemirror-state";
 import { Decoration, DecorationSet } from "prosemirror-view";
 import {
   extractLatex,
@@ -40,7 +40,8 @@ import SelectionBubbleMenu from "@/features/Editor/components/SelectionBubbleMen
 import { mergeChaptersToSingleDoc, splitSingleDocToChapters, splitSingleDocToProject } from "./docUtils";
 import CertificateCanvasEditor from "./CertificateCanvasEditor";
 
-const MathView = ({ node, updateAttributes, selected }) => {
+const MathView = (props) => {
+  const { node, updateAttributes, selected, deleteNode, editor, getPos } = props;
   const containerRef = useRef(null);
   const previewRef = useRef(null);
   const inputRef = useRef(null);
@@ -110,6 +111,25 @@ const MathView = ({ node, updateAttributes, selected }) => {
     setEditing(false);
   };
 
+  const handleConvertToText = () => {
+    const textToInsert = draft || rawLatex || "";
+    setEditing(false);
+    if (typeof deleteNode === "function") {
+      deleteNode();
+      if (editor) {
+        editor.chain().focus().insertContent(textToInsert).run();
+      }
+    } else if (typeof getPos === "function" && editor) {
+      const pos = getPos();
+      editor
+        .chain()
+        .focus()
+        .deleteRange({ from: pos, to: pos + (node.nodeSize || 1) })
+        .insertContentAt(pos, textToInsert)
+        .run();
+    }
+  };
+
   const handleKeyDown = (e) => {
     e.stopPropagation();
     if (e.key === "Enter" && !e.shiftKey) {
@@ -142,15 +162,26 @@ const MathView = ({ node, updateAttributes, selected }) => {
             spellCheck={false}
           />
           <div className="math-edit-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <button
-              type="button"
-              className="math-edit-btn"
-              style={{ fontSize: '12px', padding: '2px 8px', background: 'var(--color-bg-subtle, #f3f4f6)' }}
-              onClick={() => updateAttributes({ display: !display })}
-              title="Toggle inline or block display mode"
-            >
-              Mode: {display ? "Display" : "Inline"}
-            </button>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button
+                type="button"
+                className="math-edit-btn"
+                style={{ fontSize: '12px', padding: '2px 8px', background: 'var(--color-bg-subtle, #f3f4f6)' }}
+                onClick={() => updateAttributes({ display: !display })}
+                title="Toggle inline or block display mode"
+              >
+                Mode: {display ? "Display" : "Inline"}
+              </button>
+              <button
+                type="button"
+                className="math-edit-btn"
+                style={{ fontSize: '12px', padding: '2px 8px', background: 'var(--color-bg-subtle, #f3f4f6)', color: 'var(--color-text, #374151)' }}
+                onClick={handleConvertToText}
+                title="Convert this math equation back into plain text"
+              >
+                Convert to Text
+              </button>
+            </div>
             <div style={{ display: 'flex', gap: '6px' }}>
               <button type="button" className="math-edit-btn math-edit-cancel" onClick={handleCancel}>Cancel</button>
               <button type="button" className="math-edit-btn math-edit-save" onClick={handleSave}>Save</button>
@@ -278,16 +309,14 @@ function stripAllPrefixes(text) {
   return cleaned;
 }
 
-const INLINE_TYPES = new Set(["math", "text"]);
+const INLINE_TYPES = new Set(["math", "text", "hardBreak"]);
 function normalizeContent(content) {
   if (!content || !content.content || !Array.isArray(content.content)) return content;
   const out = [];
   let pendingInlines = [];
   const flushInlines = () => {
     if (!pendingInlines.length) return;
-    for (const node of pendingInlines) {
-      out.push({ type: "paragraph", content: [node] });
-    }
+    out.push({ type: "paragraph", content: [...pendingInlines] });
     pendingInlines = [];
   };
   for (const node of content.content) {
@@ -342,12 +371,17 @@ const HeadingCleaner = Extension.create({
             const scanTo   = Math.min(newState.doc.content.size, to + 2);
 
             newState.doc.nodesBetween(scanFrom, scanTo, (node, pos) => {
-              if (node.type.name !== "heading") return true;
+              if (node.type.name !== "heading" && node.type.name !== "paragraph") return true;
               if (!node.firstChild?.isText) return false;
 
               const child        = node.firstChild;
               const originalText = child.text;
-              const cleanedText  = stripAllPrefixes(originalText);
+              let cleanedText  = stripAllPrefixes(originalText);
+
+              // If non-H1 heading (H2, H3, H4) or paragraph, strip any "CHAPTER X:" prefix
+              if ((node.type.name === "heading" && node.attrs?.level > 1) || node.type.name === "paragraph") {
+                cleanedText = cleanedText.replace(/^CHAPTER\s+\d+[:\s\-]*/i, "").trim();
+              }
 
               if (cleanedText !== originalText) {
                 modifications.push({
@@ -620,6 +654,104 @@ function FrontMatterAutoCard({ section }) {
   );
 }
 
+
+
+const DragOutsideSelectionFix = Extension.create({
+  name: "dragOutsideSelectionFix",
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey("dragOutsideSelectionFix"),
+        props: {
+          handleDOMEvents: {
+            mousedown(view, event) {
+              if (event.button !== 0) return false;
+
+              let anchorPos = null;
+
+              const onMouseMove = (e) => {
+                const rect = view.dom.getBoundingClientRect();
+                const isOutside =
+                  e.clientX < rect.left ||
+                  e.clientX > rect.right ||
+                  e.clientY < rect.top ||
+                  e.clientY > rect.bottom;
+
+                if (!isOutside) return;
+
+                if (anchorPos === null) {
+                  anchorPos = view.state.selection.anchor;
+                }
+
+                const clampedX = Math.max(
+                  rect.left + 8,
+                  Math.min(rect.right - 8, e.clientX)
+                );
+                const clampedY = Math.max(
+                  rect.top + 8,
+                  Math.min(rect.bottom - 8, e.clientY)
+                );
+
+                const coords = view.posAtCoords({
+                  left: clampedX,
+                  top: clampedY,
+                });
+
+                if (coords && coords.pos !== undefined) {
+                  const targetPos = coords.pos;
+                  if (view.state.selection.head !== targetPos) {
+                    const tr = view.state.tr.setSelection(
+                      TextSelection.create(
+                        view.state.doc,
+                        anchorPos,
+                        targetPos
+                      )
+                    );
+                    view.dispatch(tr);
+                  }
+                }
+
+                const container = view.dom.closest(".chapter-editor-scroll");
+                if (container) {
+                  const cRect = container.getBoundingClientRect();
+                  if (e.clientY < cRect.top + 50) {
+                    container.scrollTop -= Math.max(8, (cRect.top + 50 - e.clientY) / 2);
+                  } else if (e.clientY > cRect.bottom - 50) {
+                    container.scrollTop += Math.max(8, (e.clientY - (cRect.bottom - 50)) / 2);
+                  }
+                }
+              };
+
+              const onMouseUp = () => {
+                window.removeEventListener("mousemove", onMouseMove);
+                window.removeEventListener("mouseup", onMouseUp);
+              };
+
+              window.addEventListener("mousemove", onMouseMove);
+              window.addEventListener("mouseup", onMouseUp);
+
+              return false;
+            },
+          },
+        },
+      }),
+    ];
+  },
+});
+
+function computeSectionsSignature(frontMatter = [], chapters = []) {
+  const fmSig = (frontMatter || []).map((fm) => {
+    const len = fm.content?.content?.length || 0;
+    return `${fm.id}:${fm.label}:${len}`;
+  });
+  const chSig = (chapters || []).map((c) => {
+    const len = c.content?.content?.length || 0;
+    return `${c.id}:${c.title}:${len}`;
+  });
+  return [...fmSig, ...chSig].join("|");
+}
+
 function MultiChapterEditor() {
   const currentProject = useAcaStore((s) => s.getCurrentProject());
   const activeChapterId = useAcaStore((s) => s.activeChapterId);
@@ -629,6 +761,49 @@ function MultiChapterEditor() {
   const scrollContainerRef = useRef(null);
   const isProgrammaticScrollRef = useRef(false);
   const onUpdateTimer = useRef(null);
+  const lastSectionsSignatureRef = useRef("");
+  const workerRef = useRef(null);
+  const isPasteEventRef = useRef(false);
+  const editorRef = useRef(null);
+
+  // Background Web Worker for parsing document structure off the main UI thread
+  useEffect(() => {
+    try {
+      workerRef.current = new Worker(new URL("./docParserWorker.js", import.meta.url), {
+        type: "module",
+      });
+      workerRef.current.onmessage = (e) => {
+        const { frontMatter, chapters } = e.data;
+        if (!frontMatter || !chapters) return;
+        const isPaste = isPasteEventRef.current;
+        if (isPaste) {
+          isPasteEventRef.current = false;
+        }
+        const newSig = computeSectionsSignature(frontMatter, chapters);
+        if (newSig !== lastSectionsSignatureRef.current || isPaste) {
+          lastSectionsSignatureRef.current = newSig;
+          useAcaStore.getState().updateProjectDocument(frontMatter, chapters);
+          const targetEditor = editorRef.current;
+          if (isPaste && targetEditor) {
+            const cleanMergedDoc = normalizeContent(
+              mergeChaptersToSingleDoc(frontMatter, chapters)
+            );
+            targetEditor.commands.setContent(cleanMergedDoc, false);
+          }
+        }
+      };
+    } catch (err) {
+      console.warn("Web Worker setup fallback to sync processing:", err);
+      workerRef.current = null;
+    }
+
+    return () => {
+      if (workerRef.current) {
+        workerRef.current.terminate();
+        workerRef.current = null;
+      }
+    };
+  }, []);
 
   // Initial combined document tree for chapters & frontmatter (except Certificate)
   const initialContent = useMemo(() => {
@@ -670,6 +845,7 @@ function MultiChapterEditor() {
       MathExtension,
       MathPasteHandler,
       HeadingCleaner,
+      DragOutsideSelectionFix,
       Image.configure({
         inline: false,
         allowBase64: true,
@@ -717,6 +893,7 @@ function MultiChapterEditor() {
         return false;
       },
       handlePaste: (view, event) => {
+        isPasteEventRef.current = true;
         const items = Array.from(event.clipboardData?.items || []);
         const imageItem = items.find((item) => item.type.startsWith("image/"));
         if (imageItem) {
@@ -749,23 +926,46 @@ function MultiChapterEditor() {
     content: initialContent,
     autofocus: false,
     onUpdate: ({ editor }) => {
+      editorRef.current = editor;
       if (onUpdateTimer.current) clearTimeout(onUpdateTimer.current);
       onUpdateTimer.current = setTimeout(() => {
         const fullJson = editor.getJSON();
-        // Read the project from the store, NOT the render-time closure. This
-        // editor instance outlives many store updates (e.g. the Certificate
-        // designer saving its layout), and a stale snapshot here would write
-        // old section content back over those saves.
         const live = useAcaStore.getState().getCurrentProject();
-        const res = splitSingleDocToProject(
-          fullJson,
-          live?.frontMatter || [],
-          live?.chapters || []
-        );
-        updateProjectDocument(res.frontMatter, res.chapters);
-      }, 500);
+        if (workerRef.current) {
+          workerRef.current.postMessage({
+            singleDoc: fullJson,
+            existingFrontMatter: live?.frontMatter || [],
+            existingChapters: live?.chapters || [],
+          });
+        } else {
+          const res = splitSingleDocToProject(
+            fullJson,
+            live?.frontMatter || [],
+            live?.chapters || []
+          );
+          const isPaste = isPasteEventRef.current;
+          if (isPaste) {
+            isPasteEventRef.current = false;
+          }
+          const newSig = computeSectionsSignature(res.frontMatter, res.chapters);
+          if (newSig !== lastSectionsSignatureRef.current || isPaste) {
+            lastSectionsSignatureRef.current = newSig;
+            updateProjectDocument(res.frontMatter, res.chapters);
+            if (isPaste && editor) {
+              const cleanMergedDoc = normalizeContent(
+                mergeChaptersToSingleDoc(res.frontMatter, res.chapters)
+              );
+              editor.commands.setContent(cleanMergedDoc, false);
+            }
+          }
+        }
+      }, 100);
     },
   });
+
+  useEffect(() => {
+    editorRef.current = editor;
+  }, [editor]);
 
   // Flush pending save on unmount or blur
   useEffect(() => {
@@ -776,12 +976,25 @@ function MultiChapterEditor() {
         onUpdateTimer.current = null;
         const fullJson = editor.getJSON();
         const live = useAcaStore.getState().getCurrentProject();
-        const res = splitSingleDocToProject(
-          fullJson,
-          live?.frontMatter || [],
-          live?.chapters || []
-        );
-        updateProjectDocument(res.frontMatter, res.chapters);
+        if (workerRef.current) {
+          workerRef.current.postMessage({
+            singleDoc: fullJson,
+            existingFrontMatter: live?.frontMatter || [],
+            existingChapters: live?.chapters || [],
+          });
+        } else {
+          const res = splitSingleDocToProject(
+            fullJson,
+            live?.frontMatter || [],
+            live?.chapters || []
+          );
+          const newSig = [
+            ...(res.frontMatter || []).map((fm) => `${fm.id}:${fm.label}`),
+            ...(res.chapters || []).map((c) => `${c.id}:${c.title}`),
+          ].join("|");
+          lastSectionsSignatureRef.current = newSig;
+          updateProjectDocument(res.frontMatter, res.chapters);
+        }
       }
     };
     editor.on("blur", handleBlur);
@@ -800,7 +1013,11 @@ function MultiChapterEditor() {
     ...(currentProject?.chapters || []).map((c) => `${c.id}:${c.title}`),
   ].join("|");
 
-  const lastSectionsSignatureRef = useRef(sectionsSignature);
+  useEffect(() => {
+    if (!lastSectionsSignatureRef.current) {
+      lastSectionsSignatureRef.current = sectionsSignature;
+    }
+  }, [sectionsSignature]);
 
   // Sync editor content whenever sections are deleted, added, renamed, or reordered from sidebar
   useEffect(() => {
@@ -853,40 +1070,56 @@ function MultiChapterEditor() {
     }
   }, [activeChapterId, editor]);
 
+  const scrollRafRef = useRef(null);
+  const scrollSpyDebounceTimer = useRef(null);
+
   // Scroll-Spy: Update sidebar active chapter smoothly as user scrolls manually
   const handleScroll = () => {
     if (isProgrammaticScrollRef.current || !editor || !scrollContainerRef.current) return;
+    if (scrollRafRef.current) return;
 
-    const container = scrollContainerRef.current;
-    const headings = Array.from(editor.view.dom.querySelectorAll("h1"));
-    if (headings.length === 0) return;
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      const container = scrollContainerRef.current;
+      if (!container) return;
 
-    const containerTop = container.getBoundingClientRect().top;
-    const currentProj = useAcaStore.getState().getCurrentProject();
-    let currentActiveId = null;
+      const headings = Array.from(editor.view.dom.querySelectorAll("h1"));
+      if (headings.length === 0) return;
 
-    for (const h of headings) {
-      const rect = h.getBoundingClientRect();
-      if (rect.top - containerTop <= 150) {
-        const matchedId = findChapterForHeading(
-          h.textContent || "",
-          currentProj?.chapters || [],
-          currentProj?.frontMatter || []
-        );
-        if (matchedId) {
-          currentActiveId = matchedId;
+      const containerTop = container.getBoundingClientRect().top;
+      const currentProj = useAcaStore.getState().getCurrentProject();
+      let currentActiveId = null;
+
+      for (const h of headings) {
+        const rect = h.getBoundingClientRect();
+        if (rect.top - containerTop <= 150) {
+          const matchedId = findChapterForHeading(
+            h.textContent || "",
+            currentProj?.chapters || [],
+            currentProj?.frontMatter || []
+          );
+          if (matchedId) {
+            currentActiveId = matchedId;
+          }
         }
       }
-    }
 
-    if (currentActiveId && currentActiveId !== useAcaStore.getState().activeChapterId) {
-      isScrollSpyUpdateRef.current = true;
-      setActiveChapter(currentActiveId);
-    }
+      if (currentActiveId && currentActiveId !== useAcaStore.getState().activeChapterId) {
+        if (scrollSpyDebounceTimer.current) clearTimeout(scrollSpyDebounceTimer.current);
+        scrollSpyDebounceTimer.current = setTimeout(() => {
+          scrollSpyDebounceTimer.current = null;
+          isScrollSpyUpdateRef.current = true;
+          setActiveChapter(currentActiveId);
+        }, 120);
+      }
+    });
   };
 
   const handleBackgroundClick = (e) => {
     if (e.target === e.currentTarget) {
+      if (editor && !editor.state.selection.empty) {
+        return; // Preserve active selection when releasing drag outside paper
+      }
       editor?.commands.focus("end");
     }
   };

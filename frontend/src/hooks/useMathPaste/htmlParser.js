@@ -812,6 +812,15 @@ export function transformMathHtml(html) {
     // ── Remove file:/// local temp images from Word clipboard ──────────
     doc.querySelectorAll("img[src^='file:///']").forEach((img) => img.remove());
 
+    // ── Unwrap <mark> tags introduced by PDF text extraction ───────────
+    doc.querySelectorAll("mark").forEach((el) => {
+      const parent = el.parentNode;
+      while (el.firstChild) {
+        parent.insertBefore(el.firstChild, el);
+      }
+      el.remove();
+    });
+
     // ── Convert Web Math (MathJax v2/v3, MathML, KaTeX, Wikipedia, Web Images) ──
     convertWebMathInHtml(doc);
 
@@ -1071,6 +1080,21 @@ export function transformMathHtml(html) {
       if (atBlockEnd) collapsed = collapsed.replace(/[ \t]+$/, "");
       if (collapsed !== t.textContent) t.textContent = collapsed;
     }
+
+    // Strip redundant leading bullets or numbers inside <li> elements to prevent double list markers
+    doc.querySelectorAll("li").forEach((li) => {
+      const cleanNodeText = (node) => {
+        if (!node) return;
+        if (node.nodeType === 3 /* TEXT_NODE */) {
+          node.textContent = node.textContent.replace(/^([•◦▪*\-]|(?:\d+|[a-zA-Z])[.)])\s+/, "");
+        } else if (node.nodeType === 1 && node.firstChild) {
+          cleanNodeText(node.firstChild);
+        }
+      };
+      if (li.firstChild) {
+        cleanNodeText(li.firstChild);
+      }
+    });
 
     const finalHtml = doc.body
       ? doc.body.innerHTML

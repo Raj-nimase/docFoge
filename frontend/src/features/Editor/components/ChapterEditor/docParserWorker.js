@@ -1,9 +1,4 @@
-/**
- * docUtils.js — Utilities for merging multi-chapter project data into a single
- * Tiptap document tree and splitting a single Tiptap document tree back into chapters.
- */
-
-function stripHeadingPrefix(text) {
+function stripHeadingPrefixWorker(text) {
   let cleaned = (text || "").trim();
   cleaned = cleaned.replace(/^\s*\d+(?:\.\d+)*(?:\.\s+|\s+)/, "");
   cleaned = cleaned.replace(/^\s*[a-zA-Z][.)]\s+/, "");
@@ -11,80 +6,7 @@ function stripHeadingPrefix(text) {
   return cleaned.trim();
 }
 
-/**
- * Merges frontMatter and chapters from a project into a single Tiptap doc structure.
- */
-export function mergeChaptersToSingleDoc(frontMatter = [], chapters = []) {
-  const mergedContent = [];
-
-  // 1. Process Front Matter (include non-auto items like Abstract and Acknowledgement, skip Certificate and auto items)
-  for (const fm of frontMatter) {
-    if (fm.auto || fm.id === "certificate" || fm.label?.toLowerCase() === "certificate") continue;
-
-    // Add H1 Heading for Front Matter Section
-    mergedContent.push({
-      type: "heading",
-      attrs: { level: 1 },
-      content: [{ type: "text", text: (fm.label || fm.title || "Section").toUpperCase() }],
-    });
-
-    if (fm.content && fm.content.content && Array.isArray(fm.content.content)) {
-      mergedContent.push(...fm.content.content);
-    } else {
-      mergedContent.push({
-        type: "paragraph",
-        content: [],
-      });
-    }
-  }
-
-  // 2. Process Chapters
-  chapters.forEach((ch, idx) => {
-    const chNum = idx + 1;
-    const rawTitle = ch.title || `Chapter ${chNum}`;
-    const cleanTitle = stripHeadingPrefix(rawTitle);
-
-    // Add Level 1 Heading for Chapter Title
-    mergedContent.push({
-      type: "heading",
-      attrs: { level: 1 },
-      content: [{ type: "text", text: `CHAPTER ${chNum}: ${cleanTitle}` }],
-    });
-
-    if (ch.content && ch.content.content && Array.isArray(ch.content.content)) {
-      const nodes = ch.content.content;
-      for (let i = 0; i < nodes.length; i++) {
-        const node = nodes[i];
-        if (i === 0 && node.type === "heading" && node.attrs?.level === 1) {
-          const text = node.content?.[0]?.text || "";
-          if (text.toUpperCase().includes(`CHAPTER ${chNum}`) || text.toUpperCase() === cleanTitle.toUpperCase()) {
-            continue; // Skip duplicate H1
-          }
-        }
-        mergedContent.push(node);
-      }
-    } else {
-      mergedContent.push({
-        type: "paragraph",
-        content: [],
-      });
-    }
-  });
-
-  if (mergedContent.length === 0) {
-    mergedContent.push({
-      type: "paragraph",
-      content: [],
-    });
-  }
-
-  return {
-    type: "doc",
-    content: mergedContent,
-  };
-}
-
-function isContentEmpty(contentArray) {
+function isContentEmptyWorker(contentArray) {
   if (!contentArray || contentArray.length === 0) return true;
   return contentArray.every((node) => {
     if (node.type === "paragraph") {
@@ -96,37 +18,30 @@ function isContentEmpty(contentArray) {
   });
 }
 
-function findMatchingChapter(cleanTitle, existingChapters, usedIds) {
+function findMatchingChapterWorker(cleanTitle, existingChapters = [], usedIds = new Set()) {
   if (!cleanTitle || !existingChapters || existingChapters.length === 0) return null;
   const normClean = cleanTitle.toLowerCase();
 
-  // 1. Exact match on clean title
   for (const ch of existingChapters) {
     if (usedIds.has(ch.id)) continue;
-    const chClean = stripHeadingPrefix(ch.title || "").toLowerCase();
-    if (chClean && chClean === normClean) {
-      return ch;
-    }
+    const chClean = stripHeadingPrefixWorker(ch.title || "").toLowerCase();
+    if (chClean && chClean === normClean) return ch;
   }
 
-  // 2. Substring match
   for (const ch of existingChapters) {
     if (usedIds.has(ch.id)) continue;
-    const chClean = stripHeadingPrefix(ch.title || "").toLowerCase();
-    if (chClean && (normClean.includes(chClean) || chClean.includes(normClean))) {
-      return ch;
-    }
+    const chClean = stripHeadingPrefixWorker(ch.title || "").toLowerCase();
+    if (chClean && (normClean.includes(chClean) || chClean.includes(normClean))) return ch;
   }
 
   return null;
 }
 
-/**
- * Splits a single unified Tiptap doc tree back into frontMatter and chapters arrays for storage & LaTeX generation.
- */
-export function splitSingleDocToProject(singleDoc, existingFrontMatter = [], existingChapters = []) {
+self.onmessage = (e) => {
+  const { singleDoc, existingFrontMatter = [], existingChapters = [] } = e.data;
   if (!singleDoc || !singleDoc.content || !Array.isArray(singleDoc.content)) {
-    return { frontMatter: existingFrontMatter, chapters: existingChapters };
+    self.postMessage({ frontMatter: existingFrontMatter, chapters: existingChapters });
+    return;
   }
 
   const updatedFm = existingFrontMatter.map((fm) => ({
@@ -142,12 +57,12 @@ export function splitSingleDocToProject(singleDoc, existingFrontMatter = [], exi
   let chIndex = 0;
 
   for (const node of singleDoc.content) {
-    const text = (node.content ? node.content.map(c => c.text || '').join('') : '').trim();
+    const text = (node.content ? node.content.map((c) => c.text || "").join("") : "").trim();
     const normText = text.toLowerCase();
 
     // Check if node matches any non-auto frontMatter item (e.g. Abstract or Acknowledgement)
     const isPotentialFm = (node.type === "heading") || (node.type === "paragraph" && (normText === "abstract" || normText === "acknowledgement" || normText.startsWith("abstract:") || normText.startsWith("acknowledgement:")));
-    
+
     const matchedFm = isPotentialFm ? updatedFm.find((fm) => {
       if (fm.auto || fm.id === "certificate" || fm.label?.toLowerCase() === "certificate") return false;
       const label = (fm.label || fm.title || "").toLowerCase();
@@ -157,24 +72,21 @@ export function splitSingleDocToProject(singleDoc, existingFrontMatter = [], exi
     if (matchedFm) {
       currentTarget = { type: "fm", obj: matchedFm };
     } else if (node.type === "heading" && node.attrs?.level === 1) {
-      const cleanTitle = stripHeadingPrefix(text.replace(/^CHAPTER\s+\d+[:\s\-]*/i, ""));
+      const cleanTitle = stripHeadingPrefixWorker(text.replace(/^CHAPTER\s+\d+[:\s\-]*/i, ""));
 
       // If current target is an empty chapter, update its title instead of creating a duplicate empty chapter
       if (
         currentTarget &&
         currentTarget.type === "ch" &&
-        isContentEmpty(currentTarget.obj.content.content)
+        isContentEmptyWorker(currentTarget.obj.content.content)
       ) {
         if (cleanTitle) {
           currentTarget.obj.title = cleanTitle;
         }
         currentTarget.obj.content.content = [];
       } else {
-        // Chapter heading for a new chapter
         chIndex++;
-
-        // Match existing chapter by title or position
-        let matchedCh = findMatchingChapter(cleanTitle, existingChapters, usedChapterIds);
+        let matchedCh = findMatchingChapterWorker(cleanTitle, existingChapters, usedChapterIds);
         if (!matchedCh && existingChapters[chIndex - 1] && !usedChapterIds.has(existingChapters[chIndex - 1].id)) {
           matchedCh = existingChapters[chIndex - 1];
         }
@@ -195,21 +107,20 @@ export function splitSingleDocToProject(singleDoc, existingFrontMatter = [], exi
       }
     } else {
       if (currentTarget) {
-        // Also handle plain text paragraph starting with "CHAPTER X: Title" in an empty chapter
         if (
           currentTarget.type === "ch" &&
-          isContentEmpty(currentTarget.obj.content.content) &&
+          isContentEmptyWorker(currentTarget.obj.content.content) &&
           node.type === "paragraph" &&
           node.content &&
           Array.isArray(node.content)
         ) {
           const paraText = node.content.map((c) => c.text || "").join("").trim();
           if (/^CHAPTER\s+\d+[:\s\-]*/i.test(paraText)) {
-            const cleanTitle = stripHeadingPrefix(paraText.replace(/^CHAPTER\s+\d+[:\s\-]*/i, ""));
+            const cleanTitle = stripHeadingPrefixWorker(paraText.replace(/^CHAPTER\s+\d+[:\s\-]*/i, ""));
             if (cleanTitle) {
               currentTarget.obj.title = cleanTitle;
             }
-            continue; // Skip adding redundant title paragraph
+            continue;
           }
         }
 
@@ -219,7 +130,6 @@ export function splitSingleDocToProject(singleDoc, existingFrontMatter = [], exi
           currentTarget.obj.content.content.push(node);
         }
       } else {
-        // Fallback before any H1
         if (existingChapters.length > 0) {
           if (newChapters.length === 0) {
             chIndex++;
@@ -238,7 +148,6 @@ export function splitSingleDocToProject(singleDoc, existingFrontMatter = [], exi
     }
   }
 
-  // Fallback if all chapters were deleted from document text
   if (newChapters.length === 0) {
     const fallbackId = existingChapters[0]?.id || `ch_${Date.now()}_1`;
     newChapters.push({
@@ -248,14 +157,8 @@ export function splitSingleDocToProject(singleDoc, existingFrontMatter = [], exi
     });
   }
 
-  return {
+  self.postMessage({
     frontMatter: updatedFm,
     chapters: newChapters,
-  };
-}
-
-export function splitSingleDocToChapters(singleDoc, existingChapters = []) {
-  const result = splitSingleDocToProject(singleDoc, [], existingChapters);
-  return result.chapters;
-}
-
+  });
+};

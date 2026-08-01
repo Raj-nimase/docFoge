@@ -67,33 +67,43 @@ function buildPreamble(templateId, metadata) {
   );
   const isDoubleSided = !!metadata.isDoubleSided;
 
+  const fontSizeRaw = metadata.fontSize || "12pt";
+  const numFontSize = parseInt(fontSizeRaw) || 12;
+  const isStdClassFont = [10, 11, 12].includes(numFontSize);
+  const docclassFont = isStdClassFont ? `${numFontSize}pt` : "12pt";
+  const pageSize = metadata.pageSize || "a4paper";
+
   const docclass = isIEEE
-    ? "\\documentclass[twocolumn,10pt]{article}"
+    ? `\\documentclass[twocolumn,${docclassFont}]{article}`
     : isDoubleSided
-      ? "\\documentclass[12pt,a4paper,twoside]{report}"
-      : "\\documentclass[12pt,a4paper]{report}";
+      ? `\\documentclass[${docclassFont},${pageSize},twoside]{report}`
+      : `\\documentclass[${docclassFont},${pageSize}]{report}`;
 
-  const enableHeader = !!metadata.enableHeader;
-  const topMargin = enableHeader ? "15mm" : "30mm";
+  let topM = metadata.marginTop || "2.5cm";
+  let botM = metadata.marginBottom || "2.5cm";
+  const leftM = metadata.marginLeft || "3.5cm";
+  const rightM = metadata.marginRight || "1.25cm";
 
+  // Upgrade legacy "default academic" margins: they pushed the header too far
+  // from the top edge and left the footer nearly touching the bottom edge.
+  if (topM === "1.0cm") topM = "2.5cm";
+  if (botM === "1.2cm" || botM === "1.25cm") botM = "2.5cm";
+
+  // Balanced academic layout: with 2.5cm body margins, headsep=6mm puts the
+  // header ~1.3cm from the top edge, footskip=1.2cm puts the footer ~1.3cm
+  // from the bottom edge — symmetric, like a properly formatted report.
+  const hfOpts = "headheight=15pt,headsep=6mm,footskip=1.2cm";
   let geometryPackage;
-  if (isReport) {
-    if (isDoubleSided) {
-      geometryPackage = `\\usepackage[a4paper,top=2.5cm,bottom=1.25cm,inner=3.5cm,outer=1.25cm,headheight=14pt,headsep=8mm,footskip=8mm]{geometry}`;
-    } else {
-      geometryPackage = `\\usepackage[a4paper,top=2.5cm,bottom=1.25cm,left=3.5cm,right=1.25cm,headheight=14pt,headsep=8mm,footskip=8mm]{geometry}`;
-    }
-  } else if (isIEEE) {
-    geometryPackage =
-      "\\usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=1.5cm,right=1.5cm]{geometry}";
+  if (isDoubleSided) {
+    geometryPackage = `\\usepackage[${pageSize},top=${topM},bottom=${botM},inner=${leftM},outer=${rightM},${hfOpts}]{geometry}`;
   } else {
-    geometryPackage =
-      "\\usepackage[a4paper,top=2.5cm,bottom=1.25cm,left=3.5cm,right=1.25cm]{geometry}";
+    geometryPackage = `\\usepackage[${pageSize},top=${topM},bottom=${botM},left=${leftM},right=${rightM},${hfOpts}]{geometry}`;
   }
 
   // Minimal, Tectonic-safe package set
   const lines = [
     docclass,
+    ...(!isStdClassFont ? [`\\AtBeginDocument{\\fontsize{${numFontSize}pt}{${Math.round(numFontSize * 1.3)}pt}\\selectfont}`] : []),
     "\\usepackage{amsmath, amssymb, amsfonts}",
     geometryPackage,
     "\\usepackage{fontspec}",
@@ -130,6 +140,8 @@ function buildPreamble(templateId, metadata) {
     "\\usepackage{verbatim}",
     "\\usepackage{tabularx}",
     "\\usepackage{xltabular}",
+    "\\usepackage[htt]{hyphenat}",
+    "\\renewcommand{\\tabularxcolumn}[1]{>{\\raggedright\\arraybackslash\\hspace{0pt}}p{#1}}",
     "\\usepackage{listings}",
     "\\usepackage{xcolor}",
     "\\usepackage[framemethod=default]{mdframed}",
@@ -145,8 +157,8 @@ function buildPreamble(templateId, metadata) {
     "",
     isIEEE
       ? "\\renewcommand{\\arraystretch}{1.2}"
-      : "\\renewcommand{\\arraystretch}{1.6}",
-    isIEEE ? "\\setlength{\\tabcolsep}{6pt}" : "\\setlength{\\tabcolsep}{14pt}",
+      : "\\renewcommand{\\arraystretch}{1.3}",
+    isIEEE ? "\\setlength{\\tabcolsep}{6pt}" : "\\setlength{\\tabcolsep}{10pt}",
     "\\usepackage{etoolbox}",
     "\\AtBeginEnvironment{lstlisting}{\\setstretch{1.0}}",
     "\\AtBeginEnvironment{bmatrix}{\\renewcommand{\\arraystretch}{1.1}}",
@@ -192,9 +204,21 @@ function buildPreamble(templateId, metadata) {
     "",
   ];
 
+  const lineSpacingVal = String(metadata.lineSpacing || "1.5").trim();
+  let spacingCmd = "\\onehalfspacing";
+  if (lineSpacingVal === "1.0" || lineSpacingVal === "1" || lineSpacingVal === "single") {
+    spacingCmd = "\\singlespacing";
+  } else if (lineSpacingVal === "2.0" || lineSpacingVal === "2" || lineSpacingVal === "double") {
+    spacingCmd = "\\doublespacing";
+  } else if (lineSpacingVal === "1.5" || lineSpacingVal === "onehalf") {
+    spacingCmd = "\\onehalfspacing";
+  } else if (!isNaN(parseFloat(lineSpacingVal))) {
+    spacingCmd = `\\setstretch{${lineSpacingVal}}`;
+  }
+
   if (isReport) {
-    // Rule g: Double line spacing
-    lines.push("\\doublespacing");
+    // Configurable line spacing
+    lines.push(spacingCmd);
     // Paragraph Spacing & Widow/Orphan Control
     lines.push("\\setlength{\\parindent}{0pt}");
     lines.push("\\setlength{\\parskip}{6pt}");
@@ -207,35 +231,55 @@ function buildPreamble(templateId, metadata) {
     // d. Section Heading: TNR-12 Capital Bold
     // c. Subsection Heading: TNR-12 Bold Normal
     lines.push("\\usepackage{titlesec}");
-    lines.push("\\titleformat{\\chapter}[display]");
+    if (metadata.enableChapterNumbers === false) {
+      lines.push("\\titleformat{\\chapter}[hang]");
+      lines.push(
+        "  {\\normalfont\\fontsize{14pt}{18pt}\\selectfont\\bfseries}",
+      );
+      lines.push("  {}");
+      lines.push("  {0pt}");
+      lines.push("  {\\MakeUppercase}");
+      lines.push("\\titlespacing*{\\chapter}{0pt}{0pt}{8mm}");
+    } else {
+      lines.push("\\titleformat{\\chapter}[display]");
+      lines.push(
+        "  {\\normalfont\\fontsize{14pt}{18pt}\\selectfont\\bfseries\\centering}",
+      );
+      lines.push("  {\\MakeUppercase{\\chaptertitlename\\ \\thechapter}}");
+      lines.push("  {4mm}");
+      lines.push("  {\\MakeUppercase}");
+      lines.push("\\titlespacing*{\\chapter}{0pt}{0pt}{10mm}");
+    }
+    // Always format unnumbered/starred chapters (\chapter*) as clean left-aligned headings
+    lines.push("\\titleformat{name=\\chapter,numberless}[hang]");
     lines.push(
-      "  {\\normalfont\\fontsize{14pt}{18pt}\\selectfont\\bfseries\\centering}",
+      "  {\\normalfont\\fontsize{14pt}{18pt}\\selectfont\\bfseries}",
     );
-    lines.push("  {\\MakeUppercase{\\chaptertitlename\\ \\thechapter}}");
-    lines.push("  {4mm}");
+    lines.push("  {}");
+    lines.push("  {0pt}");
     lines.push("  {\\MakeUppercase}");
-    lines.push("\\titlespacing*{\\chapter}{0pt}{-10pt}{10mm}");
+    lines.push("\\titlespacing*{name=\\chapter,numberless}{0pt}{0pt}{8mm}");
     lines.push("");
     lines.push("\\titleformat{\\section}");
     lines.push("  {\\normalfont\\fontsize{12pt}{16pt}\\selectfont\\bfseries}");
     lines.push("  {\\thesection}");
     lines.push("  {1em}");
     lines.push("  {\\MakeUppercase}");
-    lines.push("\\titlespacing*{\\section}{0pt}{8mm}{3mm}");
+    lines.push("\\titlespacing*{\\section}{0pt}{14pt}{6pt}");
     lines.push("");
     lines.push("\\titleformat{\\subsection}");
     lines.push("  {\\normalfont\\fontsize{12pt}{16pt}\\selectfont\\bfseries}");
     lines.push("  {\\thesubsection}");
     lines.push("  {1em}");
     lines.push("  {}");
-    lines.push("\\titlespacing*{\\subsection}{0pt}{6mm}{2mm}");
+    lines.push("\\titlespacing*{\\subsection}{0pt}{11pt}{4pt}");
     lines.push("");
     lines.push("\\titleformat{\\subsubsection}");
     lines.push("  {\\normalfont\\fontsize{12pt}{15pt}\\selectfont\\bfseries}");
     lines.push("  {\\thesubsubsection}");
     lines.push("  {1em}");
     lines.push("  {}");
-    lines.push("\\titlespacing*{\\subsubsection}{0pt}{5mm}{2mm}");
+    lines.push("\\titlespacing*{\\subsubsection}{0pt}{8pt}{3pt}");
     lines.push("");
     lines.push("\\setlength{\\abovedisplayskip}{6pt}");
     lines.push("\\setlength{\\belowdisplayskip}{6pt}");
@@ -247,7 +291,11 @@ function buildPreamble(templateId, metadata) {
       "\\setlist[enumerate]{leftmargin=1.5em, itemsep=2pt, topsep=4pt, parsep=0pt, partopsep=0pt}",
     );
     lines.push("");
-    lines.push("\\setcounter{secnumdepth}{3}");
+    if (metadata.enableChapterNumbers === false) {
+      lines.push("\\setcounter{secnumdepth}{0}");
+    } else {
+      lines.push("\\setcounter{secnumdepth}{3}");
+    }
     lines.push("\\setcounter{tocdepth}{3}");
     lines.push("");
     lines.push("% Table of Contents formatting with dot leaders (..........)");
@@ -256,7 +304,7 @@ function buildPreamble(templateId, metadata) {
     lines.push("\\renewcommand{\\cftsecleader}{\\cftdotfill{\\cftdotsep}}");
     lines.push("\\renewcommand{\\cftsubsecleader}{\\cftdotfill{\\cftdotsep}}");
   } else if (!isIEEE) {
-    lines.push("\\doublespacing");
+    lines.push(spacingCmd);
     lines.push("\\setcounter{secnumdepth}{3}");
     lines.push("\\setcounter{tocdepth}{3}");
   }
@@ -268,36 +316,28 @@ function buildPreamble(templateId, metadata) {
   lines.push("\\usepackage{fancyhdr}");
 
   if (isReport) {
-    // Redefine plain page style so chapter first pages have center footer page number & NO header (Section 2.1.5)
+    // For reports, front matter pages use clean plain page style (NO running header, NO top line)
+    lines.push("\\pagestyle{plain}");
     lines.push("\\fancypagestyle{plain}{%");
     lines.push("  \\fancyhf{}");
     lines.push("  \\fancyfoot[C]{\\thepage}");
     lines.push("  \\renewcommand{\\headrulewidth}{0pt}");
     lines.push("  \\renewcommand{\\footrulewidth}{0pt}");
     lines.push("}");
-  }
-
-  if (config.enableHeader || config.enableFooter) {
-    if (isReport) {
-      lines.push("\\pagestyle{plain}");
-    } else {
+  } else {
+    if (config.enableHeader || config.enableFooter) {
       lines.push("\\pagestyle{fancy}");
-    }
+      lines.push("\\fancyhf{}");
+      lines.push(`\\fancyhead[L]{${config.hl}}`);
+      lines.push(`\\fancyhead[C]{${config.hc}}`);
+      lines.push(`\\fancyhead[R]{${config.hr}}`);
+      lines.push(`\\fancyfoot[L]{${config.fl}}`);
+      lines.push(`\\fancyfoot[C]{${config.fc}}`);
+      lines.push(`\\fancyfoot[R]{${config.fr}}`);
+      lines.push(`\\renewcommand{\\headrulewidth}{${config.hrule}}`);
+      lines.push(`\\renewcommand{\\footrulewidth}{${config.frule}}`);
 
-    lines.push("\\fancyhf{}");
-
-    // Apply to standard 'fancy' layout
-    lines.push(`\\fancyhead[L]{${config.hl}}`);
-    lines.push(`\\fancyhead[C]{${config.hc}}`);
-    lines.push(`\\fancyhead[R]{${config.hr}}`);
-    lines.push(`\\fancyfoot[L]{${config.fl}}`);
-    lines.push(`\\fancyfoot[C]{${config.fc}}`);
-    lines.push(`\\fancyfoot[R]{${config.fr}}`);
-    lines.push(`\\renewcommand{\\headrulewidth}{${config.hrule}}`);
-    lines.push(`\\renewcommand{\\footrulewidth}{${config.frule}}`);
-
-    if (!isReport) {
-      // For non-reports (like IEEE papers), redefine 'plain' immediately so page 1 gets them
+      // For non-reports (IEEE papers), redefine 'plain' immediately so page 1 gets them
       lines.push("");
       lines.push("\\fancypagestyle{plain}{%");
       lines.push("  \\fancyhf{}");
@@ -310,9 +350,9 @@ function buildPreamble(templateId, metadata) {
       lines.push(`  \\renewcommand{\\headrulewidth}{${config.hrule}}`);
       lines.push(`  \\renewcommand{\\footrulewidth}{${config.frule}}`);
       lines.push("}");
+    } else {
+      lines.push("\\pagestyle{plain}");
     }
-  } else {
-    lines.push("\\pagestyle{plain}");
   }
 
   lines.push("");
@@ -816,6 +856,16 @@ function hasNodeType(projectData, nodeType) {
     if (config.enableHeader || config.enableFooter) {
       parts.push("");
       parts.push("\\pagestyle{fancy}");
+      parts.push("\\fancyhf{}");
+      parts.push(`\\fancyhead[L]{${config.hl}}`);
+      parts.push(`\\fancyhead[C]{${config.hc}}`);
+      parts.push(`\\fancyhead[R]{${config.hr}}`);
+      parts.push(`\\fancyfoot[L]{${config.fl}}`);
+      parts.push(`\\fancyfoot[C]{${config.fc}}`);
+      parts.push(`\\fancyfoot[R]{${config.fr}}`);
+      parts.push(`\\renewcommand{\\headrulewidth}{${config.hrule}}`);
+      parts.push(`\\renewcommand{\\footrulewidth}{${config.frule}}`);
+      parts.push("");
       parts.push("\\fancypagestyle{plain}{%");
       parts.push("  \\fancyhf{}");
       parts.push(`  \\fancyhead[L]{${config.hl}}`);
@@ -987,9 +1037,6 @@ function convertNodeWithShift(node, shift, templateId) {
   if (!node) return "";
   if (node.type === "heading") {
     const text = convertInline(node.content, templateId);
-    if (isMathText(text)) {
-      return `\\[ ${sanitizeLatex(text)} \\]`;
-    }
     const cleanText = stripAllPrefixes(text);
     const rawLevel = node.attrs && node.attrs.level ? node.attrs.level : 1;
     const isIEEE = templateId === "ieee-paper";
@@ -1015,9 +1062,6 @@ function convertNode(node, templateId) {
 
     case "heading": {
       const text = convertInline(node.content, templateId);
-      if (isMathText(text)) {
-        return `\\[ ${sanitizeLatex(text)} \\]`;
-      }
       const cleanText = stripAllPrefixes(text);
       const level = node.attrs && node.attrs.level ? node.attrs.level : 1;
       const isIEEE = templateId === "ieee-paper";
@@ -1240,7 +1284,7 @@ function convertTable(tableNode, templateId) {
         .map((n) => convertNode(n, templateId))
         .join(" ")
         .trim();
-      return `\\textbf{${cellText}}`;
+      return `\\textbf{${makeBreakableLatexText(cellText)}}`;
     });
     const headerRowStr = headerCells.join(" & ") + " \\\\\n\\hline\n";
 
@@ -1268,9 +1312,9 @@ function convertTable(tableNode, templateId) {
         .join(" ")
         .trim();
       if (cell.type === "tableHeader") {
-        return `\\textbf{${cellText}}`;
+        return `\\textbf{${makeBreakableLatexText(cellText)}}`;
       }
-      return cellText;
+      return makeBreakableLatexText(cellText);
     });
     tex += cells.join(" & ") + " \\\\\n\\hline\n";
   }
@@ -1303,6 +1347,15 @@ function convertInline(nodes, templateId) {
   return result;
 }
 
+function makeBreakableLatexText(str) {
+  if (!str || typeof str !== "string" || str.length < 10) return str;
+  if (str.includes("$") || str.includes("\\begin")) return str;
+  let res = str.replace(/(\\\_|\/|\.|\:|\-)/g, "$1\\allowbreak ");
+  res = res.replace(/([a-z0-9])([A-Z])/g, "$1\\allowbreak $2");
+  res = res.replace(/([A-Z]{2,})([A-Z][a-z])/g, "$1\\allowbreak $2");
+  return res;
+}
+
 function convertTextWithMarks(node) {
   let text = escapeLatex(node.text || "");
   const marks = node.marks || [];
@@ -1318,7 +1371,7 @@ function convertTextWithMarks(node) {
         text = `\\uline{${text}}`;
         break;
       case "code":
-        text = `\\texttt{${text}}`;
+        text = `\\texttt{${makeBreakableLatexText(text)}}`;
         break;
       case "strike":
         text = `\\sout{${text}}`;
@@ -1368,7 +1421,7 @@ function getHeaderFooterConfig(metadata) {
         fc = `${fc}\\\\ \\thepage`;
       }
     }
-    frule = !!metadata.footerRule ? "0.4pt" : "0pt";
+    frule = metadata.footerRule !== false ? "0.4pt" : "0pt";
   } else {
     fc = "\\thepage";
   }

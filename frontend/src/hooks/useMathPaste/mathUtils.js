@@ -120,8 +120,12 @@ export function isSingleFormula(line) {
   if (/^#{1,6}\s/.test(trimmed)) return false; // ## Heading
   if (/^[-*•◦▪]\s/.test(trimmed)) return false; // - bullet
   if (/^\*[a-zA-Z]/.test(trimmed)) return false; // *italic text*
-  if (/^---+$/.test(trimmed)) return false; // --- divider
   if (mmWordy(trimmed) > 3) return false; // prose sentences
+
+  // If line contains inline $...$ or $$...$$ delimiters mixed with un-wrapped text, it is NOT a single formula
+  const hasDollar = trimmed.includes("$");
+  const isFullyWrappedDollar = /^\$\$?[\s\S]+?\$\$?$/.test(trimmed);
+  if (hasDollar && !isFullyWrappedDollar) return false;
 
   // It IS a formula if it's wrapped in $...$
   if (/^\$[\s\S]+?\$$/.test(trimmed)) return true;

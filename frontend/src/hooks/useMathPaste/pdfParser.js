@@ -6,7 +6,13 @@
 export function separatePdfParagraphsAndHeadings(text) {
   if (!text) return text;
 
-  let cleaned = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  let cleaned = text.replace(/<\/?mark(?:\s+[^>]*)?>/gi, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+  // 0. Insert blank lines before squashed numbered list items (e.g. "1. Step up... 2. Step down...")
+  cleaned = cleaned.replace(
+    /([.:!?]|\w)\s+(\d+[.)]\s+[A-Z])/g,
+    "$1\n\n$2"
+  );
 
   // 1. Insert blank lines before section headers squashed after sentence endings or space
   // e.g. "...less than i. 3.2 Attention An attention..." -> "...less than i.\n\n3.2 Attention\n\nAn attention..."

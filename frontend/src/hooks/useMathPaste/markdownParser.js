@@ -312,7 +312,7 @@ function stripHeadingPrefix(text) {
 
 export function looksLikeMarkdownMath(text) {
   if (!text) return false;
-  const clean = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const clean = text.replace(/<\/?mark(?:\s+[^>]*)?>/gi, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const hasFence = /^[ \t]*(\[|\\\[|\$\$)[ \t]*$/m.test(clean);
   const hasLatexCmd = /\\[a-zA-Z]{2,}/.test(clean);
   const hasInlineMath = /\$[^\n$]+\$/m.test(clean) || /\\\(.+\\\)/m.test(clean);
@@ -397,9 +397,45 @@ function splitTableRow(l) {
 
 // Main parser: pasted markdown-with-math → HTML (headings, lists, tables, math).
 export function parseMarkdownMathToHtml(text) {
-  const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  let cleanText = text
+    .replace(/<\/?mark(?:\s+[^>]*)?>/gi, "")
+    .replace(/\$([^$]+)\$\s*[’']/g, "$$1'$$")
+    .replace(/\$([^$]+)\$\s+’/g, "$$1'$$")
+    .replace(/\^\{\$([^$]+)\$\}/g, "^$1")
+    .replace(/_\{\$([^$]+)\$\}/g, "_$1")
+    .replace(/\^(?:\{([^{}]+)\}|([a-zA-Z\\]+))\s*_\{?([a-zA-Z0-9_]+)\}?\s*\/\s*_\{\(([^()]+)\)\}/g, (m, g1, g2, g3, g4) => `\\frac{${(g1||g2).trim()}_{${g3.trim()}}}{${g4.trim()}}`)
+    .replace(/\^(?:\{([^{}]+)\}|([a-zA-Z\\]+))\s*_\{?([a-zA-Z0-9_]+)\}?/g, (m, g1, g2, g3) => `${(g1||g2).trim()}_{${g3.trim()}}`);
+  const rawLines = cleanText.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+
+  
+  // Pre-pass: Renumber broken/corrupted ordered list markers sequentially (1., 1., 3. → 1., 2., 3.)
+  const lines = [];
+  let currNum = 0;
+  for (let idx = 0; idx < rawLines.length; idx++) {
+    const l = rawLines[idx];
+    const tr = l.trim();
+    const m = l.match(/^([ \t]*)\d+[.)][ \t]+(.*)$/);
+    if (m) {
+      currNum++;
+      lines.push(`${m[1]}${currNum}. ${m[2]}`);
+    } else {
+      let hasNextList = false;
+      for (let j = idx + 1; j < Math.min(idx + 6, rawLines.length); j++) {
+        if (/^[ \t]*\d+[.)][ \t]+/.test(rawLines[j])) {
+          hasNextList = true;
+          break;
+        }
+      }
+      if (!hasNextList && tr !== "" && !/^[ \t]*[-*+]|^\$\$|^\\\[/.test(tr)) {
+        currNum = 0;
+      }
+      lines.push(l);
+    }
+  }
+
   let html = "";
   let headingSeen = false;
+
 
   // Stack tracks open lists: { type: 'ul' | 'ol', indent: number }
   const listStack = [];
@@ -415,6 +451,22 @@ export function parseMarkdownMathToHtml(text) {
     const line = lines[i];
     const trimmed = line.trim();
     if (trimmed === "") {
+      if (listStack.length > 0) {
+        // Peek ahead to check if next non-empty line is another list item
+        let nextIdx = i + 1;
+        while (nextIdx < lines.length && lines[nextIdx].trim() === "") {
+          nextIdx++;
+        }
+        if (nextIdx < lines.length) {
+          const nextLine = lines[nextIdx];
+          const isNextList = /^(\s*)(?:([*\-+•◦▪])|(\d+)[.)]|([a-zA-Z])[.)])\s+(.*)$/.test(nextLine);
+          if (isNextList) {
+            // Keep list open across blank lines (loose list)
+            i++;
+            continue;
+          }
+        }
+      }
       flushList();
       i++;
       continue;
@@ -763,8 +815,9 @@ export function parseMarkdownMathToHtml(text) {
     const hasExplicitLatex =
       /\\[a-zA-Z]+/.test(trimmed) && mmWordy(trimmed) <= 3 && !isMixedLine;
     if (
-      hasExplicitLatex ||
-      (convLine !== trimmed && mmMathScore(convLine) && mmWordy(convLine) <= 4)
+      !isMixedLine &&
+      (hasExplicitLatex ||
+        (convLine !== trimmed && mmMathScore(convLine) && mmWordy(convLine) <= 4))
     ) {
       const spanHtml = mathSpan(convLine.replace(/\s+/g, " ").trim(), true);
       html += `<p>${spanHtml}</p>`;

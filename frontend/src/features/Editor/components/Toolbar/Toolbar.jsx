@@ -290,12 +290,26 @@ export default function EditorToolbar({ editor }) {
       {group('Insert', <>
         <button
           type="button"
-          className="toolbar-btn toolbar-btn--icon"
-          title="Insert Math Equation (Ctrl+Shift+M)"
-          onClick={() => editor.chain().focus().insertContent({ type: 'math', attrs: { latex: 'x', display: false } }).run()}
+          className={`toolbar-btn toolbar-btn--icon${editor.isActive('math') ? ' toolbar-btn--active' : ''}`}
+          title={editor.isActive('math') ? "Convert Math formula back to plain text" : "Insert Math Equation (Ctrl+Shift+M)"}
+          onClick={() => {
+            if (editor.isActive('math')) {
+              const { $from } = editor.state.selection;
+              for (let d = $from.depth; d >= 0; d--) {
+                const node = $from.node(d);
+                if (node?.type?.name === 'math') {
+                  const pos = $from.before(d);
+                  const latex = node.attrs.latex || '';
+                  editor.chain().focus().deleteRange({ from: pos, to: pos + node.nodeSize }).insertContentAt(pos, latex).run();
+                  return;
+                }
+              }
+            }
+            editor.chain().focus().insertContent({ type: 'math', attrs: { latex: 'x', display: false } }).run();
+          }}
         >
           <Sigma size={15} />
-          <span className="toolbar-btn-label">Equation</span>
+          <span className="toolbar-btn-label">{editor.isActive('math') ? 'To Text' : 'Equation'}</span>
         </button>
         <button
           type="button"

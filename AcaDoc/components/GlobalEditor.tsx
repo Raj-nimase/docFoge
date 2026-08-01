@@ -463,6 +463,49 @@ const imageCaptionJS = `
 
     function mmCleanText(s) { return s.replace(/\\*\\*(.+?)\\*\\*/g, '$1').replace(/\`([^\`]+)\`/g, '$1'); }
 
+    // Bare sub/superscript run in prose — "Φ_{m}", "m^{3}", "I_{0}^{2}" — that
+    // our PDF markdown emits OUTSIDE $...$ delimiters. Converted to inline
+    // KaTeX so it renders instead of showing literal braces.
+    var MM_BARESS_RE = /([A-Za-zΑ-Ωα-ω]|\\d+)((?:[_^]\\{[^{}]{1,24}\\})+)/g;
+
+    // Split a plain prose segment into text nodes + inline-math nodes for any
+    // bare sub/superscript runs it contains. marks (bold/italic/code) apply to
+    // the text pieces only.
+    function mmTextWithMath(seg, marks) {
+      var nodes = [], last = 0, m;
+      MM_BARESS_RE.lastIndex = 0;
+      while ((m = MM_BARESS_RE.exec(seg))) {
+        if (m.index > last) {
+          var pre = seg.slice(last, m.index);
+          if (pre) nodes.push(marks ? { type: 'text', text: pre, marks: marks } : { type: 'text', text: pre });
+        }
+        nodes.push(mmImageMath(mmConvUnicode(m[0]), false));
+        last = m.index + m[0].length;
+      }
+      var rest = seg.slice(last);
+      if (rest) nodes.push(marks ? { type: 'text', text: rest, marks: marks } : { type: 'text', text: rest });
+      return nodes;
+    }
+
+    // Parse markdown emphasis in a prose run into styled text nodes:
+    // ***bold italic***, **bold**, *italic*, \`code\`. Unmarked pieces are
+    // further scanned for bare sub/superscript math (mmTextWithMath).
+    var MM_EMPH_RE = /(\\*\\*\\*([^*\\n]+)\\*\\*\\*|\\*\\*([^*\\n]+)\\*\\*|\\*([^*\\n]+)\\*|\`([^\`\\n]+)\`)/g;
+    function mmMarkedText(raw) {
+      var nodes = [], last = 0, m;
+      MM_EMPH_RE.lastIndex = 0;
+      while ((m = MM_EMPH_RE.exec(raw))) {
+        if (m.index > last) nodes = nodes.concat(mmTextWithMath(raw.slice(last, m.index), null));
+        if (m[2]) nodes = nodes.concat(mmTextWithMath(m[2], [{ type: 'bold' }, { type: 'italic' }]));
+        else if (m[3]) nodes = nodes.concat(mmTextWithMath(m[3], [{ type: 'bold' }]));
+        else if (m[4]) nodes = nodes.concat(mmTextWithMath(m[4], [{ type: 'italic' }]));
+        else if (m[5]) nodes.push({ type: 'text', text: m[5], marks: [{ type: 'code' }] });
+        last = m.index + m[0].length;
+      }
+      if (last < raw.length) nodes = nodes.concat(mmTextWithMath(raw.slice(last), null));
+      return nodes;
+    }
+
     // ── Unicode / HTML → LaTeX ────────────────────────────────────────────────
     // Copying math from a web page yields (a) rich text/html with <sup>/<sub>
     // and real symbols, or (b) lossy text/plain (² becomes a separate line, and
@@ -682,10 +725,9 @@ const imageCaptionJS = `
             inlineContent.push(mmImageMath(tk.v, false));
           }
         } else {
-          var cleanText = mmCleanText(tk.v);
-          if (cleanText) {
-            inlineContent.push({ type: 'text', text: cleanText });
-          }
+          // Keep **bold** / *italic* / \`code\` as real marks and convert bare
+          // sub/superscript runs (Φ_{m}, m^{3}) into inline KaTeX.
+          inlineContent = inlineContent.concat(mmMarkedText(tk.v));
         }
       }
       return [{ type: 'paragraph', content: inlineContent }];
@@ -879,6 +921,15 @@ const imageCaptionJS = `
           i++; continue;
         }
 
+        // Markdown image: ![alt](url) — real picture from the PDF converter.
+        // Emit an actual image node so pasted documents keep their figures.
+        var img = trimmed.match(/^!\\[([^\\]]*)\\]\\((\\S+?)(?:\\s+\"[^\"]*\")?\\)$/);
+        if (img && /^(https?:|data:)/i.test(img[2])) {
+          flushList();
+          out.push({ type: 'image', attrs: { src: img[2], alt: img[1] || '', title: img[1] || '' } });
+          i++; continue;
+        }
+
         // Display-math fence, opened by a line that is just  [ , \[ or $$ . The
         // close delimiter may sit mid-line — e.g. "][" (next block) or "]text"
         // (trailing prose) — so we scan for it and reprocess any remainder.
@@ -1054,6 +1105,19 @@ const imageCaptionJS = `
       return hasTable || /[\\\\]/.test(text) || /[\\^_]\\s*[{0-9a-zA-Z]/.test(text) || /\\$\\$?[^$]+\\$\\$?/.test(text) || /[⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉]/.test(text) || /[√∑∏∫∞±≤≥≠×÷∈∂]/.test(text);
     }
 
+    // Does this plain-text payload look like MARKDOWN (headings, images, bold,
+    // lists, quotes)? Pasting a converted .md must route through mmParse even
+    // when it contains no math — otherwise the default plain-text paste drops
+    // headings, images, and bold/italic marks.
+    function mmLooksMarkdown(text) {
+      if (!text) return false;
+      return /^#{1,6}\\s+\\S/m.test(text) ||
+             /!\\[[^\\]]*\\]\\([^)]+\\)/.test(text) ||
+             /\\*\\*[^*\\n]+\\*\\*/.test(text) ||
+             /^\\s*[-*+•◦▪]\\s+\\S/m.test(text) ||
+             /^>\\s+\\S/m.test(text);
+    }
+
     // Should we prefer the rich-HTML path over the (more robust) text path? ONLY
     // when the HTML carries STRUCTURAL math markup that text/plain would lose —
     // real <sup>/<sub>, MathML (<math>, <mfrac>…), or a KaTeX/MathJax container.
@@ -1077,7 +1141,7 @@ const imageCaptionJS = `
     // gate in mmProcessPaste so the capture listener only takes over pastes we'd
     // actually transform, and lets ordinary prose fall through to the default.
     function mmWillConvert(html, text) {
-      return mmHtmlHasMath(html) || (text && mmLooksMathy(text));
+      return mmHtmlHasMath(html) || (text && (mmLooksMathy(text) || mmLooksMarkdown(text)));
     }
 
     // Core: parse a pasted payload into nodes (paragraphs / headings / image-
@@ -1093,7 +1157,7 @@ const imageCaptionJS = `
           nodesJSON = mmParseHtml(html);
         }
         if (!nodesJSON || !nodesJSON.length) {
-          if (!text || !mmLooksMathy(text)) return false; // let default paste run
+          if (!text || (!mmLooksMathy(text) && !mmLooksMarkdown(text))) return false; // let default paste run
           nodesJSON = mmParse(text);
         }
         if (!nodesJSON || !nodesJSON.length) return false;

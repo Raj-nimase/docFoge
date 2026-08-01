@@ -311,6 +311,26 @@ export async function extractMathFromImage(base64Image) {
 }
 
 export async function uploadDocument(file) {
+  // If file is a PDF, attempt conversion using OpenDataLoader PDF service on port 8001
+  if (file && (file.type === 'application/pdf' || file.name?.endsWith('.pdf'))) {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('http://localhost:8001/convert', {
+        method: 'POST',
+        body: formData,
+      });
+      if (res.ok) {
+        const text = await res.text();
+        if (text && text.trim().length > 0) {
+          return { success: true, text };
+        }
+      }
+    } catch (err) {
+      console.log('[api] OpenDataLoader PDF service (8001) unreachable, using standard document parser:', err.message || err);
+    }
+  }
+
   const formData = new FormData();
   formData.append('file', file);
 
@@ -330,3 +350,4 @@ export async function uploadDocument(file) {
   }
   return data;
 }
+

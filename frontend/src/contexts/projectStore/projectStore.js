@@ -155,42 +155,61 @@ let _loadProjectsPromise = null;
 let _projectsLoadedOnce = false;  // true once any successful load completes
 
 function cleanupProjectFrontMatter(project) {
-  if (!project || !project.chapters) return project;
-  const fmLabels = new Set(["acknowledgement", "abstract", "certificate"]);
+  if (!project) return project;
+  const template = getTemplate(project.templateId || 'diploma-project-report');
+  const tplFm = template?.frontMatter || [];
 
-  const misplacedChs = project.chapters.filter((ch) =>
+  const existingFm = project.frontMatter || [];
+  const existingFmIds = new Set(existingFm.map((fm) => fm.id));
+  const existingFmLabels = new Set(existingFm.map((fm) => (fm.label || "").toLowerCase()));
+
+  // 1. Auto-restore missing required template frontMatter sections (Certificate, Acknowledgement, Abstract, etc.)
+  const restoredFm = [...existingFm];
+  for (const tFm of tplFm) {
+    const isMissing = !existingFmIds.has(tFm.id) && !existingFmLabels.has((tFm.label || "").toLowerCase());
+    if (isMissing) {
+      restoredFm.push({
+        ...tFm,
+        content: null,
+      });
+    }
+  }
+
+  // Preserve correct template order for frontMatter
+  if (tplFm.length > 0) {
+    const orderMap = new Map(tplFm.map((t, idx) => [t.id, idx]));
+    restoredFm.sort((a, b) => {
+      const orderA = orderMap.has(a.id) ? orderMap.get(a.id) : 99;
+      const orderB = orderMap.has(b.id) ? orderMap.get(b.id) : 99;
+      return orderA - orderB;
+    });
+  }
+
+  // 2. Remove misplaced chapters that duplicate frontMatter sections
+  const fmLabels = new Set(restoredFm.map((fm) => (fm.label || "").trim().toLowerCase()));
+  const misplacedChs = (project.chapters || []).filter((ch) =>
     fmLabels.has((ch.title || "").trim().toLowerCase())
   );
 
-  if (misplacedChs.length === 0) return project;
-
-  const cleanChapters = project.chapters.filter(
+  const cleanChapters = (project.chapters || []).filter(
     (ch) => !fmLabels.has((ch.title || "").trim().toLowerCase())
   );
 
-  const updatedFm = [...(project.frontMatter || [])];
   for (const ch of misplacedChs) {
-    const label = ch.title.trim();
-    const existingIndex = updatedFm.findIndex(
-      (fm) => fm.label?.toLowerCase() === label.toLowerCase() || fm.id === label.toLowerCase()
+    const label = ch.title.trim().toLowerCase();
+    const existingIndex = restoredFm.findIndex(
+      (fm) => fm.label?.toLowerCase() === label || fm.id === label
     );
     if (existingIndex >= 0) {
-      if (!updatedFm[existingIndex].content && ch.content) {
-        updatedFm[existingIndex] = { ...updatedFm[existingIndex], content: ch.content };
+      if (!restoredFm[existingIndex].content && ch.content) {
+        restoredFm[existingIndex] = { ...restoredFm[existingIndex], content: ch.content };
       }
-    } else {
-      updatedFm.push({
-        id: label.toLowerCase(),
-        label: label,
-        auto: false,
-        content: ch.content || null,
-      });
     }
   }
 
   return {
     ...project,
-    frontMatter: updatedFm,
+    frontMatter: restoredFm,
     chapters: cleanChapters,
   };
 }

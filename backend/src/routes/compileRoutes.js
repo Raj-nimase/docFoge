@@ -183,30 +183,46 @@ async function processCompile(jobId, project) {
     console.log(`${ts()} Step A done. safe=${safe} latexBytes=${latex.length} images=${images?.length ?? 0}`);
     if (!safe) throw new Error(`LaTeX safety check failed: ${reason}`);
 
+    // 1x1 transparent PNG fallback to prevent Tectonic LaTeX 'Division by 0' error if image fails to download
+    const FALLBACK_PNG_BUFFER = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      "base64"
+    );
+
     // ── Step B: Write temp dir & save images ─────────────────────────────────
     if (images && images.length > 0) {
       console.log(`${ts()} Step B: Saving ${images.length} image(s)...`);
       for (const img of images) {
         const imgPath = path.join(tmpDir, img.filename);
         if (img.base64) {
-          fs.writeFileSync(imgPath, img.base64, "base64");
-          console.log(`${ts()} Step B: Saved base64 image: ${img.filename}`);
+          try {
+            fs.writeFileSync(imgPath, Buffer.from(img.base64, "base64"));
+            console.log(`${ts()} Step B: Saved base64 image: ${img.filename}`);
+          } catch (err) {
+            fs.writeFileSync(imgPath, FALLBACK_PNG_BUFFER);
+          }
         } else if (img.url) {
           try {
             console.log(`${ts()} Step B: Fetching remote image: ${img.url}`);
-            const response = await fetch(img.url);
+            const response = await fetch(img.url, { timeout: 5000 });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const arrayBuffer = await response.arrayBuffer();
             fs.writeFileSync(imgPath, Buffer.from(arrayBuffer));
             console.log(`${ts()} Step B: Downloaded remote image: ${img.filename}`);
           } catch (fetchErr) {
-            console.log(`${ts()} Step B: FAILED to download ${img.url}: ${fetchErr.message}`);
+            console.log(`${ts()} Step B: FAILED to download ${img.url}: ${fetchErr.message}. Writing fallback placeholder PNG.`);
             logger.error("CompileRoute", `Failed to download ${img.url}`, fetchErr.message);
+            // Write fallback placeholder PNG so Tectonic compile doesn't crash with Division by 0
+            fs.writeFileSync(imgPath, FALLBACK_PNG_BUFFER);
           }
+        } else {
+          // Missing both url and base64 — write fallback PNG
+          fs.writeFileSync(imgPath, FALLBACK_PNG_BUFFER);
         }
       }
       console.log(`${ts()} Step B done.`);
     }
+
 
     // ── Step C: Run Tectonic ──────────────────────────────────────────────────
     console.log(`${ts()} Step C: Starting Tectonic compilation...`);

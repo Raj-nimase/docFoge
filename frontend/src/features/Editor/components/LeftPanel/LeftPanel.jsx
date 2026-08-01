@@ -1,6 +1,93 @@
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import useAcaStore from '@/contexts/projectStore/projectStore';
+
+const LeftPanelFrontMatterItem = memo(({ section, isActive, onSelect, onDelete }) => {
+  return (
+    <div className={`left-panel-item-wrap ${isActive ? 'left-panel-item-wrap--active' : ''}`}>
+      <button
+        className={`left-panel-item ${isActive ? 'left-panel-item--active' : ''} ${section.auto ? 'left-panel-item--auto' : ''}`}
+        onClick={onSelect}
+      >
+        <span className="left-panel-item-icon">{section.auto ? '⚙' : '📄'}</span>
+        <span className="left-panel-item-label">{section.label}</span>
+        {section.auto && <span className="left-panel-item-badge">auto</span>}
+      </button>
+      {!section.auto && !section.required && (
+        <button
+          className="left-panel-delete-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(section.id);
+          }}
+          title={`Delete ${section.label}`}
+        >✕</button>
+      )}
+    </div>
+  );
+});
+
+const LeftPanelChapterItem = memo(({
+  ch,
+  idx,
+  isActive,
+  renamingId,
+  renameVal,
+  onSelect,
+  onStartRename,
+  onRenameChange,
+  onRenameSubmit,
+  onCancelRename,
+  onDelete,
+  provided,
+  snapshot
+}) => {
+  return (
+    <div
+      ref={provided.innerRef}
+      {...provided.draggableProps}
+      className={`left-panel-item-wrap ${isActive ? 'left-panel-item-wrap--active' : ''} ${snapshot.isDragging ? 'left-panel-item-wrap--dragging' : ''}`}
+    >
+      <div {...provided.dragHandleProps} className="left-panel-drag-handle">
+        ⋮⋮
+      </div>
+
+      {renamingId === ch.id ? (
+        <input
+          className="left-panel-rename-input"
+          value={renameVal}
+          autoFocus
+          onChange={onRenameChange}
+          onBlur={() => onRenameSubmit(ch.id)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onRenameSubmit(ch.id);
+            if (e.key === 'Escape') onCancelRename();
+          }}
+        />
+      ) : (
+        <button
+          className={`left-panel-item ${isActive ? 'left-panel-item--active' : ''}`}
+          onClick={onSelect}
+          onDoubleClick={onStartRename}
+          title="Double-click to rename"
+        >
+          <span className="left-panel-item-num">{idx + 1}</span>
+          <span className="left-panel-item-label">{ch.title}</span>
+        </button>
+      )}
+      {!ch.required && !snapshot.isDragging && (
+        <button
+          className="left-panel-delete-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(ch.id);
+          }}
+          title="Delete chapter"
+        >✕</button>
+      )}
+    </div>
+  );
+});
 
 export default function LeftPanel({ collapsed, onToggleCollapse }) {
   const currentProject   = useAcaStore(s => s.getCurrentProject());
@@ -98,7 +185,7 @@ export default function LeftPanel({ collapsed, onToggleCollapse }) {
           <button
             className="left-panel-collapse-btn"
             onClick={onToggleCollapse}
-            title="Minimise panel"
+            title="Collapse panel"
             aria-label="Collapse left panel"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -119,26 +206,13 @@ export default function LeftPanel({ collapsed, onToggleCollapse }) {
           <div className="left-panel-section">
             <div className="left-panel-section-title">Front Matter</div>
             {currentProject.frontMatter.map(section => (
-              <div key={section.id} className={`left-panel-item-wrap ${activeChapterId === section.id ? 'left-panel-item-wrap--active' : ''}`}>
-                <button
-                  className={`left-panel-item ${activeChapterId === section.id ? 'left-panel-item--active' : ''} ${section.auto ? 'left-panel-item--auto' : ''}`}
-                  onClick={() => setActiveChapter(section.id)}
-                >
-                  <span className="left-panel-item-icon">{section.auto ? '⚙' : '📄'}</span>
-                  <span className="left-panel-item-label">{section.label}</span>
-                  {section.auto && <span className="left-panel-item-badge">auto</span>}
-                </button>
-                {!section.auto && !section.required && (
-                  <button
-                    className="left-panel-delete-btn"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteFrontMatter(section.id);
-                    }}
-                    title={`Delete ${section.label}`}
-                  >✕</button>
-                )}
-              </div>
+              <LeftPanelFrontMatterItem
+                key={section.id}
+                section={section}
+                isActive={activeChapterId === section.id}
+                onSelect={() => setActiveChapter(section.id)}
+                onDelete={deleteFrontMatter}
+              />
             ))}
           </div>
         )}
@@ -158,49 +232,22 @@ export default function LeftPanel({ collapsed, onToggleCollapse }) {
                   {currentProject.chapters.map((ch, idx) => (
                     <Draggable key={ch.id} draggableId={ch.id} index={idx}>
                       {(provided, snapshot) => (
-                        <div
-                          ref={provided.innerRef}
-                          {...provided.draggableProps}
-                          className={`left-panel-item-wrap ${activeChapterId === ch.id ? 'left-panel-item-wrap--active' : ''} ${snapshot.isDragging ? 'left-panel-item-wrap--dragging' : ''}`}
-                        >
-                          <div {...provided.dragHandleProps} className="left-panel-drag-handle">
-                            ⋮⋮
-                          </div>
-
-                          {renamingId === ch.id ? (
-                            <input
-                              className="left-panel-rename-input"
-                              value={renameVal}
-                              autoFocus
-                              onChange={e => setRenameVal(e.target.value)}
-                              onBlur={() => handleRenameSubmit(ch.id)}
-                              onKeyDown={e => {
-                                if (e.key === 'Enter') handleRenameSubmit(ch.id);
-                                if (e.key === 'Escape') setRenamingId(null);
-                              }}
-                            />
-                          ) : (
-                            <button
-                              className={`left-panel-item ${activeChapterId === ch.id ? 'left-panel-item--active' : ''}`}
-                              onClick={() => setActiveChapter(ch.id)}
-                              onDoubleClick={() => { setRenamingId(ch.id); setRenameVal(ch.title); }}
-                              title="Double-click to rename"
-                            >
-                              <span className="left-panel-item-num">{idx + 1}</span>
-                              <span className="left-panel-item-label">{ch.title}</span>
-                            </button>
-                          )}
-                          {!ch.required && !snapshot.isDragging && (
-                            <button
-                              className="left-panel-delete-btn"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                deleteChapter(ch.id);
-                              }}
-                              title="Delete chapter"
-                            >✕</button>
-                          )}
-                        </div>
+                        <LeftPanelChapterItem
+                          key={ch.id}
+                          ch={ch}
+                          idx={idx}
+                          isActive={activeChapterId === ch.id}
+                          renamingId={renamingId}
+                          renameVal={renameVal}
+                          onSelect={() => setActiveChapter(ch.id)}
+                          onStartRename={() => { setRenamingId(ch.id); setRenameVal(ch.title); }}
+                          onRenameChange={(e) => setRenameVal(e.target.value)}
+                          onRenameSubmit={handleRenameSubmit}
+                          onCancelRename={() => setRenamingId(null)}
+                          onDelete={deleteChapter}
+                          provided={provided}
+                          snapshot={snapshot}
+                        />
                       )}
                     </Draggable>
                   ))}
