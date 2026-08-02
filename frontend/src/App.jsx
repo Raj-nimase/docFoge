@@ -69,13 +69,9 @@ export default function App() {
 
   const handleLogout = async () => {
     logout();
-    resetProjects();
-    await loadProjectsForUser();
+    resetProjects(true);
     navigate("/");
-    showToast(
-      "success",
-      "Signed out. Projects on this device are still available as a guest.",
-    );
+    showToast("success", "Signed out successfully.");
     if (!useAuthStore.getState().canAccessApp()) {
       navigate("/auth");
     }

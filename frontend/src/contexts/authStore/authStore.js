@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import * as api from '@/services/api';
+import useProjectStore from '@/contexts/projectStore/projectStore';
 import {
   ensureTrialStarted,
   isGuestTrialActive,
@@ -23,6 +24,21 @@ function saveToken(token) {
     if (token) localStorage.setItem(TOKEN_KEY, token);
     else localStorage.removeItem(TOKEN_KEY);
   } catch (_) {}
+}
+
+/** Pre-fetches projects from cloud during auth transition before navigating to dashboard */
+async function prefetchUserProjects() {
+  try {
+    const loadProjectsForUser = useProjectStore.getState().loadProjectsForUser;
+    if (typeof loadProjectsForUser === 'function') {
+      await Promise.race([
+        loadProjectsForUser(true),
+        new Promise(resolve => setTimeout(resolve, 3500)),
+      ]);
+    }
+  } catch (err) {
+    console.warn('[authStore] background project prefetch failed:', err.message || err);
+  }
 }
 
 export const useAuthStore = create((set, get) => ({
@@ -74,6 +90,7 @@ export const useAuthStore = create((set, get) => ({
     set({ status: 'loading', token });
     try {
       const user = await api.getMe(token);
+      await prefetchUserProjects();
       set({ user, token, status: 'authenticated' });
       return true;
     } catch {
@@ -86,18 +103,36 @@ export const useAuthStore = create((set, get) => ({
 
   async register(payload) {
     const data = await api.register(payload);
+    saveToken(data.token);
+    await prefetchUserProjects();
     get().setAuth(data.token, data.user);
     return data.user;
   },
 
   async login(email, password) {
     const data = await api.login(email, password);
+    saveToken(data.token);
+    await prefetchUserProjects();
     get().setAuth(data.token, data.user);
     return data.user;
   },
 
-  async resetPassword(email, newPassword) {
-    const data = await api.resetPassword(email, newPassword);
+  async changePassword(currentPassword, newPassword) {
+    return await api.changePassword(currentPassword, newPassword);
+  },
+
+  async forgotPassword(email) {
+    return await api.forgotPassword(email);
+  },
+
+  async verifyOtp(email, otp) {
+    return await api.verifyOtp(email, otp);
+  },
+
+  async resetPassword(email, resetToken, newPassword) {
+    const data = await api.resetPassword(email, resetToken, newPassword);
+    saveToken(data.token);
+    await prefetchUserProjects();
     get().setAuth(data.token, data.user);
     return data.user;
   },

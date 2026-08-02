@@ -1,13 +1,61 @@
-import { useState } from 'react';
-import { GraduationCap, Mail, Lock, User, Building2, Briefcase, X } from 'lucide-react';
+import { useRef, useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence, MotionConfig } from 'motion/react';
+import { X, ArrowLeft } from 'lucide-react';
 import useAuthStore from '@/contexts/authStore/authStore';
-import { SketchHeroAccent, SketchUnderline } from '@/components/SketchDecor/SketchDecor';
+import AuthTabs from '../components/AuthTabs';
+import BrandPanel from '../components/BrandPanel';
+import LoginForm from '../components/LoginForm';
+import RegisterForm from '../components/RegisterForm';
+import ForgotFlow from '../components/ForgotFlow';
+import FormMessage from '../components/FormMessage';
+import StepDots from '../components/StepDots';
+import { EASE, shellVariants, childVariants, paneVariants } from '../components/authMotion';
+import '../auth.css';
+
+/** Mode ordering for direction-aware slides; forgot always enters from the left. */
+const ORDER = { login: 0, register: 1, forgot: -1 };
+
+/** Auto-height wrapper so pane switches animate the container smoothly. */
+function AnimatedHeightPane({ children }) {
+  const ref = useRef(null);
+  const [height, setHeight] = useState('auto');
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const ro = new ResizeObserver(([entry]) => setHeight(entry.contentRect.height));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <motion.div
+      className="auth-pane-clip"
+      animate={{ height }}
+      transition={{ duration: 0.4, ease: EASE }}
+    >
+      <div ref={ref}>{children}</div>
+    </motion.div>
+  );
+}
 
 export default function Auth({ trialExpired = false, allowDismiss = false, onDismiss, onSuccess }) {
   const register = useAuthStore(s => s.register);
   const login = useAuthStore(s => s.login);
+  const forgotPassword = useAuthStore(s => s.forgotPassword);
+  const verifyOtp = useAuthStore(s => s.verifyOtp);
+  const resetPassword = useAuthStore(s => s.resetPassword);
 
-  const [mode, setMode] = useState('login'); // login | register
+  const [mode, setMode] = useState('login'); // login | register | forgot
+  const [forgotStep, setForgotStep] = useState(1); // 1: email, 2: OTP, 3: new password
+  const [direction, setDirection] = useState(1);
+  const [resetToken, setResetToken] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpErrorCount, setOtpErrorCount] = useState(0);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -15,6 +63,7 @@ export default function Auth({ trialExpired = false, allowDismiss = false, onDis
     name: '',
     email: '',
     password: '',
+    confirmPassword: '',
     role: 'Student',
     institution: '',
     department: '',
@@ -22,162 +71,227 @@ export default function Auth({ trialExpired = false, allowDismiss = false, onDis
 
   const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const firstFieldRef = useRef(null);
+  const loadingRef = useRef(false);
+
+  const clearMessages = () => {
     setError('');
+    setSuccessMessage('');
+  };
+
+  const switchMode = (next) => {
+    if (next === mode) return;
+    setDirection(Math.sign(ORDER[next] - ORDER[mode]) || 1);
+    setMode(next);
+    if (next === 'forgot') setForgotStep(1);
+    clearMessages();
+  };
+
+  const goToStep = (next) => {
+    setDirection(next > forgotStep ? 1 : -1);
+    setForgotStep(next);
+  };
+
+  const backToLogin = () => {
+    setDirection(1);
+    setMode('login');
+    setForgotStep(1);
+    setOtpCode('');
+    setOtpErrorCount(0);
+    setResetToken('');
+    setNewPassword('');
+    setConfirmPassword('');
+    clearMessages();
+  };
+
+  const runSubmit = useCallback(async (action) => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
-      if (mode === 'register') {
-        await register({ ...form, email: form.email.trim() });
-      } else {
-        await login(form.email, form.password);
-      }
-      await onSuccess?.();
+      await action();
     } catch (err) {
       setError(err.message || 'Something went wrong');
+      throw err;
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
+  }, []);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    clearMessages();
+    await runSubmit(async () => {
+      await login(form.email, form.password);
+      await onSuccess?.();
+    }).catch(() => {});
+  };
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    clearMessages();
+    if (form.password !== form.confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+    await runSubmit(async () => {
+      await register({ ...form, email: form.email.trim() });
+      await onSuccess?.();
+    }).catch(() => {});
+  };
+
+  const submitForgotEmail = async () => {
+    await runSubmit(async () => {
+      const res = await forgotPassword(form.email);
+      setOtpCode('');
+      setOtpErrorCount(0);
+      goToStep(2);
+      setSuccessMessage(res.message || 'Verification code sent to your email.');
+    }).catch(() => {});
+  };
+
+  const submitOtp = async (code) => {
+    if (loadingRef.current) return;
+    clearMessages();
+    await runSubmit(async () => {
+      const res = await verifyOtp(form.email, code);
+      setResetToken(res.resetToken);
+      setOtpErrorCount(0);
+      goToStep(3);
+      setSuccessMessage('Code verified! Enter your new password below.');
+    }).catch(() => {
+      setOtpCode('');
+      setOtpErrorCount(c => c + 1);
+    });
+  };
+
+  const submitNewPassword = async () => {
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+    await runSubmit(async () => {
+      await resetPassword(form.email, resetToken, newPassword);
+      await onSuccess?.();
+    }).catch(() => {});
+  };
+
+  const handleForgotSubmit = async (e) => {
+    e.preventDefault();
+    clearMessages();
+    if (forgotStep === 1) await submitForgotEmail();
+    else if (forgotStep === 2) await submitOtp(otpCode);
+    else await submitNewPassword();
+  };
+
+  const handleResend = async () => {
+    clearMessages();
+    await runSubmit(async () => {
+      const res = await forgotPassword(form.email);
+      setSuccessMessage(res.message || 'A new code is on its way.');
+    }).catch(() => {});
+  };
+
+  const paneKey = mode === 'forgot' ? `forgot-${forgotStep}` : mode;
+
+  const focusFirstField = () => {
+    // Skip autofocus on touch/mobile widths to avoid keyboard pop
+    if (window.innerWidth > 860) firstFieldRef.current?.focus();
   };
 
   return (
-    <div
-      className="auth-page"
-    >
-      <div className="auth-card">
-        <SketchHeroAccent className="auth-card-sketch" />
-        {allowDismiss && onDismiss && (
-          <button type="button" className="auth-dismiss" onClick={onDismiss} aria-label="Close">
-            <X size={18} />
-          </button>
-        )}
-        <div
-          className="auth-brand"
+    <MotionConfig reducedMotion="user">
+      <div className="auth-page">
+        <motion.div
+          className="auth-shell"
+          variants={shellVariants}
+          initial="hidden"
+          animate="show"
         >
-          <GraduationCap size={32} strokeWidth={2} style={{ color: 'var(--accent-warm)' }} />
-          <h1 className="display-heading">AcaDoc Pro</h1>
-          <SketchUnderline className="auth-brand-underline" />
-          <p>
-            {trialExpired
-              ? 'Your free trial has ended. Sign in or create an account to keep working.'
-              : 'Sign in to save projects to the cloud and sync across devices'}
-          </p>
-        </div>
-
-        <div className="auth-tabs">
-          <button
-            type="button"
-            className={`auth-tab${mode === 'login' ? ' auth-tab--active' : ''}`}
-            onClick={() => { setMode('login'); setError(''); }}
-          >
-            Sign in
-          </button>
-          <button
-            type="button"
-            className={`auth-tab${mode === 'register' ? ' auth-tab--active' : ''}`}
-            onClick={() => { setMode('register'); setError(''); }}
-          >
-            Create account
-          </button>
-        </div>
-
-        <form className="auth-form" onSubmit={handleSubmit}>
-          {mode === 'register' && (
-            <>
-              <label className="auth-field">
-                <span>Full name</span>
-                <div className="auth-input-wrap">
-                  <User size={16} />
-                  <input
-                    type="text"
-                    value={form.name}
-                    onChange={e => set('name', e.target.value)}
-                    placeholder="Your name"
-                    required
-                    autoComplete="name"
-                  />
-                </div>
-              </label>
-
-              <label className="auth-field">
-                <span>Role</span>
-                <div className="auth-input-wrap">
-                  <Briefcase size={16} />
-                  <select value={form.role} onChange={e => set('role', e.target.value)}>
-                    <option>Student</option>
-                    <option>Faculty</option>
-                    <option>Researcher</option>
-                    <option>Administrator</option>
-                  </select>
-                </div>
-              </label>
-
-              <label className="auth-field">
-                <span>Institution</span>
-                <div className="auth-input-wrap">
-                  <Building2 size={16} />
-                  <input
-                    type="text"
-                    value={form.institution}
-                    onChange={e => set('institution', e.target.value)}
-                    placeholder="University or college"
-                    autoComplete="organization"
-                  />
-                </div>
-              </label>
-
-              <label className="auth-field">
-                <span>Department</span>
-                <div className="auth-input-wrap">
-                  <input
-                    type="text"
-                    value={form.department}
-                    onChange={e => set('department', e.target.value)}
-                    placeholder="e.g. Computer Science"
-                  />
-                </div>
-              </label>
-            </>
+          {allowDismiss && onDismiss && (
+            <button type="button" className="auth-dismiss" onClick={onDismiss} aria-label="Close">
+              <X size={18} />
+            </button>
           )}
 
-          <label className="auth-field">
-            <span>Email</span>
-            <div className="auth-input-wrap">
-              <Mail size={16} />
-              <input
-                type="email"
-                value={form.email}
-                onChange={e => set('email', e.target.value)}
-                placeholder="you@university.edu"
-                required
-                autoComplete="email"
-              />
-            </div>
-          </label>
+          <BrandPanel trialExpired={trialExpired} />
 
-          <label className="auth-field">
-            <span>Password</span>
-            <div className="auth-input-wrap">
-              <Lock size={16} />
-              <input
-                type="password"
-                value={form.password}
-                onChange={e => set('password', e.target.value)}
-                placeholder={mode === 'login' ? 'Your password' : 'At least 8 characters'}
-                required
-                minLength={mode === 'login' ? undefined : 8}
-                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-              />
-            </div>
-          </label>
+          <div className="auth-form-panel">
+            <motion.div variants={childVariants}>
+              {mode !== 'forgot' ? (
+                <AuthTabs mode={mode} onChange={switchMode} />
+              ) : (
+                <div className="auth-forgot-header">
+                  <button type="button" className="auth-back-btn" onClick={backToLogin}>
+                    <ArrowLeft size={16} /> Back to sign in
+                  </button>
+                  <StepDots step={forgotStep} />
+                </div>
+              )}
+            </motion.div>
 
-          {error && <p className="auth-error">{error}</p>}
+            <FormMessage type="success" message={successMessage} />
+            <FormMessage type="error" message={error} />
 
-          <button type="submit" className="btn-primary auth-submit" disabled={loading}>
-            {loading ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
-          </button>
-        </form>
+            <AnimatedHeightPane>
+              <AnimatePresence mode="popLayout" custom={direction} initial={false}>
+                <motion.div
+                  key={paneKey}
+                  className="auth-pane"
+                  custom={direction}
+                  variants={paneVariants}
+                  initial="enter"
+                  animate="center"
+                  exit="exit"
+                  onAnimationComplete={(definition) => {
+                    if (definition === 'center') focusFirstField();
+                  }}
+                >
+                  {mode === 'login' && (
+                    <LoginForm
+                      form={form}
+                      set={set}
+                      loading={loading}
+                      onSubmit={handleLogin}
+                      onForgot={() => switchMode('forgot')}
+                      firstFieldRef={firstFieldRef}
+                    />
+                  )}
+                  {mode === 'register' && (
+                    <RegisterForm
+                      form={form}
+                      set={set}
+                      loading={loading}
+                      onSubmit={handleRegister}
+                      firstFieldRef={firstFieldRef}
+                    />
+                  )}
+                  {mode === 'forgot' && (
+                    <ForgotFlow
+                      step={forgotStep}
+                      email={form.email}
+                      onEmailChange={v => set('email', v)}
+                      otpCode={otpCode}
+                      onOtpChange={(v) => { setOtpCode(v); if (otpErrorCount) setOtpErrorCount(0); }}
+                      onOtpComplete={submitOtp}
+                      otpErrorCount={otpErrorCount}
+                      newPassword={newPassword}
+                      onNewPasswordChange={setNewPassword}
+                      confirmPassword={confirmPassword}
+                      onConfirmPasswordChange={setConfirmPassword}
+                      loading={loading}
+                      onSubmit={handleForgotSubmit}
+                      onResend={handleResend}
+                      firstFieldRef={firstFieldRef}
+                    />
+                  )}
+                </motion.div>
+              </AnimatePresence>
+            </AnimatedHeightPane>
+          </div>
+        </motion.div>
       </div>
-    </div>
+    </MotionConfig>
   );
 }

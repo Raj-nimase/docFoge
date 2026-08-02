@@ -53,6 +53,18 @@ function _flushLocalStorage() {
   _lsTimer   = null;
 }
 
+export function clearProjectsLocal() {
+  if (_lsTimer) {
+    clearTimeout(_lsTimer);
+    _lsTimer = null;
+  }
+  _lsPending = null;
+  try {
+    localStorage.removeItem(LS_KEY);
+    sessionStorage.removeItem('acadoc_b64_migrated');
+  } catch (_) {}
+}
+
 // Safety net: if the user closes the tab while a debounced write is pending,
 // flush it synchronously. beforeunload allows one synchronous localStorage write.
 if (typeof window !== 'undefined') {
@@ -365,7 +377,12 @@ export const useProjectStore = create((set, get) => ({
     }
   },
 
-  resetProjects() {
+  resetProjects(clearStorage = false) {
+    if (clearStorage) {
+      clearProjectsLocal();
+    }
+    _projectsLoadedOnce = false;
+    _loadProjectsPromise = null;
     set({
       projects: [],
       projectsLoaded: false,

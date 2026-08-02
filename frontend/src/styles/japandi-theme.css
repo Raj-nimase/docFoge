@@ -554,39 +554,11 @@ body {
   margin-bottom: 8px;
 }
 
-/* Auth */
+/* Auth (component styles live in features/Auth/auth.css) */
 .auth-page {
   background: var(--bg);
   background-image:
     radial-gradient(ellipse 100% 80% at 50% 0%, rgba(154, 123, 95, 0.08) 0%, transparent 55%);
-}
-
-.auth-card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  padding: 36px 32px 28px;
-  box-shadow: var(--shadow-card);
-  position: relative;
-  overflow: hidden;
-}
-
-.auth-card .sketch-hero-accent {
-  position: absolute;
-  top: -20px;
-  right: -40px;
-  width: 200px;
-  opacity: 0.5;
-}
-
-.auth-brand h1 {
-  font-size: 1.75rem;
-  color: var(--accent);
-}
-
-.auth-tab--active {
-  color: var(--accent);
-  font-weight: 700;
 }
 
 /* Editor */
@@ -663,14 +635,12 @@ body {
 }
 
 .search-input,
-.auth-input-wrap,
 .metadata-input {
   border-radius: var(--radius-md);
   border-color: var(--border);
 }
 
-.search-input:focus,
-.auth-input-wrap:focus-within {
+.search-input:focus {
   border-color: var(--accent-light);
   outline: none;
   box-shadow: 0 0 0 3px var(--accent-glow);
@@ -699,27 +669,9 @@ body {
   margin-bottom: 4px;
 }
 
-.auth-card-sketch {
-  position: absolute;
-  top: -10px;
-  right: -30px;
-  width: 180px;
-  color: var(--accent);
-}
-
-.auth-brand-underline {
-  margin: 6px auto 0;
-  color: var(--accent-warm);
-}
-
 .dashboard-empty-sketch {
   color: var(--accent-warm);
   opacity: 0.55;
-}
-
-.auth-brand {
-  position: relative;
-  z-index: 1;
 }
 
 /* ── TipTap editor: preserve original document typography (not Japandi UI fonts) ── */

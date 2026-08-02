@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useOutletContext } from 'react-router-dom';
 import useAuthStore from '@/contexts/authStore/authStore';
 import useAcaStore from '@/contexts/projectStore/projectStore';
-import { LogOut } from 'lucide-react';
+import { LogOut, KeyRound } from 'lucide-react';
 
 export default function SettingsPage() {
   const { t } = useTranslation();
@@ -13,6 +13,7 @@ export default function SettingsPage() {
   const authStatus      = useAuthStore(s => s.status);
   const getTrialLabel   = useAuthStore(s => s.getTrialLabel);
   const updateProfile   = useAuthStore(s => s.updateProfile);
+  const changePassword  = useAuthStore(s => s.changePassword);
   const isGuest         = authStatus === 'guest';
   const signedIn        = authStatus === 'authenticated';
   const trialLabel      = getTrialLabel();
@@ -26,6 +27,13 @@ export default function SettingsPage() {
     department: '',
   });
   const [savingProfile, setSavingProfile] = useState(false);
+
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [updatingPassword, setUpdatingPassword] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -64,7 +72,7 @@ export default function SettingsPage() {
     <>
       <div className="dashboard-section-title">{t('accountProfile')}</div>
       <div
-        style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 24, maxWidth: 640 }}
+        style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 24, maxWidth: 640, marginBottom: 28 }}
       >
         <div className="metadata-field" style={{ marginBottom: 16 }}>
           <label className="metadata-label">{t('fullName')}</label>
@@ -118,7 +126,7 @@ export default function SettingsPage() {
             setSavingProfile(true);
             try {
               await updateProfile(profileForm);
-               showToast('success', 'Profile updated');
+              showToast('success', 'Profile updated');
             } catch (err) {
               showToast('error', err.message);
             } finally {
@@ -128,10 +136,80 @@ export default function SettingsPage() {
         >
           {savingProfile ? t('savingProfile') : t('saveProfile')}
         </button>
+      </div>
+
+      <div className="dashboard-section-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <KeyRound size={18} /> Change Password
+      </div>
+      <div
+        style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 24, maxWidth: 640 }}
+      >
+        <div className="metadata-field" style={{ marginBottom: 16 }}>
+          <label className="metadata-label">Current Password</label>
+          <input
+            type="password"
+            className="metadata-input"
+            value={passwordForm.currentPassword}
+            onChange={e => setPasswordForm(p => ({ ...p, currentPassword: e.target.value }))}
+            placeholder="Enter current password"
+          />
+        </div>
+        <div className="metadata-field" style={{ marginBottom: 16 }}>
+          <label className="metadata-label">New Password</label>
+          <input
+            type="password"
+            className="metadata-input"
+            value={passwordForm.newPassword}
+            onChange={e => setPasswordForm(p => ({ ...p, newPassword: e.target.value }))}
+            placeholder="At least 8 characters"
+          />
+        </div>
+        <div className="metadata-field" style={{ marginBottom: 20 }}>
+          <label className="metadata-label">Confirm New Password</label>
+          <input
+            type="password"
+            className="metadata-input"
+            value={passwordForm.confirmPassword}
+            onChange={e => setPasswordForm(p => ({ ...p, confirmPassword: e.target.value }))}
+            placeholder="Re-enter new password"
+          />
+        </div>
+        <button
+          className="btn-primary"
+          disabled={updatingPassword}
+          onClick={async () => {
+            if (!passwordForm.currentPassword || !passwordForm.newPassword) {
+              showToast('error', 'Please fill in all password fields');
+              return;
+            }
+            if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+              showToast('error', 'New passwords do not match');
+              return;
+            }
+            if (passwordForm.newPassword.length < 8) {
+              showToast('error', 'New password must be at least 8 characters');
+              return;
+            }
+            setUpdatingPassword(true);
+            try {
+              await changePassword(passwordForm.currentPassword, passwordForm.newPassword);
+              showToast('success', 'Password updated successfully');
+              setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+            } catch (err) {
+              showToast('error', err.message);
+            } finally {
+              setUpdatingPassword(false);
+            }
+          }}
+        >
+          {updatingPassword ? 'Updating...' : 'Update Password'}
+        </button>
+
         {signedIn && onLogout && (
           <button
             type="button"
             className="btn-ghost nav-signout-btn nav-signout-btn--block"
+            style={{ marginTop: 24 }}
             onClick={onLogout}
           >
             <LogOut size={15} style={{ marginRight: 6 }} />

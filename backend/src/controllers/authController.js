@@ -1,5 +1,7 @@
+const crypto = require('crypto');
 const User = require('../models/User');
 const { signToken } = require('../utils/jwt');
+const { sendOtpEmail } = require('../utils/email');
 
 function issueAuthResponse(user, res, statusCode = 200) {
   const token = signToken(user._id);
@@ -46,7 +48,6 @@ async function findUserWithPassword(email) {
   const normalized = email.trim().toLowerCase();
   let user = await User.findOne({ email: normalized }).select('+password');
   if (user?.password) return user;
-  // Fallback for Mongoose 9 edge cases with select: false
   user = await User.findOne({ email: normalized }).select('password name email role institution department');
   return user;
 }
@@ -75,25 +76,156 @@ async function login(req, res, next) {
   }
 }
 
-/** Set a new password (forgot-password flow; no email service yet) */
-async function resetPassword(req, res, next) {
+/** Change password for an authenticated user requiring their current password */
+async function changePassword(req, res, next) {
   try {
-    const { email, newPassword } = req.body;
+    const { currentPassword, newPassword } = req.body;
 
-    if (!email?.trim() || !newPassword) {
-      return res.status(400).json({ success: false, error: 'Email and new password are required' });
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ success: false, error: 'Current password and new password are required' });
     }
 
     if (String(newPassword).length < 8) {
-      return res.status(400).json({ success: false, error: 'Password must be at least 8 characters' });
+      return res.status(400).json({ success: false, error: 'New password must be at least 8 characters' });
     }
 
-    const user = await findUserWithPassword(email);
+    const user = await User.findById(req.user._id).select('+password');
     if (!user) {
-      return res.status(404).json({ success: false, error: 'No account found with this email' });
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const valid = await user.comparePassword(String(currentPassword));
+    if (!valid) {
+      return res.status(401).json({ success: false, error: 'Current password is incorrect' });
     }
 
     user.password = String(newPassword);
+    await user.save();
+
+    return res.json({ success: true, message: 'Password updated successfully' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** Step 1 of Forgot Password: Request a 6-digit OTP sent via Email */
+async function forgotPassword(req, res, next) {
+  try {
+    const { email } = req.body;
+
+    if (!email?.trim()) {
+      return res.status(400).json({ success: false, error: 'Email address is required' });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail });
+
+    // Always respond with success to prevent email enumeration
+    if (!user) {
+      return res.json({
+        success: true,
+        message: 'If an account exists with this email, a verification code has been sent.',
+      });
+    }
+
+    // Generate 6-digit numeric OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const hashedOtp = crypto.createHash('sha256').update(otp).digest('hex');
+
+    user.resetOtp = hashedOtp;
+    user.resetOtpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    user.resetToken = undefined;
+    user.resetTokenExpires = undefined;
+    await user.save();
+
+    await sendOtpEmail(normalizedEmail, otp);
+
+    return res.json({
+      success: true,
+      message: 'If an account exists with this email, a verification code has been sent.',
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** Step 2 of Forgot Password: Verify the 6-digit OTP and return a reset token */
+async function verifyOtp(req, res, next) {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email?.trim() || !otp?.trim()) {
+      return res.status(400).json({ success: false, error: 'Email and OTP code are required' });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail }).select('+resetOtp +resetOtpExpires');
+
+    if (!user || !user.resetOtp || !user.resetOtpExpires) {
+      return res.status(400).json({ success: false, error: 'Invalid or expired verification code' });
+    }
+
+    if (Date.now() > new Date(user.resetOtpExpires).getTime()) {
+      return res.status(400).json({ success: false, error: 'Verification code has expired. Please request a new one.' });
+    }
+
+    const hashedOtp = crypto.createHash('sha256').update(otp.trim()).digest('hex');
+    if (hashedOtp !== user.resetOtp) {
+      return res.status(400).json({ success: false, error: 'Invalid verification code' });
+    }
+
+    // OTP is valid — generate single-use reset token valid for 15 minutes
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+    user.resetOtp = undefined;
+    user.resetOtpExpires = undefined;
+    user.resetToken = hashedToken;
+    user.resetTokenExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    await user.save();
+
+    return res.json({
+      success: true,
+      resetToken,
+      message: 'Verification successful',
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** Step 3 of Forgot Password: Reset Password using the verified Reset Token */
+async function resetPassword(req, res, next) {
+  try {
+    const { email, resetToken, newPassword } = req.body;
+
+    if (!email?.trim() || !resetToken?.trim() || !newPassword) {
+      return res.status(400).json({ success: false, error: 'Email, reset token, and new password are required' });
+    }
+
+    if (String(newPassword).length < 8) {
+      return res.status(400).json({ success: false, error: 'New password must be at least 8 characters' });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const hashedToken = crypto.createHash('sha256').update(resetToken.trim()).digest('hex');
+
+    const user = await User.findOne({
+      email: normalizedEmail,
+      resetToken: hashedToken,
+      resetTokenExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid or expired reset session. Please request a new verification code.',
+      });
+    }
+
+    user.password = String(newPassword);
+    user.resetToken = undefined;
+    user.resetTokenExpires = undefined;
     await user.save();
 
     return issueAuthResponse(user, res);
@@ -127,4 +259,13 @@ async function updateMe(req, res, next) {
   }
 }
 
-module.exports = { register, login, getMe, updateMe, resetPassword };
+module.exports = {
+  register,
+  login,
+  getMe,
+  updateMe,
+  changePassword,
+  forgotPassword,
+  verifyOtp,
+  resetPassword,
+};

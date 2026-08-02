@@ -4,7 +4,7 @@ export const API_BASE_URL = (typeof window !== 'undefined' && (window.location.h
   : 'https://docfoge.onrender.com/api';
 
 /** @internal used by all api functions in this file */
-const BASE = 'http://localhost:3001/api'
+const BASE = API_BASE_URL;
 
 const TOKEN_KEY = 'acadoc_token';
 
@@ -106,10 +106,33 @@ export async function login(email, password) {
   });
 }
 
-export async function resetPassword(email, newPassword) {
+export async function changePassword(currentPassword, newPassword) {
+  return authFetch('/auth/change-password', {
+    method: 'POST',
+    body: { currentPassword, newPassword },
+  });
+}
+
+export async function forgotPassword(email) {
+  return authFetch('/auth/forgot-password', {
+    method: 'POST',
+    body: { email: email.trim() },
+    token: null,
+  });
+}
+
+export async function verifyOtp(email, otp) {
+  return authFetch('/auth/verify-otp', {
+    method: 'POST',
+    body: { email: email.trim(), otp: otp.trim() },
+    token: null,
+  });
+}
+
+export async function resetPassword(email, resetToken, newPassword) {
   return authFetch('/auth/reset-password', {
     method: 'POST',
-    body: { email: email.trim(), newPassword: newPassword },
+    body: { email: email.trim(), resetToken, newPassword },
     token: null,
   });
 }

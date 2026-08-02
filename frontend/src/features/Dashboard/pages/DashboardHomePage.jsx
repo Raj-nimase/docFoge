@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useOutletContext } from 'react-router-dom';
+import { motion, AnimatePresence } from 'motion/react';
 import useAcaStore from '@/contexts/projectStore/projectStore';
 import useAuthStore from '@/contexts/authStore/authStore';
 import {
@@ -20,6 +21,48 @@ import { getTemplate, getTemplateIcon, formatDate } from './dashboardUtils.jsx';
 import { SketchHeroAccent, SketchUnderline, SketchDocument } from '@/components/SketchDecor/SketchDecor';
 import * as api from '@/services/api';
 import { parseMarkdownMathToHtml } from '@/hooks/useMathPaste/markdownParser';
+
+const EASE = [0.16, 1, 0.3, 1];
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.08,
+      delayChildren: 0.04,
+    },
+  },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 16 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.4, ease: EASE },
+  },
+};
+
+const cardGridVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.05,
+    },
+  },
+};
+
+const cardItemVariants = {
+  hidden: { opacity: 0, y: 14, scale: 0.98 },
+  show: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: { duration: 0.35, ease: EASE },
+  },
+};
 
 function convertTextToParagraphsAndLists(lines) {
 
@@ -375,9 +418,13 @@ export default function DashboardHomePage() {
   };
 
   return (
-    <>
+    <motion.div
+      variants={containerVariants}
+      initial="hidden"
+      animate="show"
+    >
       {/* Hero Welcome banner */}
-      <div className="db-hero">
+      <motion.div className="db-hero" variants={itemVariants}>
         <SketchHeroAccent className="db-hero-sketch" />
         <h2 className="db-hero-welcome display-heading">
           {welcomeTitle}
@@ -395,13 +442,11 @@ export default function DashboardHomePage() {
             <BookOpen size={14} /> {t('browseTemplatesHero')}
           </button>
         </div>
-      </div>
+      </motion.div>
 
       {/* Stats Section */}
-      <div
-        className="db-stats-grid"
-      >
-        <div className="stats-card">
+      <motion.div className="db-stats-grid" variants={itemVariants}>
+        <motion.div className="stats-card" whileHover={{ y: -3, transition: { duration: 0.2, ease: EASE } }}>
           <div className="stats-card-header">
             <span className="stats-card-title">{t('totalPapers')}</span>
             <Folder className="stats-card-icon" size={18} strokeWidth={2} style={{ color: 'var(--accent)' }} />
@@ -410,9 +455,9 @@ export default function DashboardHomePage() {
             <span className="stats-value">{projects.length}</span>
             <span className="stats-trend stats-trend--up">↑ 12%</span>
           </div>
-        </div>
+        </motion.div>
 
-        <div className="stats-card">
+        <motion.div className="stats-card" whileHover={{ y: -3, transition: { duration: 0.2, ease: EASE } }}>
           <div className="stats-card-header">
             <span className="stats-card-title">{t('pdfsGenerated')}</span>
             <FileText className="stats-card-icon" size={18} strokeWidth={2} style={{ color: 'var(--accent)' }} />
@@ -421,9 +466,9 @@ export default function DashboardHomePage() {
             <span className="stats-value">{projects.length * 3 + 2}</span>
             <span className="stats-trend stats-trend--up">↑ 24%</span>
           </div>
-        </div>
+        </motion.div>
 
-        <div className="stats-card">
+        <motion.div className="stats-card" whileHover={{ y: -3, transition: { duration: 0.2, ease: EASE } }}>
           <div className="stats-card-header">
             <span className="stats-card-title">{t('aiFormatting')}</span>
             <Sparkles className="stats-card-icon" size={18} strokeWidth={2} style={{ color: 'var(--accent)' }} />
@@ -432,9 +477,9 @@ export default function DashboardHomePage() {
             <span className="stats-value">16</span>
             <span className="stats-trend stats-trend--up">↑ 8%</span>
           </div>
-        </div>
+        </motion.div>
 
-        <div className="stats-card">
+        <motion.div className="stats-card" whileHover={{ y: -3, transition: { duration: 0.2, ease: EASE } }}>
           <div className="stats-card-header">
             <span className="stats-card-title">{t('latexHealth')}</span>
             <ShieldCheck className="stats-card-icon" size={18} strokeWidth={2} style={{ color: '#22c55e' }} />
@@ -443,11 +488,11 @@ export default function DashboardHomePage() {
             <span className="stats-value">100%</span>
             <span className="stats-trend stats-trend--up" style={{ color: '#22c55e' }}>{t('perfect')}</span>
           </div>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
 
       {/* Projects Header with Search */}
-      <div className="project-toolbar">
+      <motion.div className="project-toolbar" variants={itemVariants}>
         <div className="dashboard-section-title">
           {searchQuery ? t('searchResults', { count: filteredProjects.length }) : t('recentProjects')}
         </div>
@@ -461,11 +506,11 @@ export default function DashboardHomePage() {
             onChange={e => setSearchQuery(e.target.value)}
           />
         </div>
-      </div>
+      </motion.div>
 
       {/* Empty State */}
       {projects.length === 0 ? (
-        <div className="dashboard-empty">
+        <motion.div className="dashboard-empty" variants={itemVariants}>
           <div className="dashboard-empty-illustration">
             <SketchDocument className="dashboard-empty-sketch" size={72} />
           </div>
@@ -481,11 +526,13 @@ export default function DashboardHomePage() {
               <FileText size={16} /> Import Document
             </button>
           </div>
-        </div>
+        </motion.div>
       ) : (
-        <div className="projects-grid">
+        <motion.div className="projects-grid" variants={cardGridVariants}>
           {/* Add block trigger */}
-          <button
+          <motion.button
+            variants={cardItemVariants}
+            whileHover={{ y: -4, transition: { duration: 0.2, ease: EASE } }}
             className="project-card project-card--new"
             onClick={onNewProject}
           >
@@ -493,10 +540,12 @@ export default function DashboardHomePage() {
               <Folder size={32} strokeWidth={1.5} />
             </span>
             <span className="project-card-new-label">{t('createWorkspace')}</span>
-          </button>
+          </motion.button>
 
           {/* Import file card trigger */}
-          <button
+          <motion.button
+            variants={cardItemVariants}
+            whileHover={{ y: -4, transition: { duration: 0.2, ease: EASE } }}
             className="project-card project-card--new"
             onClick={() => setShowImportModal(true)}
             style={{ borderStyle: 'dashed', borderColor: 'var(--border)' }}
@@ -505,16 +554,19 @@ export default function DashboardHomePage() {
               <FileText size={32} strokeWidth={1.5} />
             </span>
             <span className="project-card-new-label">Import Document</span>
-          </button>
+          </motion.button>
 
           {/* Filtered Project Cards */}
-          <>
+          <AnimatePresence mode="popLayout">
             {filteredProjects.map(project => {
               const tpl = getTemplate(project.templateId);
               const isPinned = !!pinnedProjects.get(project.id);
               return (
-                <div
+                <motion.div
                   key={project.id}
+                  variants={cardItemVariants}
+                  whileHover={{ y: -4, transition: { duration: 0.2, ease: EASE } }}
+                  layout
                   className="project-card"
                   style={{ position: 'relative' }}
                 >
@@ -572,22 +624,30 @@ export default function DashboardHomePage() {
                       <Trash2 size={13} />
                     </button>
                   </div>
-                </div>
+                </motion.div>
               );
             })}
-          </>
-        </div>
+          </AnimatePresence>
+        </motion.div>
       )}
 
-      {/* Delete confirmation modal */}
-      <>
+      {/* Modals with AnimatePresence */}
+      <AnimatePresence>
         {confirmDelete && (
-          <div
+          <motion.div
             className="modal-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
             onClick={() => setConfirmDelete(null)}
           >
-            <div
+            <motion.div
               className="modal-panel"
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ type: 'spring', stiffness: 450, damping: 30 }}
               style={{ maxWidth: 420 }}
               onClick={e => e.stopPropagation()}
             >
@@ -614,16 +674,28 @@ export default function DashboardHomePage() {
                   </button>
                 </div>
               </div>
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
         )}
-      </>
 
-      {/* Import Document Modal */}
-      <>
         {showImportModal && (
-          <div className="modal-backdrop" onClick={() => !importing && setShowImportModal(false)}>
-            <div className="modal-panel" style={{ maxWidth: 500 }} onClick={e => e.stopPropagation()}>
+          <motion.div
+            className="modal-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => !importing && setShowImportModal(false)}
+          >
+            <motion.div
+              className="modal-panel"
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ type: 'spring', stiffness: 450, damping: 30 }}
+              style={{ maxWidth: 500 }}
+              onClick={e => e.stopPropagation()}
+            >
               <div className="modal-header">
                 <span className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Sparkles size={15} style={{ color: 'var(--accent)' }} /> Import Document
@@ -719,10 +791,11 @@ export default function DashboardHomePage() {
                   </button>
                 </div>
               </div>
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
         )}
-      </>
-    </>
+      </AnimatePresence>
+    </motion.div>
   );
+
 }
