@@ -4,8 +4,8 @@ import * as api from "@/services/api";
 import useAuthStore from "@/contexts/authStore/authStore";
 import DashboardLayout from "@/features/Dashboard/pages/DashboardLayout";
 import DashboardHomePage from "@/features/Dashboard/pages/DashboardHomePage";
-import TemplatesPage from "@/features/Dashboard/pages/TemplatesPage";
-import ExportsPage from "@/features/Dashboard/pages/ExportsPage";
+import StarredPage from "@/features/Dashboard/pages/StarredPage";
+import TrashPage from "@/features/Dashboard/pages/TrashPage";
 import SettingsPage from "@/features/Dashboard/pages/SettingsPage";
 import NewProject from "@/features/NewProject/pages/NewProjectPage";
 import Editor from "@/features/Editor/pages/EditorPage";
@@ -141,9 +141,11 @@ export default function App() {
           }
         >
           <Route index element={<DashboardHomePage />} />
-          <Route path="templates" element={<TemplatesPage />} />
-          <Route path="exports" element={<ExportsPage />} />
+          <Route path="starred" element={<StarredPage />} />
+          <Route path="trash" element={<TrashPage />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="templates" element={<Navigate to="/" replace />} />
+          <Route path="exports" element={<Navigate to="/" replace />} />
         </Route>
         <Route
           path="/new-project"

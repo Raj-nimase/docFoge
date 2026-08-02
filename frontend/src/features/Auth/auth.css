@@ -371,25 +371,28 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   transition:
-    border-color 0.18s ease,
-    background 0.18s ease,
-    box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    border-color 0.25s ease,
+    background 0.25s ease,
+    transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .auth-input-wrap > svg {
   flex-shrink: 0;
   color: var(--text-faint);
-  transition: color 0.18s ease;
+  transition: color 0.25s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .auth-input-wrap:focus-within {
   border-color: var(--accent);
   background: var(--card);
   box-shadow: 0 0 0 3px var(--accent-glow);
+  transform: translateY(-2px);
 }
 
 .auth-input-wrap:focus-within > svg {
   color: var(--accent);
+  transform: scale(1.12);
 }
 
 .auth-input-wrap input,

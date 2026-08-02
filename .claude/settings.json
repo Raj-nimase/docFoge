@@ -1,13 +1,12 @@
 {
   "env": {
-    "ANTHROPIC_AUTH_TOKEN": "sk-e6ggGge85tu61YtaObSzk0Nlvu6HyNswmJAHVRCinHXuWE8t",
-    "ANTHROPIC_BASE_URL": "https://agentrouter.org/",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
-    "ANTHROPIC_MODEL" : "claude-opus-4-8"
+    "ANTHROPIC_API_KEY": "fe_oa_f2cac97e37d8ee6715c0222731283b3f7b3a0bed193b3e6d",
+    "ANTHROPIC_BASE_URL": "https://cc.freemodel.dev",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
   },
   "permissions": {
     "allow": [],
     "deny": []
   },
-  "apiKeyHelper":  "echo 'sk-e6ggGge85tu61YtaObSzk0Nlvu6HyNswmJAHVRCinHXuWE8t'"
+  "apiKeyHelper":  "echo'fe_oa_f2cac97e37d8ee6715c0222731283b3f7b3a0bed193b3e6d'"
 }

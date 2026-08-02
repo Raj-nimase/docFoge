@@ -8,6 +8,8 @@ const resources = {
       dashboard: 'Dashboard',
       templates: 'Templates',
       exports: 'Export History',
+      starred: 'Starred Papers',
+      trash: 'Trash Bin',
       settings: 'Settings',
       signOut: 'Sign out',
       signIn: 'Sign in',

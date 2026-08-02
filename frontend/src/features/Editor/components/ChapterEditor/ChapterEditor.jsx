@@ -380,7 +380,7 @@ const HeadingCleaner = Extension.create({
 
               // If non-H1 heading (H2, H3, H4) or paragraph, strip any "CHAPTER X:" prefix
               if ((node.type.name === "heading" && node.attrs?.level > 1) || node.type.name === "paragraph") {
-                cleanedText = cleanedText.replace(/^CHAPTER\s+\d+[:\s\-]*/i, "").trim();
+                cleanedText = cleanedText.replace(/^CHAPTER\s+\d+[:\s\-]*/i, "");
               }
 
               if (cleanedText !== originalText) {
@@ -740,14 +740,8 @@ const DragOutsideSelectionFix = Extension.create({
 });
 
 function computeSectionsSignature(frontMatter = [], chapters = []) {
-  const fmSig = (frontMatter || []).map((fm) => {
-    const len = fm.content?.content?.length || 0;
-    return `${fm.id}:${fm.label}:${len}`;
-  });
-  const chSig = (chapters || []).map((c) => {
-    const len = c.content?.content?.length || 0;
-    return `${c.id}:${c.title}:${len}`;
-  });
+  const fmSig = (frontMatter || []).map((fm) => `${fm.id}:${fm.label}`);
+  const chSig = (chapters || []).map((c) => `${c.id}:${c.title}`);
   return [...fmSig, ...chSig].join("|");
 }
 
@@ -774,16 +768,22 @@ function MultiChapterEditor() {
       workerRef.current.onmessage = (e) => {
         const { frontMatter, chapters } = e.data;
         if (!frontMatter || !chapters) return;
+
         const isPaste = isPasteEventRef.current;
         if (isPaste) {
           isPasteEventRef.current = false;
         }
+
+        // Keep lastSectionsSignatureRef in sync with editor changes so external setContent is not triggered
         const newSig = computeSectionsSignature(frontMatter, chapters);
-        if (newSig !== lastSectionsSignatureRef.current || isPaste) {
-          lastSectionsSignatureRef.current = newSig;
-          useAcaStore.getState().updateProjectDocument(frontMatter, chapters);
+        lastSectionsSignatureRef.current = newSig;
+
+        // Always keep project store updated with latest frontMatter and chapter text content
+        useAcaStore.getState().updateProjectDocument(frontMatter, chapters);
+
+        if (isPaste) {
           const targetEditor = editorRef.current;
-          if (isPaste && targetEditor) {
+          if (targetEditor) {
             const cleanMergedDoc = normalizeContent(
               mergeChaptersToSingleDoc(frontMatter, chapters)
             );
@@ -946,10 +946,12 @@ function MultiChapterEditor() {
           if (isPaste) {
             isPasteEventRef.current = false;
           }
+          // Always update project store with latest frontMatter and chapter text
+          updateProjectDocument(res.frontMatter, res.chapters);
+
           const newSig = computeSectionsSignature(res.frontMatter, res.chapters);
           if (newSig !== lastSectionsSignatureRef.current || isPaste) {
             lastSectionsSignatureRef.current = newSig;
-            updateProjectDocument(res.frontMatter, res.chapters);
             if (isPaste && editor) {
               const cleanMergedDoc = normalizeContent(
                 mergeChaptersToSingleDoc(res.frontMatter, res.chapters)
@@ -1048,11 +1050,34 @@ function MultiChapterEditor() {
     editor.commands.setContent(mergedDoc, false);
   }, [sectionsSignature, editor]);
 
+  const isInitialMountRef = useRef(true);
+  const prevProjectIdRef = useRef(currentProject?.id);
+
+  // Reset scroll container to top whenever a project opens, creates, or reloads
+  useEffect(() => {
+    if (prevProjectIdRef.current !== currentProject?.id) {
+      prevProjectIdRef.current = currentProject?.id;
+      isInitialMountRef.current = true;
+    }
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+    }
+  }, [currentProject?.id]);
+
   const isScrollSpyUpdateRef = useRef(false);
 
   // Smooth scroll to Chapter/Section H1 ONLY when user clicks an item in left sidebar
   useEffect(() => {
     if (!activeChapterId || !editor || !scrollContainerRef.current) return;
+
+    // Skip auto-scrolling down on initial project load/open/reload so document stays at top (scrollTop: 0)
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = 0;
+      }
+      return;
+    }
 
     if (isScrollSpyUpdateRef.current) {
       isScrollSpyUpdateRef.current = false;
@@ -1071,9 +1096,14 @@ function MultiChapterEditor() {
       return matchedId === activeChapterId;
     });
 
-    if (targetHeading) {
+    if (targetHeading && scrollContainerRef.current) {
       isProgrammaticScrollRef.current = true;
-      targetHeading.scrollIntoView({ behavior: "smooth", block: "start" });
+      const container = scrollContainerRef.current;
+      const containerRect = container.getBoundingClientRect();
+      const headingRect = targetHeading.getBoundingClientRect();
+      // Calculate top position with 24px margin buffer from container top so paper header stays clean
+      const targetTop = container.scrollTop + (headingRect.top - containerRect.top) - 24;
+      container.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
       const timer = setTimeout(() => {
         isProgrammaticScrollRef.current = false;
       }, 750);

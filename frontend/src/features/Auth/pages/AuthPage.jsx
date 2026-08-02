@@ -219,16 +219,33 @@ export default function Auth({ trialExpired = false, allowDismiss = false, onDis
 
           <div className="auth-form-panel">
             <motion.div variants={childVariants}>
-              {mode !== 'forgot' ? (
-                <AuthTabs mode={mode} onChange={switchMode} />
-              ) : (
-                <div className="auth-forgot-header">
-                  <button type="button" className="auth-back-btn" onClick={backToLogin}>
-                    <ArrowLeft size={16} /> Back to sign in
-                  </button>
-                  <StepDots step={forgotStep} />
-                </div>
-              )}
+              <AnimatePresence mode="wait">
+                {mode !== 'forgot' ? (
+                  <motion.div
+                    key="tabs"
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    transition={{ duration: 0.25 }}
+                  >
+                    <AuthTabs mode={mode} onChange={switchMode} />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="forgot-header"
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    transition={{ duration: 0.25 }}
+                    className="auth-forgot-header"
+                  >
+                    <button type="button" className="auth-back-btn" onClick={backToLogin}>
+                      <ArrowLeft size={16} /> Back to sign in
+                    </button>
+                    <StepDots step={forgotStep} />
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
 
             <FormMessage type="success" message={successMessage} />

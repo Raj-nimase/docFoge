@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import useAcaStore from '@/contexts/projectStore/projectStore';
 import { setCompileActive } from '@/contexts/projectStore/projectStore';
 import { compileProject, pollUntilDone, fetchCompiledPdf } from '@/services/api';
+import { splitSingleDocToProject } from '@/features/Editor/components/ChapterEditor/docUtils';
 
 /**
  * Shared compile / download logic (extracted from TopBar).
@@ -24,14 +25,31 @@ export default function useCompile() {
     setCompileActive(true);   // pause background project sync while compiling
 
     try {
+      // Flush live editor content to projectStore immediately before compiling
+      const editorInstance = useAcaStore.getState().editorInstance;
+      if (editorInstance && !editorInstance.isDestroyed) {
+        const fullJson = editorInstance.getJSON();
+        const live = useAcaStore.getState().getCurrentProject();
+        if (live) {
+          const res = splitSingleDocToProject(
+            fullJson,
+            live.frontMatter || [],
+            live.chapters || []
+          );
+          useAcaStore.getState().updateProjectDocument(res.frontMatter, res.chapters);
+        }
+      }
+
+      const freshProject = useAcaStore.getState().getCurrentProject() || currentProject;
+
       // Sync project to the cloud before compilation
       const syncActiveProjectNow = useAcaStore.getState().syncActiveProjectNow;
       if (syncActiveProjectNow) {
         await syncActiveProjectNow();
       }
 
-      console.log(`[${new Date().toISOString()}] Step 1: Initiating compileProject for project ID: ${currentProject.id}`);
-      const { jobId } = await compileProject(currentProject);
+      console.log(`[${new Date().toISOString()}] Step 1: Initiating compileProject for project ID: ${freshProject.id}`);
+      const { jobId } = await compileProject(freshProject);
       console.log(`[${new Date().toISOString()}] Step 2: Received jobId: ${jobId}. Beginning polling...`);
       setCompileJob({ status: 'processing', jobId });
 

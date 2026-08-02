@@ -1844,6 +1844,7 @@ body {
   overflow-wrap: break-word;
   word-break: break-word;
   max-width: 100%;
+  white-space: pre-wrap;
 }
 
 .tiptap-editor .ProseMirror h1 {

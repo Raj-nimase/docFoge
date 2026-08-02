@@ -53,6 +53,115 @@ function _flushLocalStorage() {
   _lsTimer   = null;
 }
 
+const TOMBSTONES_KEY = "acadoc_tombstones";
+const SYNC_QUEUE_KEY = "acadoc_sync_queue";
+
+// ── Tombstone Ledger Helpers ───────────────────────────────────────────────────
+
+function loadTombstones() {
+  try {
+    const raw = localStorage.getItem(TOMBSTONES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function addTombstone(projectId) {
+  try {
+    const tombstones = loadTombstones();
+    tombstones[projectId] = Date.now();
+    localStorage.setItem(TOMBSTONES_KEY, JSON.stringify(tombstones));
+  } catch (_) {}
+}
+
+function removeTombstone(projectId) {
+  try {
+    const tombstones = loadTombstones();
+    delete tombstones[projectId];
+    localStorage.setItem(TOMBSTONES_KEY, JSON.stringify(tombstones));
+  } catch (_) {}
+}
+
+export function clearTombstones() {
+  try {
+    localStorage.removeItem(TOMBSTONES_KEY);
+  } catch (_) {}
+}
+
+// ── Durable Sync Queue Helpers ───────────────────────────────────────────────
+
+function loadSyncQueue() {
+  try {
+    const raw = localStorage.getItem(SYNC_QUEUE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSyncQueue(queue) {
+  try {
+    localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(queue));
+  } catch (_) {}
+}
+
+function enqueueSyncItem(item) {
+  const queue = loadSyncQueue();
+  const filtered = queue.filter(q => !(q.projectId === item.projectId && q.type === item.type));
+  filtered.push({
+    id: genId(),
+    timestamp: Date.now(),
+    attempts: 0,
+    ...item,
+  });
+  saveSyncQueue(filtered);
+}
+
+function dequeueSyncItem(queueId) {
+  const queue = loadSyncQueue();
+  const filtered = queue.filter(q => q.id !== queueId);
+  saveSyncQueue(filtered);
+}
+
+export function clearSyncQueue() {
+  try {
+    localStorage.removeItem(SYNC_QUEUE_KEY);
+  } catch (_) {}
+}
+
+// ── Background Queue Worker ────────────────────────────────────────────────────
+let _isProcessingQueue = false;
+
+export async function processSyncQueue() {
+  if (_isProcessingQueue) return;
+  const token = api.getStoredToken();
+  if (!token) return;
+
+  _isProcessingQueue = true;
+  try {
+    const queue = loadSyncQueue();
+    if (queue.length === 0) return;
+
+    for (const item of queue) {
+      try {
+        if (item.type === 'DELETE') {
+          await api.deleteUserProject(item.projectId);
+        } else if (item.type === 'UPSERT' || item.type === 'TRASH' || item.type === 'RESTORE') {
+          if (item.payload) {
+            await api.upsertUserProject(item.payload);
+          }
+        }
+        dequeueSyncItem(item.id);
+      } catch (err) {
+        console.warn('[syncQueue] Error processing item:', item.type, item.projectId, err.message || err);
+      }
+    }
+  } finally {
+    _isProcessingQueue = false;
+  }
+}
+
 export function clearProjectsLocal() {
   if (_lsTimer) {
     clearTimeout(_lsTimer);
@@ -61,6 +170,8 @@ export function clearProjectsLocal() {
   _lsPending = null;
   try {
     localStorage.removeItem(LS_KEY);
+    clearTombstones();
+    clearSyncQueue();
     sessionStorage.removeItem('acadoc_b64_migrated');
   } catch (_) {}
 }
@@ -288,16 +399,32 @@ export const useProjectStore = create((set, get) => ({
 
     _loadProjectsPromise = (async () => {
       try {
+        // First process any pending durable queue operations in the background
+        processSyncQueue();
+
         // Fetch the lightweight cloud sync status
         const cloudSync = await api.fetchProjectSyncStatus();
-        const cloudMap = new Map(cloudSync.map(p => [p.id, p.updatedAt]));
-        const localMap = new Map(local.map(p => [p.id, p.updatedAt || 0]));
+        const tombstones = loadTombstones();
+        const syncQueue = loadSyncQueue();
+        const pendingDeleteIds = new Set(
+          syncQueue
+            .filter((q) => q.type === "DELETE" || q.type === "TRASH")
+            .map((q) => q.projectId)
+        );
+
+        // Guard against zombie cloud projects: ignore any cloud project that is tombstoned or pending deletion locally!
+        const validCloudSync = cloudSync.filter(
+          (p) => !tombstones[p.id] && !pendingDeleteIds.has(p.id)
+        );
+
+        const cloudMap = new Map(validCloudSync.map((p) => [p.id, p.updatedAt]));
+        const localMap = new Map(local.map((p) => [p.id, p.updatedAt || 0]));
 
         const toDownload = [];
         const toUpload = [];
 
-        // Check cloud projects
-        for (const cloudProj of cloudSync) {
+        // Check valid cloud projects
+        for (const cloudProj of validCloudSync) {
           const localUpdated = localMap.get(cloudProj.id);
           if (localUpdated === undefined) {
             toDownload.push(cloudProj.id);
@@ -308,6 +435,7 @@ export const useProjectStore = create((set, get) => ({
 
         // Check local projects
         for (const localProj of local) {
+          if (tombstones[localProj.id] || pendingDeleteIds.has(localProj.id)) continue;
           const cloudUpdated = cloudMap.get(localProj.id);
           if (cloudUpdated === undefined) {
             toUpload.push(localProj);
@@ -318,37 +446,57 @@ export const useProjectStore = create((set, get) => ({
 
         console.log('[projects] delta sync analysis:', {
           localCount: local.length,
-          cloudCount: cloudSync.length,
+          cloudCount: validCloudSync.length,
           toDownload: toDownload.length,
           toUpload: toUpload.length
         });
 
-        let updatedLocal = [...local];
+        let updatedLocal = [...local].filter(
+          (p) => !tombstones[p.id] && !pendingDeleteIds.has(p.id)
+        );
 
         // Download missing/updated projects
         if (toDownload.length > 0) {
           const downloaded = await Promise.all(
-            toDownload.map(id => api.fetchProject(id).catch(err => {
-              console.warn('[projects] failed to download project', id, err.message);
-              return null;
-            }))
+            toDownload.map((id) =>
+              api.fetchProject(id).catch((err) => {
+                console.warn('[projects] failed to download project', id, err.message);
+                return null;
+              })
+            )
           );
 
           const downloadedValid = downloaded.filter(Boolean);
-          const downloadedIds = new Set(downloadedValid.map(p => p.id));
+          const downloadedIds = new Set(downloadedValid.map((p) => p.id));
           updatedLocal = [
             ...downloadedValid,
-            ...updatedLocal.filter(p => !downloadedIds.has(p.id))
+            ...updatedLocal.filter((p) => !downloadedIds.has(p.id)),
           ];
         }
 
-        // Upload local offline changes/new projects
-        if (toUpload.length > 0) {
+        // Filter out any local projects that don't belong to this cloud user when force=true
+        if (force) {
+          const cloudIds = new Set(validCloudSync.map((p) => p.id));
+          updatedLocal = updatedLocal.filter((p) => cloudIds.has(p.id));
+        }
+
+        // Upload local offline changes/new projects (only during non-forced background sync)
+        if (toUpload.length > 0 && !force) {
           await Promise.allSettled(
             toUpload.map(p => api.upsertUserProject(p).catch(err =>
               console.warn('[projects] failed to sync local changes to cloud', p.id, err.message)
             ))
           );
+        }
+
+        // Merge any projects created in memory while async sync was running
+        const inMemory = get().projects;
+        const updatedSet = new Set(updatedLocal.map(p => p.id));
+        for (const p of inMemory) {
+          if (!updatedSet.has(p.id)) {
+            updatedLocal.push(p);
+            updatedSet.add(p.id);
+          }
         }
 
         // Sort by updatedAt descending
@@ -364,6 +512,14 @@ export const useProjectStore = create((set, get) => ({
       } catch (err) {
         const elapsed = Date.now() - t0;
         console.warn('[projects] delta sync failed, using local cache', err.message, `${elapsed}ms`);
+        const inMemory = get().projects;
+        const localSet = new Set(local.map(p => p.id));
+        for (const p of inMemory) {
+          if (!localSet.has(p.id)) {
+            local.push(p);
+            localSet.add(p.id);
+          }
+        }
         set({ projects: local, projectsLoaded: true });
         _projectsLoadedOnce = true;
         return { count: local.length, offline: true };
@@ -464,20 +620,78 @@ export const useProjectStore = create((set, get) => ({
     });
   },
 
+  togglePinProject(projectId) {
+    const updated = get().projects.map(p => {
+      if (p.id !== projectId) return p;
+      return { ...p, isPinned: !p.isPinned, updatedAt: Date.now() };
+    });
+    saveProjectsLocal(updated, true);
+    set({ projects: updated });
+    dirtyProjectIds.add(projectId);
+  },
+
+  trashProject(projectId) {
+    const updated = get().projects.map(p => {
+      if (p.id !== projectId) return p;
+      return { ...p, deletedAt: Date.now(), updatedAt: Date.now() };
+    });
+    saveProjectsLocal(updated, true);
+    set({
+      projects: updated,
+      currentProjectId: get().currentProjectId === projectId ? null : get().currentProjectId,
+    });
+    addTombstone(projectId);
+    const target = updated.find(p => p.id === projectId);
+    if (target) {
+      enqueueSyncItem({ type: 'TRASH', projectId, payload: target });
+      processSyncQueue();
+    }
+  },
+
+  restoreProject(projectId) {
+    const updated = get().projects.map(p => {
+      if (p.id !== projectId) return p;
+      return { ...p, deletedAt: null, updatedAt: Date.now() };
+    });
+    saveProjectsLocal(updated, true);
+    set({ projects: updated });
+    removeTombstone(projectId);
+    const target = updated.find(p => p.id === projectId);
+    if (target) {
+      enqueueSyncItem({ type: 'RESTORE', projectId, payload: target });
+      processSyncQueue();
+    }
+  },
+
   deleteProject(projectId) {
+    // Legacy / soft delete alias: moves to trash
+    get().trashProject(projectId);
+  },
+
+  permanentlyDeleteProject(projectId) {
     const updated = get().projects.filter((p) => p.id !== projectId);
-    saveProjectsLocal(updated, true); // immediate — deletion must persist immediately
+    saveProjectsLocal(updated, true);
     set({
       projects: updated,
       currentProjectId:
         get().currentProjectId === projectId ? null : get().currentProjectId,
     });
-    // No scheduleActiveProjectSync here — deletion is handled by its own DELETE endpoint
-    if (api.getStoredToken()) {
-      api
-        .deleteUserProject(projectId)
-        .catch((err) => console.warn("[delete]", err.message));
-    }
+    addTombstone(projectId);
+    enqueueSyncItem({ type: 'DELETE', projectId });
+    processSyncQueue();
+  },
+
+  emptyTrash() {
+    const trashed = get().projects.filter(p => p.deletedAt);
+    const updated = get().projects.filter(p => !p.deletedAt);
+    saveProjectsLocal(updated, true);
+    set({ projects: updated });
+
+    trashed.forEach(p => {
+      addTombstone(p.id);
+      enqueueSyncItem({ type: 'DELETE', projectId: p.id });
+    });
+    processSyncQueue();
   },
 
   setActiveChapter(id) {

@@ -1,0 +1,583 @@
+/* ============================================================
+   DASHBOARD REDESIGN LAYER — Japandi polish + motion support
+   Loaded LAST (after japandi-theme.css) so it wins the cascade.
+   Scope rule: every selector here is dashboard-only
+   (db-*, sidebar-*, dashboard-*, tpl-*, exports-*, settings-*,
+   project-card-pin, search-clear, modal-actions/desc,
+   import-dropzone, btn-secondary/danger).
+   ============================================================ */
+
+/* ── Sidebar: motion owns width now ── */
+.db-sidebar {
+  transition: none;
+  overflow: visible; /* let collapsed tooltips escape */
+}
+
+/* Labels stay in-flow so opacity/x can animate (motion sets values).
+   The sidebar's overflow:hidden children + nowrap clip during the tween. */
+.db-sidebar--collapsed .sidebar-nav-item-label {
+  display: inline-block;
+  pointer-events: none;
+}
+
+.db-sidebar--collapsed .sidebar-brand {
+  pointer-events: none;
+}
+
+.db-sidebar--collapsed .profile-info {
+  /* stay renderable so opacity can animate (index.css uses display:none),
+     but out of flow so the collapsed column layout doesn't grow */
+  display: flex;
+  position: absolute;
+  pointer-events: none;
+}
+
+.sidebar-profile {
+  position: relative;
+}
+
+/* ── Sliding active pill ── */
+.sidebar-nav-item {
+  position: relative;
+  overflow: hidden; /* clip label inside the item while the width tweens */
+}
+
+.sidebar-nav-item--active {
+  background: transparent !important; /* pill paints the accent instead */
+}
+
+.sidebar-active-pill {
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  border-radius: var(--radius-md);
+  z-index: 0;
+}
+
+.sidebar-nav-item-icon,
+.sidebar-nav-item-label {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Collapsed-sidebar tooltips (CSS-only) ── */
+/* Let tooltips escape the nav's scroll container while collapsed
+   (5 items never need scrolling at 68px width) */
+.db-sidebar--collapsed .db-sidebar-top,
+.db-sidebar--collapsed .sidebar-nav {
+  overflow: visible;
+}
+
+.db-sidebar--collapsed .sidebar-nav-link {
+  position: relative;
+}
+
+.db-sidebar--collapsed .sidebar-nav-link::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-4px);
+  background: var(--text);
+  color: var(--surface);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 400;
+}
+
+.db-sidebar--collapsed .sidebar-nav-link:hover::after,
+.db-sidebar--collapsed .sidebar-nav-link:focus-visible::after {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+/* ── Notifications dropdown ── */
+.db-notifications-panel {
+  transform-origin: top right;
+}
+
+/* Motion drives dashboard modal/dropdown entrances — kill the CSS
+   keyframe entrances so they don't double-play */
+.db-container .modal-backdrop,
+.db-container .modal-panel {
+  animation: none;
+}
+
+/* ── Focus visibility across the dashboard ── */
+.sidebar-nav-link:focus-visible {
+  outline: none;
+}
+
+.sidebar-nav-link:focus-visible .sidebar-nav-item {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 2px;
+}
+
+.db-container .nav-icon-btn:focus-visible,
+.db-container .sidebar-toggle-btn:focus-visible,
+.db-container .sidebar-logo:focus-visible,
+.db-container .btn-primary:focus-visible,
+.db-container .btn-secondary:focus-visible,
+.db-container .btn-danger:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 2px;
+}
+
+/* ── Secondary + danger buttons (Japandi light surfaces) ── */
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    background 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-secondary:hover {
+  border-color: var(--border-hover);
+  background: var(--card);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-card);
+}
+
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: var(--error);
+  color: #fdf9f4;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.btn-danger:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(166, 77, 77, 0.25);
+}
+
+/* ── Home: hero greeting eyebrow ── */
+.db-hero-greeting {
+  display: block;
+  position: relative;
+  z-index: 1;
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-warm);
+  margin-bottom: 6px;
+}
+
+/* ── Home: stats captions replace fake trends ── */
+.stats-caption {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.stats-value--date {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+/* ── Home: pin button (project card needs a positioning context) ── */
+.projects-grid .project-card {
+  position: relative;
+}
+
+.project-card--import {
+  border-style: dashed;
+  border-color: var(--border);
+}
+
+.project-card-new-icon--accent {
+  color: var(--accent);
+}
+
+.project-card-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+}
+
+.import-dropzone-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.import-dropzone-hint {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
+
+.import-error {
+  color: var(--error);
+  font-size: 0.8rem;
+  margin-top: 4px;
+}
+
+/* ── Home: pin button ── */
+.project-card-pin {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+  z-index: 2;
+}
+
+.project-card-pin:hover {
+  color: var(--accent-warm);
+  background: var(--surface-hover);
+}
+
+.project-card-pin--active {
+  color: var(--accent-warm);
+}
+
+/* ── Home: search clear button ── */
+.project-toolbar .search-container {
+  position: relative;
+}
+
+.search-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  margin-top: -10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: var(--surface-hover);
+  border: none;
+  border-radius: 50%;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.search-clear:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+/* ── Home: empty state actions ── */
+.dashboard-empty-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+/* ── Modals: shared internals ── */
+.modal-desc {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.55;
+  margin: 0 0 16px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+/* ── Home: import dropzone ── */
+.import-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 28px 16px;
+  border: 1.5px dashed var(--border-hover);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.import-dropzone:hover {
+  border-color: var(--accent-light);
+  background: var(--card);
+}
+
+.import-dropzone--has-file {
+  border-color: var(--accent);
+  border-style: solid;
+  background: var(--card);
+  color: var(--text);
+}
+
+/* ── Templates page ── */
+.tpl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.tpl-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.tpl-card:hover {
+  box-shadow: var(--shadow-active);
+  border-color: var(--border-hover);
+}
+
+.tpl-card-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+
+.tpl-card-icon .tpl-card-sketch {
+  position: absolute;
+  inset: -8px;
+  width: calc(100% + 16px);
+  height: calc(100% + 16px);
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.tpl-card-name {
+  font-family: var(--font-display);
+  font-size: 1.02rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.tpl-card-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0;
+  flex: 1;
+}
+
+.tpl-card .btn-primary {
+  align-self: flex-start;
+}
+
+/* ── Exports page ── */
+.exports-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  margin-top: 18px;
+}
+
+.exports-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.83rem;
+}
+
+.exports-table thead th {
+  text-align: left;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-warm);
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.exports-table tbody td {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  vertical-align: middle;
+}
+
+.exports-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.exports-table tbody tr {
+  transition: background 0.15s ease;
+}
+
+.exports-table tbody tr:hover {
+  background: var(--surface);
+}
+
+.exports-doc {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.exports-doc-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.exports-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.exports-duration {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+}
+
+.exports-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.exports-download:hover {
+  color: var(--accent);
+  border-color: var(--accent-light);
+  background: var(--surface);
+}
+
+@media (max-width: 720px) {
+  .exports-table .col-duration {
+    display: none;
+  }
+}
+
+/* ── Settings page ── */
+.settings-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  max-width: 640px;
+}
+
+.settings-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-card);
+}
+
+.settings-card .metadata-field {
+  margin-bottom: 16px;
+}
+
+.settings-card .metadata-field:last-of-type {
+  margin-bottom: 0;
+}
+
+.settings-card-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.dashboard-section-title--icon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Reduced motion: neutralize the CSS layer too
+   (MotionConfig reducedMotion="user" handles the motion layer) ── */
+@media (prefers-reduced-motion: reduce) {
+  .db-container *,
+  .db-container *::before,
+  .db-container *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

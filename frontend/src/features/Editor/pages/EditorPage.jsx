@@ -18,6 +18,25 @@ export default function Editor({ onGoToDashboard, onLogout }) {
   
   const [activeTab, setActiveTab] = useState('editor');
 
+  // Auto-recovery: If current project is null (e.g. direct page refresh), auto-open most recent active project
+  const currentProject = useAcaStore(s => s.getCurrentProject());
+  const projects = useAcaStore(s => s.projects);
+  const projectsLoaded = useAcaStore(s => s.projectsLoaded);
+  const openProject = useAcaStore(s => s.openProject);
+
+  useEffect(() => {
+    if (!currentProject) {
+      if (projects.length > 0) {
+        const firstActive = projects.find(p => !p.deletedAt) || projects[0];
+        if (firstActive) {
+          openProject(firstActive.id);
+        }
+      } else if (projectsLoaded && onGoToDashboard) {
+        onGoToDashboard();
+      }
+    }
+  }, [currentProject, projects, projectsLoaded, openProject, onGoToDashboard]);
+
   // Sync active project to cloud when leaving the editor
   const syncActiveProjectNow = useAcaStore(s => s.syncActiveProjectNow);
   useEffect(() => {

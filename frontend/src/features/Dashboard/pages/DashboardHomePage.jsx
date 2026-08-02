@@ -9,329 +9,57 @@ import {
   BookOpen,
   Folder,
   FileText,
-  ShieldCheck,
+  Layers,
+  Clock,
   Pin,
   Trash2,
-  GraduationCap,
   Search,
   HelpCircle,
   X
 } from 'lucide-react';
 import { getTemplate, getTemplateIcon, formatDate } from './dashboardUtils.jsx';
+import { TEMPLATES } from '@/utils/templates';
 import { SketchHeroAccent, SketchUnderline, SketchDocument } from '@/components/SketchDecor/SketchDecor';
 import * as api from '@/services/api';
-import { parseMarkdownMathToHtml } from '@/hooks/useMathPaste/markdownParser';
+import { parseImportedTextIntoChapters } from '../utils/importParsing';
+import {
+  EASE,
+  pageVariants,
+  itemVariants,
+  gridVariants,
+  cardVariants,
+  hoverLift,
+  backdropVariants,
+  modalVariants,
+} from '../dashboardMotion';
 
-const EASE = [0.16, 1, 0.3, 1];
+const statHover = { y: -3, transition: { duration: 0.2, ease: EASE } };
 
-const containerVariants = {
-  hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.08,
-      delayChildren: 0.04,
-    },
-  },
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 16 },
-  show: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.4, ease: EASE },
-  },
-};
-
-const cardGridVariants = {
-  hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.05,
-    },
-  },
-};
-
-const cardItemVariants = {
-  hidden: { opacity: 0, y: 14, scale: 0.98 },
-  show: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: { duration: 0.35, ease: EASE },
-  },
-};
-
-function convertTextToParagraphsAndLists(lines) {
-
-
-  const blocks = [];
-  let currentBlock = [];
-  let currentType = 'paragraph'; // 'paragraph', 'bulletList', 'orderedList'
-
-  const getLineType = (trimmedLine) => {
-    if (/^[-*•]\s+/.test(trimmedLine)) return 'bulletList';
-    if (/^\d+[.)]\s+/.test(trimmedLine)) return 'orderedList';
-    return 'paragraph';
-  };
-
-  const flushBlock = () => {
-    if (currentBlock.length === 0) return;
-    
-    if (currentType === 'bulletList') {
-      blocks.push({
-        type: 'bulletList',
-        content: currentBlock.map(line => ({
-          type: 'listItem',
-          content: [
-            {
-              type: 'paragraph',
-              content: [{ type: 'text', text: line.replace(/^[-*•]\s+/, '').trim() }]
-            }
-          ]
-        }))
-      });
-    } else if (currentType === 'orderedList') {
-      blocks.push({
-        type: 'orderedList',
-        content: currentBlock.map(line => ({
-          type: 'listItem',
-          content: [
-            {
-              type: 'paragraph',
-              content: [{ type: 'text', text: line.replace(/^\d+[.)]\s+/, '').trim() }]
-            }
-          ]
-        }))
-      });
-    } else {
-      blocks.push({
-        type: 'paragraph',
-        content: [{ type: 'text', text: currentBlock.join(' ') }]
-      });
-    }
-    currentBlock = [];
-  };
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed === '') {
-      flushBlock();
-      continue;
-    }
-
-    const type = getLineType(trimmed);
-    if (type !== currentType) {
-      flushBlock();
-      currentType = type;
-    }
-    currentBlock.push(trimmed);
-  }
-  flushBlock();
-  return blocks;
+function getGreetingKey() {
+  const hour = new Date().getHours();
+  if (hour < 12) return ['goodMorning', 'Good morning'];
+  if (hour < 18) return ['goodAfternoon', 'Good afternoon'];
+  return ['goodEvening', 'Good evening'];
 }
-
-function parseInlineTextAndMath(el) {
-
-  const nodes = [];
-  el.childNodes.forEach(child => {
-    if (child.nodeType === Node.TEXT_NODE) {
-      if (child.nodeValue) {
-        nodes.push({ type: 'text', text: child.nodeValue });
-      }
-    } else if (child.nodeType === Node.ELEMENT_NODE) {
-      const tag = child.tagName.toLowerCase();
-      if (tag === 'span' && child.hasAttribute('data-latex')) {
-        nodes.push({
-          type: 'math',
-          attrs: { latex: child.getAttribute('data-latex') || '', display: false }
-        });
-      } else if (tag === 'img') {
-        nodes.push({
-          type: 'image',
-          attrs: { src: child.getAttribute('src') || '', alt: child.getAttribute('alt') || '' }
-        });
-      } else if (tag === 'strong' || tag === 'b') {
-        nodes.push({ type: 'text', text: child.textContent || '', marks: [{ type: 'bold' }] });
-      } else if (tag === 'em' || tag === 'i') {
-        nodes.push({ type: 'text', text: child.textContent || '', marks: [{ type: 'italic' }] });
-      } else if (tag === 'code') {
-        nodes.push({ type: 'text', text: child.textContent || '', marks: [{ type: 'code' }] });
-      } else {
-        if (child.textContent) {
-          nodes.push({ type: 'text', text: child.textContent });
-        }
-      }
-    }
-  });
-  return nodes;
-}
-
-function htmlToTipTapNode(el) {
-  if (!el || !el.tagName) return null;
-  const tag = el.tagName.toLowerCase();
-
-  if (/^h[1-6]$/.test(tag)) {
-    const level = parseInt(tag.slice(1), 10);
-    return {
-      type: 'heading',
-      attrs: { level },
-      content: parseInlineTextAndMath(el)
-    };
-  }
-
-  if (tag === 'p') {
-    const inlineNodes = parseInlineTextAndMath(el);
-    return {
-      type: 'paragraph',
-      content: inlineNodes.length > 0 ? inlineNodes : []
-    };
-  }
-
-  if (tag === 'ul') {
-    const items = Array.from(el.children).map(htmlToTipTapNode).filter(Boolean);
-    return { type: 'bulletList', content: items };
-  }
-
-  if (tag === 'ol') {
-    const items = Array.from(el.children).map(htmlToTipTapNode).filter(Boolean);
-    return { type: 'orderedList', content: items };
-  }
-
-  if (tag === 'li') {
-    const childNodes = Array.from(el.children).map(htmlToTipTapNode).filter(Boolean);
-    const inlineNodes = parseInlineTextAndMath(el);
-    const content = childNodes.length > 0 ? childNodes : [{ type: 'paragraph', content: inlineNodes }];
-    return { type: 'listItem', content };
-  }
-
-  if (tag === 'img') {
-    return {
-      type: 'image',
-      attrs: {
-        src: el.getAttribute('src') || '',
-        alt: el.getAttribute('alt') || ''
-      }
-    };
-  }
-
-  if (tag === 'table') {
-    const rows = Array.from(el.querySelectorAll('tr')).map(tr => ({
-      type: 'tableRow',
-      content: Array.from(tr.children).map(cell => ({
-        type: cell.tagName.toLowerCase() === 'th' ? 'tableHeader' : 'tableCell',
-        content: [{ type: 'paragraph', content: parseInlineTextAndMath(cell) }]
-      }))
-    }));
-    return { type: 'table', content: rows };
-  }
-
-  const inlineNodes = parseInlineTextAndMath(el);
-  return { type: 'paragraph', content: inlineNodes };
-}
-
-function convertMarkdownToTipTapNodes(markdownText) {
-  if (!markdownText) return [];
-  const htmlStr = parseMarkdownMathToHtml(markdownText);
-  const container = document.createElement('div');
-  container.innerHTML = htmlStr;
-  const nodes = Array.from(container.children).map(htmlToTipTapNode).filter(Boolean);
-  return nodes.length > 0 ? nodes : [{ type: 'paragraph', content: [] }];
-}
-
-function parseImportedTextIntoChapters(text) {
-  if (!text) return [];
-
-  const lines = text.split('\n');
-  const chapters = [];
-  let currentChapterTitle = 'Introduction';
-  let currentLines = [];
-
-  const isHeading = (line) => {
-    const trimmed = line.trim();
-    if (trimmed.length === 0 || trimmed.length > 80) return false;
-    
-    if (/^#+\s+/.test(trimmed)) return true;
-
-    // 1. All uppercase short headings (e.g. ABSTRACT, INTRODUCTION)
-    const isShortUpper = trimmed === trimmed.toUpperCase() && trimmed.length < 50 && /[A-Z]/.test(trimmed);
-    if (isShortUpper) return true;
-
-    // 2. Chapter headings (e.g. Chapter 1, CHAPTER II)
-    if (/^chapter\s+\d+/i.test(trimmed) || /^chapter\s+[ivxldcm]+/i.test(trimmed)) return true;
-
-    // 3. Multi-level numbering (e.g. 1.1 Background, 2.1.3 Details)
-    if (/^\d+\.\d+(\.\d+)*\.?\s+[A-Za-z]/.test(trimmed)) return true;
-
-    // 4. Single-level numbering with Title Case
-    if (/^\d+[.)]\s+[A-Z][A-Za-z]*(\s+[A-Z][A-Za-z]*)*$/.test(trimmed)) return true;
-
-    // 5. Common section names
-    const commonSectionNames = [
-      'abstract', 'introduction', 'overview', 'background', 'literature review',
-      'methodology', 'methods', 'implementation', 'results', 'evaluation',
-      'discussion', 'conclusion', 'conclusions', 'future work', 'references', 'appendix'
-    ];
-    if (commonSectionNames.includes(trimmed.toLowerCase())) return true;
-
-    return false;
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-
-    if (isHeading(trimmed)) {
-      const hasTextContent = currentLines.some(l => l.trim() !== '');
-      if (hasTextContent || chapters.length > 0) {
-        const chunkText = currentLines.join('\n');
-        chapters.push({
-          title: currentChapterTitle.replace(/^#+\s+/, ''),
-          content: {
-            type: 'doc',
-            content: convertMarkdownToTipTapNodes(chunkText)
-          }
-        });
-      }
-      currentChapterTitle = trimmed;
-      currentLines = [];
-    } else {
-      currentLines.push(line);
-    }
-  }
-
-  const hasTextContent = currentLines.some(l => l.trim() !== '');
-  if (hasTextContent || chapters.length === 0) {
-    const chunkText = currentLines.join('\n');
-    chapters.push({
-      title: currentChapterTitle.replace(/^#+\s+/, ''),
-      content: {
-        type: 'doc',
-        content: convertMarkdownToTipTapNodes(chunkText)
-      }
-    });
-  }
-
-  return chapters;
-}
-
 
 export default function DashboardHomePage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { onNewProject } = useOutletContext();
 
-  const projects      = useAcaStore(s => s.projects);
-  const openProject   = useAcaStore(s => s.openProject);
-  const deleteProject = useAcaStore(s => s.deleteProject);
+  const projects         = useAcaStore(s => s.projects);
+  const openProject      = useAcaStore(s => s.openProject);
+  const trashProject     = useAcaStore(s => s.trashProject);
+  const togglePinProject = useAcaStore(s => s.togglePinProject);
+  const createProject    = useAcaStore(s => s.createProject);
 
   const user       = useAuthStore(s => s.user);
   const authStatus = useAuthStore(s => s.status);
   const isGuest    = authStatus === 'guest';
   const signedIn   = authStatus === 'authenticated';
   const firstName  = user?.name?.trim().split(/\s+/)[0] || null;
+
+  const [greetingKey, greetingDefault] = getGreetingKey();
 
   const welcomeTitle = signedIn && firstName
     ? t('welcomeBackUser', { firstName })
@@ -342,9 +70,8 @@ export default function DashboardHomePage() {
     ? t('subtitleSignedIn')
     : t('subtitleGuest');
 
-  const [searchQuery, setSearchQuery]       = useState('');
-  const [confirmDelete, setConfirmDelete]   = useState(null);
-  const [pinnedProjects, setPinnedProjects] = useState(() => new Map());
+  const [searchQuery, setSearchQuery]     = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(null);
 
   const [showImportModal, setShowImportModal] = useState(false);
   const [importFile, setImportFile] = useState(null);
@@ -353,6 +80,21 @@ export default function DashboardHomePage() {
   const [error, setError] = useState(null);
 
   const createImportedProject = useAcaStore(s => s.createImportedProject);
+
+  // Filter active (non-trashed) projects
+  const activeProjects = useMemo(() => {
+    return projects.filter(p => !p.deletedAt);
+  }, [projects]);
+
+  // Honest stats derived from real active project data
+  const stats = useMemo(() => {
+    const chapterCount = activeProjects.reduce((n, p) => n + (p.chapters?.length || 0), 0);
+    const templatesUsed = new Set(activeProjects.map(p => p.templateId).filter(Boolean)).size;
+    const lastActivity = activeProjects.length
+      ? formatDate(Math.max(...activeProjects.map(p => p.updatedAt || 0)))
+      : '—';
+    return { chapterCount, templatesUsed, lastActivity };
+  }, [activeProjects]);
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -387,13 +129,13 @@ export default function DashboardHomePage() {
   };
 
   const filteredProjects = useMemo(() => {
-    return projects.filter(p => {
+    return activeProjects.filter(p => {
       const titleMatch = (p.metadata?.title || 'Untitled').toLowerCase().includes(searchQuery.toLowerCase());
       const authorMatch = (p.metadata?.authors || '').toLowerCase().includes(searchQuery.toLowerCase());
       const tplMatch = (getTemplate(p.templateId)?.name || '').toLowerCase().includes(searchQuery.toLowerCase());
       return titleMatch || authorMatch || tplMatch;
     });
-  }, [projects, searchQuery]);
+  }, [activeProjects, searchQuery]);
 
   const handleOpen = (projectId) => {
     openProject(projectId);
@@ -401,94 +143,143 @@ export default function DashboardHomePage() {
   };
 
   const handleDeleteConfirm = (id) => {
-    deleteProject(id);
+    trashProject(id);
     setConfirmDelete(null);
   };
 
   const togglePin = (id, e) => {
     e.stopPropagation();
-    if (typeof id !== 'string' || ['__proto__', 'constructor', 'prototype'].includes(id)) {
-      return;
-    }
-    setPinnedProjects(prev => {
-      const next = new Map(prev);
-      next.set(id, !prev.get(id));
-      return next;
+    togglePinProject(id);
+  };
+
+  const handleCreateFromTemplate = (templateId, templateName) => {
+    const proj = createProject(templateId, {
+      title: `My ${templateName}`,
+      authors: user?.name || '',
+      institution: user?.institution || '',
+      department: user?.department || '',
+      year: new Date().getFullYear().toString(),
     });
+    openProject(proj.id);
+    navigate('/editor');
   };
 
   return (
     <motion.div
-      variants={containerVariants}
+      variants={pageVariants}
       initial="hidden"
       animate="show"
     >
       {/* Hero Welcome banner */}
       <motion.div className="db-hero" variants={itemVariants}>
         <SketchHeroAccent className="db-hero-sketch" />
+        <span className="db-hero-greeting">{t(greetingKey, { defaultValue: greetingDefault })}</span>
         <h2 className="db-hero-welcome display-heading">
           {welcomeTitle}
           <SketchUnderline />
         </h2>
         <p className="db-hero-subtitle">{welcomeSubtitle}</p>
         <div className="db-hero-actions">
-          <button type="button" className="btn-primary" onClick={onNewProject}>
+          <motion.button type="button" className="btn-primary" onClick={onNewProject} whileTap={{ scale: 0.96 }}>
             <Sparkles size={14} /> {t('newProjectHero')}
-          </button>
-          <button type="button" className="btn-secondary" onClick={() => setShowImportModal(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255, 255, 255, 0.1)', borderColor: 'rgba(255, 255, 255, 0.2)', color: '#fff' }}>
-            <FileText size={14} /> Import Document
-          </button>
-          <button type="button" className="btn-ghost" onClick={() => navigate('/templates')}>
-            <BookOpen size={14} /> {t('browseTemplatesHero')}
-          </button>
+          </motion.button>
+          <motion.button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setShowImportModal(true)}
+            whileTap={{ scale: 0.96 }}
+          >
+            <FileText size={14} /> {t('importDocument', { defaultValue: 'Import Document' })}
+          </motion.button>
         </div>
       </motion.div>
 
-      {/* Stats Section */}
+      {/* Stats Section — real numbers only */}
       <motion.div className="db-stats-grid" variants={itemVariants}>
-        <motion.div className="stats-card" whileHover={{ y: -3, transition: { duration: 0.2, ease: EASE } }}>
+        <motion.div className="stats-card" whileHover={statHover}>
           <div className="stats-card-header">
             <span className="stats-card-title">{t('totalPapers')}</span>
-            <Folder className="stats-card-icon" size={18} strokeWidth={2} style={{ color: 'var(--accent)' }} />
+            <Folder className="stats-card-icon" size={18} strokeWidth={2} />
           </div>
           <div className="stats-card-body">
             <span className="stats-value">{projects.length}</span>
-            <span className="stats-trend stats-trend--up">↑ 12%</span>
+            <span className="stats-caption">{t('acrossWorkspace', { defaultValue: 'in your workspace' })}</span>
           </div>
         </motion.div>
 
-        <motion.div className="stats-card" whileHover={{ y: -3, transition: { duration: 0.2, ease: EASE } }}>
+        <motion.div className="stats-card" whileHover={statHover}>
           <div className="stats-card-header">
-            <span className="stats-card-title">{t('pdfsGenerated')}</span>
-            <FileText className="stats-card-icon" size={18} strokeWidth={2} style={{ color: 'var(--accent)' }} />
+            <span className="stats-card-title">{t('chaptersWritten', { defaultValue: 'Chapters' })}</span>
+            <BookOpen className="stats-card-icon" size={18} strokeWidth={2} />
           </div>
           <div className="stats-card-body">
-            <span className="stats-value">{projects.length * 3 + 2}</span>
-            <span className="stats-trend stats-trend--up">↑ 24%</span>
+            <span className="stats-value">{stats.chapterCount}</span>
+            <span className="stats-caption">{t('acrossAllProjects', { defaultValue: 'across all projects' })}</span>
           </div>
         </motion.div>
 
-        <motion.div className="stats-card" whileHover={{ y: -3, transition: { duration: 0.2, ease: EASE } }}>
+        <motion.div className="stats-card" whileHover={statHover}>
           <div className="stats-card-header">
-            <span className="stats-card-title">{t('aiFormatting')}</span>
-            <Sparkles className="stats-card-icon" size={18} strokeWidth={2} style={{ color: 'var(--accent)' }} />
+            <span className="stats-card-title">{t('templatesUsed', { defaultValue: 'Templates used' })}</span>
+            <Layers className="stats-card-icon" size={18} strokeWidth={2} />
           </div>
           <div className="stats-card-body">
-            <span className="stats-value">16</span>
-            <span className="stats-trend stats-trend--up">↑ 8%</span>
+            <span className="stats-value">{stats.templatesUsed}</span>
+            <span className="stats-caption">{t('distinctTemplates', { defaultValue: 'distinct formats' })}</span>
           </div>
         </motion.div>
 
-        <motion.div className="stats-card" whileHover={{ y: -3, transition: { duration: 0.2, ease: EASE } }}>
+        <motion.div className="stats-card" whileHover={statHover}>
           <div className="stats-card-header">
-            <span className="stats-card-title">{t('latexHealth')}</span>
-            <ShieldCheck className="stats-card-icon" size={18} strokeWidth={2} style={{ color: '#22c55e' }} />
+            <span className="stats-card-title">{t('lastActivity', { defaultValue: 'Last activity' })}</span>
+            <Clock className="stats-card-icon" size={18} strokeWidth={2} />
           </div>
           <div className="stats-card-body">
-            <span className="stats-value">100%</span>
-            <span className="stats-trend stats-trend--up" style={{ color: '#22c55e' }}>{t('perfect')}</span>
+            <span className="stats-value stats-value--date">{stats.lastActivity}</span>
+            <span className="stats-caption">{t('latestEdit', { defaultValue: 'latest edit' })}</span>
           </div>
         </motion.div>
+      </motion.div>
+
+      {/* Start from a Template Showcase */}
+      <motion.div className="dashboard-template-showcase" variants={itemVariants} style={{ marginBottom: 28 }}>
+        <div className="dashboard-section-title" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <Sparkles size={16} style={{ color: 'var(--accent)' }} /> Start from a Template
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: 14 }}>
+          {TEMPLATES.map(tpl => (
+            <motion.div
+              key={tpl.id}
+              whileHover={{ y: -3 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => handleCreateFromTemplate(tpl.id, tpl.name)}
+              style={{
+                background: 'var(--card)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-lg)',
+                padding: '14px 16px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                boxShadow: 'var(--shadow-card)',
+                transition: 'border-color 0.2s ease, box-shadow 0.2s ease'
+              }}
+            >
+              <div className="project-card-icon" style={{ width: 40, height: 40, margin: 0, flexShrink: 0 }}>
+                {getTemplateIcon(tpl.icon)}
+              </div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {tpl.name}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--accent-warm)', marginTop: 2, fontWeight: 500 }}>
+                  1-Click Launch →
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
       </motion.div>
 
       {/* Projects Header with Search */}
@@ -505,6 +296,22 @@ export default function DashboardHomePage() {
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
           />
+          <AnimatePresence>
+            {searchQuery && (
+              <motion.button
+                type="button"
+                className="search-clear"
+                aria-label={t('clearSearch', { defaultValue: 'Clear search' })}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={{ duration: 0.15, ease: EASE }}
+                onClick={() => setSearchQuery('')}
+              >
+                <X size={12} />
+              </motion.button>
+            )}
+          </AnimatePresence>
         </div>
       </motion.div>
 
@@ -518,21 +325,25 @@ export default function DashboardHomePage() {
           <p className="dashboard-empty-desc">
             {t('emptyDesc')}
           </p>
-          <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-            <button className="btn-primary btn-large" onClick={onNewProject}>
+          <div className="dashboard-empty-actions">
+            <motion.button className="btn-primary btn-large" onClick={onNewProject} whileTap={{ scale: 0.96 }}>
               {t('newProjectBtn')}
-            </button>
-            <button className="btn-secondary btn-large" onClick={() => setShowImportModal(true)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <FileText size={16} /> Import Document
-            </button>
+            </motion.button>
+            <motion.button
+              className="btn-secondary btn-large"
+              onClick={() => setShowImportModal(true)}
+              whileTap={{ scale: 0.96 }}
+            >
+              <FileText size={16} /> {t('importDocument', { defaultValue: 'Import Document' })}
+            </motion.button>
           </div>
         </motion.div>
       ) : (
-        <motion.div className="projects-grid" variants={cardGridVariants}>
+        <motion.div className="projects-grid" variants={gridVariants}>
           {/* Add block trigger */}
           <motion.button
-            variants={cardItemVariants}
-            whileHover={{ y: -4, transition: { duration: 0.2, ease: EASE } }}
+            variants={cardVariants}
+            whileHover={hoverLift}
             className="project-card project-card--new"
             onClick={onNewProject}
           >
@@ -544,54 +355,39 @@ export default function DashboardHomePage() {
 
           {/* Import file card trigger */}
           <motion.button
-            variants={cardItemVariants}
-            whileHover={{ y: -4, transition: { duration: 0.2, ease: EASE } }}
-            className="project-card project-card--new"
+            variants={cardVariants}
+            whileHover={hoverLift}
+            className="project-card project-card--new project-card--import"
             onClick={() => setShowImportModal(true)}
-            style={{ borderStyle: 'dashed', borderColor: 'var(--border)' }}
           >
-            <span className="project-card-new-icon" style={{ color: 'var(--accent)' }}>
+            <span className="project-card-new-icon project-card-new-icon--accent">
               <FileText size={32} strokeWidth={1.5} />
             </span>
-            <span className="project-card-new-label">Import Document</span>
+            <span className="project-card-new-label">{t('importDocument', { defaultValue: 'Import Document' })}</span>
           </motion.button>
 
           {/* Filtered Project Cards */}
-          <AnimatePresence mode="popLayout">
+          <AnimatePresence>
             {filteredProjects.map(project => {
               const tpl = getTemplate(project.templateId);
-              const isPinned = !!pinnedProjects.get(project.id);
+              const isPinned = !!(project.isPinned || project.pinned);
               return (
                 <motion.div
                   key={project.id}
-                  variants={cardItemVariants}
-                  whileHover={{ y: -4, transition: { duration: 0.2, ease: EASE } }}
-                  layout
+                  variants={cardVariants}
+                  whileHover={hoverLift}
                   className="project-card"
-                  style={{ position: 'relative' }}
                 >
-                  
-                  {/* Pin Toggle absolute */}
-                  <button
+                  <motion.button
+                    type="button"
+                    className={`project-card-pin${isPinned ? ' project-card-pin--active' : ''}`}
                     onClick={(e) => togglePin(project.id, e)}
-                    style={{
-                      position: 'absolute',
-                      top: 14,
-                      right: 14,
-                      background: 'transparent',
-                      border: 'none',
-                      cursor: 'pointer',
-                      opacity: isPinned ? 1 : 0.25,
-                      transition: 'opacity 0.2s',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: isPinned ? 'var(--accent)' : 'inherit'
-                    }}
+                    whileTap={{ scale: 0.85 }}
+                    aria-pressed={isPinned}
                     title={isPinned ? t('unpinProject') : t('pinProject')}
                   >
                     <Pin size={15} style={{ transform: 'rotate(45deg)' }} />
-                  </button>
+                  </motion.button>
 
                   <div className="project-card-icon">
                     {getTemplateIcon(tpl?.icon)}
@@ -613,16 +409,17 @@ export default function DashboardHomePage() {
                     </div>
                   </div>
                   <div className="project-card-actions">
-                    <button className="btn-primary btn-sm" onClick={() => handleOpen(project.id)}>
+                    <motion.button className="btn-primary btn-sm" onClick={() => handleOpen(project.id)} whileTap={{ scale: 0.96 }}>
                       {t('openWorkspace')}
-                    </button>
-                    <button
-                      className="btn-ghost btn-sm btn-danger-hover"
+                    </motion.button>
+                    <motion.button
+                      className="btn-ghost btn-sm btn-danger-hover project-card-delete"
                       onClick={() => setConfirmDelete(project.id)}
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 8 }}
+                      whileTap={{ scale: 0.9 }}
+                      aria-label={t('deleteWorkspaceTitle')}
                     >
                       <Trash2 size={13} />
-                    </button>
+                    </motion.button>
                   </div>
                 </motion.div>
               );
@@ -636,42 +433,39 @@ export default function DashboardHomePage() {
         {confirmDelete && (
           <motion.div
             className="modal-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            variants={backdropVariants}
+            initial="hidden"
+            animate="show"
+            exit="exit"
             onClick={() => setConfirmDelete(null)}
           >
             <motion.div
               className="modal-panel"
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              transition={{ type: 'spring', stiffness: 450, damping: 30 }}
+              variants={modalVariants}
               style={{ maxWidth: 420 }}
               onClick={e => e.stopPropagation()}
             >
               <div className="modal-header">
-                <span className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="modal-title dashboard-section-title--icon">
                   <HelpCircle size={15} style={{ color: 'var(--error)' }} /> {t('deleteWorkspaceTitle')}
                 </span>
-                <button className="modal-close" onClick={() => setConfirmDelete(null)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <button className="modal-close" onClick={() => setConfirmDelete(null)}>
                   <X size={14} />
                 </button>
               </div>
               <div className="modal-body">
-                <p style={{ color: 'var(--text-muted)', marginBottom: 20, fontSize: '0.82rem', lineHeight: 1.5 }}>
+                <p className="modal-desc">
                   {t('deleteWorkspaceConfirm')}
                 </p>
-                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <div className="modal-actions">
                   <button className="btn-ghost" onClick={() => setConfirmDelete(null)}>{t('cancel')}</button>
-                  <button
-                    className="btn-primary"
-                    style={{ background: 'var(--error)', borderColor: 'var(--error)' }}
+                  <motion.button
+                    className="btn-danger"
+                    whileTap={{ scale: 0.96 }}
                     onClick={() => handleDeleteConfirm(confirmDelete)}
                   >
                     {t('confirmDelete')}
-                  </button>
+                  </motion.button>
                 </div>
               </div>
             </motion.div>
@@ -681,37 +475,34 @@ export default function DashboardHomePage() {
         {showImportModal && (
           <motion.div
             className="modal-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            variants={backdropVariants}
+            initial="hidden"
+            animate="show"
+            exit="exit"
             onClick={() => !importing && setShowImportModal(false)}
           >
             <motion.div
               className="modal-panel"
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              transition={{ type: 'spring', stiffness: 450, damping: 30 }}
+              variants={modalVariants}
               style={{ maxWidth: 500 }}
               onClick={e => e.stopPropagation()}
             >
               <div className="modal-header">
-                <span className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Sparkles size={15} style={{ color: 'var(--accent)' }} /> Import Document
+                <span className="modal-title dashboard-section-title--icon">
+                  <Sparkles size={15} style={{ color: 'var(--accent)' }} /> {t('importDocument', { defaultValue: 'Import Document' })}
                 </span>
-                <button className="modal-close" onClick={() => !importing && setShowImportModal(false)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <button className="modal-close" onClick={() => !importing && setShowImportModal(false)}>
                   <X size={14} />
                 </button>
               </div>
-              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', lineHeight: 1.5, margin: 0 }}>
-                  Upload a PDF, DOCX, or text file. We will extract the text, split it into chapters automatically, and create a workspace for you to edit.
+              <div className="modal-body">
+                <p className="modal-desc">
+                  {t('importDescription', { defaultValue: 'Upload a PDF, DOCX, or text file. We will extract the text, split it into chapters automatically, and create a workspace for you to edit.' })}
                 </p>
 
                 {/* Project Title Input */}
                 <div className="metadata-field">
-                  <label className="metadata-label">Project Title</label>
+                  <label className="metadata-label">{t('projectTitle', { defaultValue: 'Project Title' })}</label>
                   <input
                     type="text"
                     className="metadata-input"
@@ -724,17 +515,10 @@ export default function DashboardHomePage() {
 
                 {/* File Input container */}
                 <div className="metadata-field">
-                  <label className="metadata-label">Select File (.pdf, .docx, .txt)</label>
-                  <div style={{
-                    border: '2px dashed var(--border)',
-                    borderRadius: 'var(--radius)',
-                    padding: '24px 16px',
-                    textAlign: 'center',
-                    cursor: importing ? 'default' : 'pointer',
-                    background: 'var(--bg)',
-                    position: 'relative'
-                  }}
-                  onClick={() => !importing && document.getElementById('import-file-input').click()}
+                  <label className="metadata-label">{t('selectFile', { defaultValue: 'Select File (.pdf, .docx, .txt)' })}</label>
+                  <div
+                    className={`import-dropzone${importFile ? ' import-dropzone--has-file' : ''}`}
+                    onClick={() => !importing && document.getElementById('import-file-input').click()}
                   >
                     <input
                       id="import-file-input"
@@ -745,50 +529,44 @@ export default function DashboardHomePage() {
                       disabled={importing}
                     />
                     {importFile ? (
-                      <div>
-                        <FileText size={28} style={{ color: 'var(--accent)', marginBottom: 8 }} />
-                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text)' }}>
-                          {importFile.name}
-                        </div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>
-                          {(importFile.size / 1024).toFixed(1)} KB
-                        </div>
-                      </div>
+                      <>
+                        <FileText size={28} />
+                        <div className="import-dropzone-name">{importFile.name}</div>
+                        <div className="import-dropzone-hint">{(importFile.size / 1024).toFixed(1)} KB</div>
+                      </>
                     ) : (
-                      <div>
-                        <Folder size={28} style={{ color: 'var(--text-muted)', marginBottom: 8 }} />
-                        <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                          Click to select file
-                        </div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 4 }}>
-                          Supports PDF, Word (DOCX), Text (TXT)
-                        </div>
-                      </div>
+                      <>
+                        <Folder size={28} />
+                        <div>{t('clickToSelectFile', { defaultValue: 'Click to select file' })}</div>
+                        <div className="import-dropzone-hint">{t('supportedFormats', { defaultValue: 'Supports PDF, Word (DOCX), Text (TXT)' })}</div>
+                      </>
                     )}
                   </div>
                 </div>
 
                 {error && (
-                  <div style={{ color: 'var(--error)', fontSize: '0.8rem', marginTop: 4 }}>
+                  <div className="import-error">
                     ⚠️ {error}
                   </div>
                 )}
 
-                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10 }}>
+                <div className="modal-actions">
                   <button className="btn-ghost" onClick={() => setShowImportModal(false)} disabled={importing}>
-                    Cancel
+                    {t('cancel')}
                   </button>
-                  <button
+                  <motion.button
                     className="btn-primary"
                     onClick={handleImportSubmit}
                     disabled={!importFile || !importTitle.trim() || importing}
-                    style={{ minWidth: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                    whileTap={{ scale: 0.96 }}
                   >
                     {importing ? (
                       <span className="preview-compile-spinner" style={{ width: 12, height: 12 }} />
                     ) : null}
-                    {importing ? 'Importing...' : 'Import'}
-                  </button>
+                    {importing
+                      ? t('importing', { defaultValue: 'Importing...' })
+                      : t('import', { defaultValue: 'Import' })}
+                  </motion.button>
                 </div>
               </div>
             </motion.div>

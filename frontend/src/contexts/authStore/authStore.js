@@ -112,6 +112,10 @@ export const useAuthStore = create((set, get) => ({
   async login(email, password) {
     const data = await api.login(email, password);
     saveToken(data.token);
+    // Clear any stale project state from previous session before loading new user projects
+    try {
+      useProjectStore.getState().resetProjects(true);
+    } catch (_) {}
     await prefetchUserProjects();
     get().setAuth(data.token, data.user);
     return data.user;
@@ -132,6 +136,9 @@ export const useAuthStore = create((set, get) => ({
   async resetPassword(email, resetToken, newPassword) {
     const data = await api.resetPassword(email, resetToken, newPassword);
     saveToken(data.token);
+    try {
+      useProjectStore.getState().resetProjects(true);
+    } catch (_) {}
     await prefetchUserProjects();
     get().setAuth(data.token, data.user);
     return data.user;
@@ -140,7 +147,10 @@ export const useAuthStore = create((set, get) => ({
   logout() {
     get().clearAuth();
     ensureTrialStarted();
-    // If trial already ended, canAccessApp becomes false until they sign in again
+    // Wipe local storage cache and reset in-memory project store completely on signout
+    try {
+      useProjectStore.getState().resetProjects(true);
+    } catch (_) {}
     if (getTrialRemainingMs() <= 0) {
       set({ status: 'guest' });
     }
