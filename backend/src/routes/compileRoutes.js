@@ -12,11 +12,15 @@ const { generateProjectLatex } = require("../services/latexGenerator");
 const { compileTex, cleanupJob, warmUp } = require("../services/tectonicRunner");
 const { renderCertificateVectorPdf } = require("../services/certificatePdfService");
 const { logger } = require("../utils/logger");
+const { requireAuth } = require("../middleware/auth");
 const path = require("path");
 const os = require("os");
 const fs = require("fs");
 
 const router = express.Router();
+
+// Require authentication for compilation requests to prevent unauthenticated DoS
+router.use(requireAuth);
 
 // In-memory job store (same pattern as exportQueue)
 const jobs = new Map();
@@ -47,6 +51,7 @@ router.post("/", async (req, res) => {
 
   const jobId = uuidv4();
   jobs.set(jobId, {
+    userId: req.user._id.toString(),
     status: "pending",
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -62,7 +67,7 @@ router.post("/", async (req, res) => {
 // ─── GET /api/compile/:id/status ─────────────────────────────────────────────
 router.get("/:jobId/status", (req, res) => {
   const job = jobs.get(req.params.jobId);
-  if (!job)
+  if (!job || job.userId !== req.user._id.toString())
     return res.status(404).json({ success: false, error: "Job not found" });
 
   const response = { 
@@ -77,7 +82,7 @@ router.get("/:jobId/status", (req, res) => {
 // ─── GET /api/compile/:id/pdf ─────────────────────────────────────────────────
 router.get("/:jobId/pdf", (req, res) => {
   const job = jobs.get(req.params.jobId);
-  if (!job)
+  if (!job || job.userId !== req.user._id.toString())
     return res.status(404).json({ success: false, error: "Job not found" });
   if (job.status !== "done")
     return res

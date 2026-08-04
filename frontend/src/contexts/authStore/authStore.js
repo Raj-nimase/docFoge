@@ -160,12 +160,12 @@ export const useAuthStore = create((set, get) => ({
     return data.user;
   },
 
-  logout() {
+  async logout() {
     get().clearAuth();
     ensureTrialStarted();
-    // Wipe local storage cache and reset in-memory project store completely on signout
+    // Wipe local storage & IndexedDB cache and reset in-memory project store completely on signout
     try {
-      useProjectStore.getState().resetProjects(true);
+      await useProjectStore.getState().resetProjects(true);
     } catch (_) {}
     if (getTrialRemainingMs() <= 0) {
       set({ status: 'guest' });

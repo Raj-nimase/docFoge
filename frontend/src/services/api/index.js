@@ -253,11 +253,13 @@ export async function fetchUserProjects() {
   return data.projects;
 }
 
-export async function syncUserProjects(projects) {
+export async function syncUserProjects(payloadInput) {
   try {
-    const payload = { projects };
+    const payload = Array.isArray(payloadInput)
+      ? { projects: payloadInput, deleteIds: [] }
+      : { projects: payloadInput.projects || [], deleteIds: payloadInput.deleteIds || [] };
     const size = JSON.stringify(payload).length;
-    console.log('[api] syncUserProjects uploading', `projects=${projects.length}`, `bytes=${size}`);
+    console.log('[api] syncUserProjects uploading batch', `projects=${payload.projects.length}`, `deleteIds=${payload.deleteIds.length}`, `bytes=${size}`);
     const data = await authFetch('/projects/sync/all', {
       method: 'PUT',
       body: payload,

@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { motion, useInView } from 'motion/react';
 import { MoveRight, Check, FileText } from 'lucide-react';
+import DOMPurify from 'dompurify';
 import useTypingLoop from './useTypingLoop';
 import { demoBlockVariants, EASE } from '../../landingMotion';
 
@@ -20,8 +21,8 @@ function PreviewBlock({ block }) {
     case 'math':
       return (
         <div className="demo-a4-math">
-          {/* pre-rendered once at module load with throwOnError:false */}
-          <span dangerouslySetInnerHTML={{ __html: render.html }} />
+          {/* pre-rendered once at module load with throwOnError:false & sanitized with DOMPurify */}
+          <span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(render.html) }} />
           <span className="demo-a4-eqnum">{render.eqNumber}</span>
         </div>
       );

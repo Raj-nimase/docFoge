@@ -36,6 +36,7 @@ async function enqueueExport(req, res) {
 
     const jobId = uuidv4();
     enqueueJob(jobId, {
+      userId: req.user?._id?.toString(),
       title: title || "Untitled Document",
       blocks,
       template,
@@ -62,7 +63,7 @@ async function getJobStatus(req, res) {
   const { jobId } = req.params;
   const job = getJob(jobId);
 
-  if (!job) {
+  if (!job || (job.userId && job.userId !== req.user?._id?.toString())) {
     return res.status(404).json({ success: false, error: "Job not found" });
   }
 
@@ -90,7 +91,7 @@ async function downloadPdf(req, res) {
 
   const job = getJob(jobId);
 
-  if (!job) {
+  if (!job || (job.userId && job.userId !== req.user?._id?.toString())) {
     console.log(`${ts()} ERROR: Job not found`);
     return res.status(404).json({ success: false, error: "Job not found" });
   }

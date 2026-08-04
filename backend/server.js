@@ -15,9 +15,13 @@ const authRoutes     = require('./src/routes/authRoutes');
 const projectRoutes  = require('./src/routes/projectRoutes');
 const imageRoutes    = require('./src/routes/imageRoutes');
 
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+
 const app  = express();
 const PORT = process.env.PORT || 3001;
 
+// 1. MUST BE FIRST: CORS middleware (attaches CORS headers to all responses including 429 rate limiters & preflights)
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
@@ -42,6 +46,42 @@ app.use(cors({
   credentials: true,
   exposedHeaders: ['Content-Disposition', 'Content-Type', 'Content-Length'],
 }));
+
+// 2. Security HTTP Headers
+app.use(helmet({ crossOriginResourcePolicy: false, contentSecurityPolicy: false }));
+
+// 3. Generous Rate Limiters (High capacity for batch syncs & dev testing)
+const isProd = process.env.NODE_ENV === 'production';
+
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isProd ? 1500 : 10000, // 1500 requests per 15 min in prod, 10000 in dev
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests, please try again later.' },
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isProd ? 50 : 1000, // 50 auth attempts per 15 min in prod, 1000 in dev
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many authentication attempts. Please try again later.' },
+});
+
+const compileLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: isProd ? 60 : 500, // 60 compiles/min in prod, 500 in dev
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Compilation rate limit exceeded. Please wait a moment.' },
+});
+
+app.use('/api', globalLimiter);
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
+app.use('/api/auth/forgot-password', authLimiter);
+app.use('/api/compile', compileLimiter);
 
 app.use(cookieParser());
 app.use(express.json({ limit: '5mb' }));

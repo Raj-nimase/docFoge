@@ -11,7 +11,7 @@ async function listProjects(req, res, next) {
 
 async function upsertProject(req, res, next) {
   try {
-    const { id: clientId, templateId, metadata, frontMatter, chapters, createdAt, updatedAt } = req.body;
+    const { id: clientId, templateId, metadata, frontMatter, chapters, isPinned, pinned, deletedAt, createdAt, updatedAt } = req.body;
 
     if (!clientId || !templateId) {
       return res.status(400).json({ success: false, error: 'Project id and templateId are required' });
@@ -26,7 +26,8 @@ async function upsertProject(req, res, next) {
         metadata: metadata || {},
         frontMatter: frontMatter || [],
         chapters: chapters || [],
-        isPinned: !!(req.body.isPinned || req.body.pinned),
+        isPinned: !!(isPinned || pinned),
+        deletedAt: deletedAt || null,
         createdAt: createdAt || Date.now(),
         updatedAt: updatedAt || Date.now(),
       },
@@ -41,17 +42,17 @@ async function upsertProject(req, res, next) {
 
 async function syncProjects(req, res, next) {
   try {
-    const { projects } = req.body;
-    if (!Array.isArray(projects)) {
-      return res.status(400).json({ success: false, error: 'projects must be an array' });
+    const { projects = [], deleteIds = [] } = req.body;
+    if (!Array.isArray(projects) || !Array.isArray(deleteIds)) {
+      return res.status(400).json({ success: false, error: 'projects and deleteIds must be arrays' });
     }
 
-    // Log incoming payload size and count to help diagnose slow syncs
+    // Log incoming batch payload size and count
     try {
       const payloadSize = JSON.stringify(req.body).length;
-      console.log('[syncProjects] received', `projects=${projects.length}`, `bytes=${payloadSize}`);
+      console.log('[syncProjects] received batch', `upserts=${projects.length}`, `deletes=${deleteIds.length}`, `bytes=${payloadSize}`);
     } catch (e) {
-      console.log('[syncProjects] received', `projects=${projects.length}`);
+      console.log('[syncProjects] received batch', `upserts=${projects.length}`, `deletes=${deleteIds.length}`);
     }
 
     const ops = projects.map(p => ({
@@ -66,6 +67,7 @@ async function syncProjects(req, res, next) {
             frontMatter: p.frontMatter || [],
             chapters: p.chapters || [],
             isPinned: !!(p.isPinned || p.pinned),
+            deletedAt: p.deletedAt || null,
             createdAt: p.createdAt || Date.now(),
             updatedAt: p.updatedAt || Date.now(),
           },
@@ -74,17 +76,22 @@ async function syncProjects(req, res, next) {
       },
     }));
 
+    // Add bulk delete operations to the same bulkWrite batch!
+    if (deleteIds.length > 0) {
+      ops.push({
+        deleteMany: {
+          filter: { userId: req.user._id, clientId: { $in: deleteIds } }
+        }
+      });
+    }
+
     if (ops.length > 0) {
       console.time('[syncProjects] bulkWrite');
       await Project.bulkWrite(ops);
       console.timeEnd('[syncProjects] bulkWrite');
     }
 
-    console.time('[syncProjects] find');
     const docs = await Project.find({ userId: req.user._id }).sort({ updatedAt: -1 });
-    console.timeEnd('[syncProjects] find');
-
-    console.log('[syncProjects] returning', `projects=${docs.length}`);
     res.json({ success: true, projects: docs.map(d => d.toClientJSON()) });
   } catch (err) {
     next(err);
@@ -93,12 +100,13 @@ async function syncProjects(req, res, next) {
 
 async function getSyncStatus(req, res, next) {
   try {
-    const docs = await Project.find({ userId: req.user._id }, { clientId: 1, updatedAt: 1 });
+    const docs = await Project.find({ userId: req.user._id }, { clientId: 1, updatedAt: 1, deletedAt: 1 });
     res.json({
       success: true,
       syncStatus: docs.map(d => ({
         id: d.clientId,
-        updatedAt: d.updatedAt || 0
+        updatedAt: d.updatedAt || 0,
+        deletedAt: d.deletedAt || null,
       }))
     });
   } catch (err) {

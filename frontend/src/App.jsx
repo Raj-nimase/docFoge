@@ -89,8 +89,8 @@ export default function App() {
   }, [authStatus, loadProjectsForUser, navigate]);
 
   const handleLogout = async () => {
-    logout();
-    resetProjects(true);
+    await logout();
+    await resetProjects(true);
     navigate("/");
     showToast("success", "Signed out successfully.");
   };

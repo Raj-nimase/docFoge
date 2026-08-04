@@ -37,6 +37,7 @@ const jobs = new Map();
 function enqueueJob(jobId, data) {
   const job = {
     jobId,
+    userId: data.userId || null,
     status: 'pending',
     createdAt: Date.now(),
     updatedAt: Date.now(),

@@ -2,9 +2,13 @@ const express = require('express');
 const multer = require('multer');
 const { parseDocument, uploadAndParseDocument } = require('../controllers/parseController');
 const { enqueueExport, getJobStatus, downloadPdf } = require('../controllers/exportController');
+const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 const upload = multer({ dest: 'uploads/' });
+
+// Require authentication for all document parsing, upload, and export operations
+router.use(requireAuth);
 
 // Parse raw text → blocks
 router.post('/parse', parseDocument);
