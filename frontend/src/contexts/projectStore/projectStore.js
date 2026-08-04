@@ -5,10 +5,11 @@
 import { create } from "zustand";
 import { getTemplate } from "@/utils/templates";
 import * as api from "@/services/api";
+import { getIDBItem, setIDBItem } from "@/utils/idbStorage";
 
 const LS_KEY = "acadoc_projects";
 
-// ── localStorage helpers ──────────────────────────────────────────────────────
+// ── Local & IndexedDB Persistence Helpers ─────────────────────────────────────
 
 function loadProjectsLocal() {
   try {
@@ -20,25 +21,17 @@ function loadProjectsLocal() {
   }
 }
 
-// Debounced localStorage writer.
-// saveProjectsLocal() is called on every keystroke via updateSectionContent.
-// JSON.stringify(allProjects) + localStorage.setItem blocks the main thread —
-// on a large project this is 5–15ms per keystroke, causing visible lag.
-//
-// The fix: buffer the latest snapshot and flush it after 1s of no activity.
-// Writes triggered by structural changes (createProject, deleteProject,
-// addChapter, etc.) still flush immediately via saveProjectsLocalNow().
+// Debounced IndexedDB & localStorage writer.
+// Persists full projects array to IndexedDB (asynchronous, gigabyte-scale capacity).
 let _lsTimer = null;
 let _lsPending = null; // latest projects array waiting to be written
 
 function saveProjectsLocal(projects, immediate = false) {
   _lsPending = projects;
   if (immediate) {
-    // Structural mutations (create/delete/rename) flush right away
     if (_lsTimer) { clearTimeout(_lsTimer); _lsTimer = null; }
     _flushLocalStorage();
   } else {
-    // Content edits are debounced — only write after 1s of no further changes
     if (_lsTimer) clearTimeout(_lsTimer);
     _lsTimer = setTimeout(_flushLocalStorage, 1000);
   }
@@ -46,11 +39,22 @@ function saveProjectsLocal(projects, immediate = false) {
 
 function _flushLocalStorage() {
   if (_lsPending === null) return;
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify(_lsPending));
-  } catch (_) {}
+  const data = _lsPending;
   _lsPending = null;
   _lsTimer   = null;
+
+  // 1. Production Storage: Write full projects to IndexedDB (no 5MB quota restrictions)
+  setIDBItem(LS_KEY, data);
+
+  // 2. Best-effort mirror to synchronous localStorage for instant cold start
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(data));
+  } catch (err) {
+    // If localStorage quota (5MB) is hit, cache top 5 projects in localStorage as fallback
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(data.slice(0, 5)));
+    } catch (_) {}
+  }
 }
 
 const TOMBSTONES_KEY = "acadoc_tombstones";
@@ -168,12 +172,19 @@ export function clearProjectsLocal() {
     _lsTimer = null;
   }
   _lsPending = null;
+  _lastSyncTime = 0;
+  _projectsLoadedOnce = false;
+  _loadProjectsPromise = null;
+
   try {
     localStorage.removeItem(LS_KEY);
     clearTombstones();
     clearSyncQueue();
     sessionStorage.removeItem('acadoc_b64_migrated');
   } catch (_) {}
+
+  // Completely wipe IndexedDB cached projects on logout to prevent data leaking between user accounts
+  delIDBItem(LS_KEY);
 }
 
 // Safety net: if the user closes the tab while a debounced write is pending,
@@ -289,6 +300,8 @@ function createProjectFromTemplate(templateId, metadata) {
 }
 let _loadProjectsPromise = null;
 let _projectsLoadedOnce = false;  // true once any successful load completes
+let _lastSyncTime = 0;             // timestamp of last completed cloud sync
+const SYNC_THROTTLE_MS = 30_000;   // don't re-sync within 30 seconds
 
 function cleanupProjectFrontMatter(project) {
   if (!project) return project;
@@ -384,22 +397,48 @@ export const useProjectStore = create((set, get) => ({
    * Any projects that exist locally but NOT in the cloud (offline-created)
    * are pushed up individually via upsertUserProject — no bulk sync of all projects.
    * Guests use localStorage only.
+   *
+   * Architecture guarantees:
+   *  • Projects are fetched ONCE on app load, then cached in memory + localStorage.
+   *  • Subsequent calls within SYNC_THROTTLE_MS return the cached result.
+   *  • If a sync is already in-flight, all callers join that promise (no duplicates).
+   *  • force=true bypasses the throttle (used only on explicit login).
    */
   async loadProjectsForUser(force = false) {
     const t0 = Date.now();
-    const local = loadProjectsLocal();
     const token = api.getStoredToken();
 
+    // Read local cache from both localStorage and IndexedDB (production storage)
+    const lsLocal = loadProjectsLocal();
+    const idbLocal = (await getIDBItem(LS_KEY)) || [];
+    const inMemoryProjects = get().projects;
+
+    // Use whichever local cache contains more projects
+    const local = idbLocal.length >= lsLocal.length ? idbLocal : lsLocal;
+    const effectiveLocal = local.length > 0 ? local : inMemoryProjects;
+
     // Immediately set local cached projects so UI is instant!
-    set({ projects: local, projectsLoaded: true });
+    if (effectiveLocal.length > 0) {
+      set({ projects: effectiveLocal, projectsLoaded: true });
+    }
 
     if (!token) {
       _projectsLoadedOnce = true;
-      return { count: local.length, guest: true };
+      set({ projects: effectiveLocal, projectsLoaded: true });
+      return { count: effectiveLocal.length, guest: true };
     }
 
-    // Return immediately if already loaded and not forced
-    if (!force && _loadProjectsPromise) return _loadProjectsPromise;
+    // ── Throttle: skip cloud sync if we synced recently ─────────────────
+    if (!force && _projectsLoadedOnce && (Date.now() - _lastSyncTime) < SYNC_THROTTLE_MS) {
+      console.log('[projects] sync throttled — using cached data', `(${Math.round((Date.now() - _lastSyncTime) / 1000)}s since last sync)`);
+      return { count: get().projects.length, cached: true };
+    }
+
+    // ── Dedup: if a sync is already running, join it (even for force) ───
+    if (_loadProjectsPromise) {
+      console.log('[projects] sync already in-flight — joining existing promise');
+      return _loadProjectsPromise;
+    }
 
     _loadProjectsPromise = (async () => {
       try {
@@ -422,7 +461,7 @@ export const useProjectStore = create((set, get) => ({
         );
 
         const cloudMap = new Map(validCloudSync.map((p) => [p.id, p.updatedAt]));
-        const localMap = new Map(local.map((p) => [p.id, p.updatedAt || 0]));
+        const localMap = new Map(effectiveLocal.map((p) => [p.id, p.updatedAt || 0]));
 
         const toDownload = [];
         const toUpload = [];
@@ -438,7 +477,7 @@ export const useProjectStore = create((set, get) => ({
         }
 
         // Check local projects
-        for (const localProj of local) {
+        for (const localProj of effectiveLocal) {
           if (tombstones[localProj.id] || pendingDeleteIds.has(localProj.id)) continue;
           const cloudUpdated = cloudMap.get(localProj.id);
           if (cloudUpdated === undefined) {
@@ -449,13 +488,21 @@ export const useProjectStore = create((set, get) => ({
         }
 
         console.log('[projects] delta sync analysis:', {
-          localCount: local.length,
+          localCount: effectiveLocal.length,
           cloudCount: validCloudSync.length,
           toDownload: toDownload.length,
           toUpload: toUpload.length
         });
 
-        let updatedLocal = [...local].filter(
+        // If everything is already in sync, skip the expensive download phase
+        if (toDownload.length === 0 && toUpload.length === 0) {
+          console.log('[projects] already in sync — no changes needed');
+          _projectsLoadedOnce = true;
+          _lastSyncTime = Date.now();
+          return { count: effectiveLocal.length, downloaded: 0, uploaded: 0 };
+        }
+
+        let updatedLocal = [...effectiveLocal].filter(
           (p) => !tombstones[p.id] && !pendingDeleteIds.has(p.id)
         );
 
@@ -509,24 +556,26 @@ export const useProjectStore = create((set, get) => ({
         saveProjectsLocal(updatedLocal, true);
         set({ projects: updatedLocal, projectsLoaded: true });
         _projectsLoadedOnce = true;
+        _lastSyncTime = Date.now();
 
         const elapsed = Date.now() - t0;
-        console.log('[projects] delta sync completed', `${elapsed}ms`);
+        console.log('[projects] delta sync completed', `${elapsed}ms`, { count: updatedLocal.length, downloaded: toDownload.length });
         return { count: updatedLocal.length, downloaded: toDownload.length, uploaded: toUpload.length };
       } catch (err) {
         const elapsed = Date.now() - t0;
         console.warn('[projects] delta sync failed, using local cache', err.message, `${elapsed}ms`);
         const inMemory = get().projects;
-        const localSet = new Set(local.map(p => p.id));
+        const localSet = new Set(effectiveLocal.map(p => p.id));
         for (const p of inMemory) {
           if (!localSet.has(p.id)) {
-            local.push(p);
+            effectiveLocal.push(p);
             localSet.add(p.id);
           }
         }
-        set({ projects: local, projectsLoaded: true });
+        set({ projects: effectiveLocal, projectsLoaded: true });
         _projectsLoadedOnce = true;
-        return { count: local.length, offline: true };
+        _lastSyncTime = Date.now(); // prevent rapid retries on failure
+        return { count: effectiveLocal.length, offline: true };
       }
     })();
 
@@ -542,6 +591,7 @@ export const useProjectStore = create((set, get) => ({
       clearProjectsLocal();
     }
     _projectsLoadedOnce = false;
+    _lastSyncTime = 0;
     _loadProjectsPromise = null;
     set({
       projects: [],

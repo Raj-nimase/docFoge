@@ -18,14 +18,23 @@ export default function Editor({ onGoToDashboard, onLogout }) {
   
   const [activeTab, setActiveTab] = useState('editor');
 
-  // Auto-recovery: If current project is null (e.g. direct page refresh), auto-open most recent active project
-  const currentProject = useAcaStore(s => s.getCurrentProject());
+  // Read project state directly from the store (avoid getCurrentProject() method
+  // which uses get() internally and can cause selector timing issues with Zustand)
+  const currentProjectId = useAcaStore(s => s.currentProjectId);
   const projects = useAcaStore(s => s.projects);
   const projectsLoaded = useAcaStore(s => s.projectsLoaded);
   const openProject = useAcaStore(s => s.openProject);
 
+  const currentProject = currentProjectId
+    ? projects.find(p => p.id === currentProjectId) || null
+    : null;
+
+  // Auto-recovery: only when no currentProjectId is set at all (e.g. direct
+  // page refresh or navigating to /editor without selecting a project).
+  // This must NOT override a valid currentProjectId just because the projects
+  // array hasn't synced yet from a background cloud fetch.
   useEffect(() => {
-    if (!currentProject) {
+    if (!currentProjectId) {
       if (projects.length > 0) {
         const firstActive = projects.find(p => !p.deletedAt) || projects[0];
         if (firstActive) {
@@ -35,7 +44,7 @@ export default function Editor({ onGoToDashboard, onLogout }) {
         onGoToDashboard();
       }
     }
-  }, [currentProject, projects, projectsLoaded, openProject, onGoToDashboard]);
+  }, [currentProjectId, projects, projectsLoaded, openProject, onGoToDashboard]);
 
   // Sync active project to cloud when leaving the editor
   const syncActiveProjectNow = useAcaStore(s => s.syncActiveProjectNow);

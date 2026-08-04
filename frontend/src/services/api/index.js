@@ -7,6 +7,7 @@ export const API_BASE_URL = (typeof window !== 'undefined' && (window.location.h
 const BASE = API_BASE_URL;
 
 const TOKEN_KEY = 'acadoc_token';
+const REFRESH_TOKEN_KEY = 'acadoc_refresh_token';
 
 // ── Per-path timeout overrides ────────────────────────────────────────────────
 // Render free tier can be slow under load. These are tuned per operation type.
@@ -26,6 +27,54 @@ export function getStoredToken() {
   }
 }
 
+export function getStoredRefreshToken() {
+  try {
+    return localStorage.getItem(REFRESH_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function saveTokens(token, refreshToken) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+
+    if (refreshToken !== undefined) {
+      if (refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+      else localStorage.removeItem(REFRESH_TOKEN_KEY);
+    }
+  } catch (_) {}
+}
+
+let _isRefreshing = false;
+let _refreshSubscribers = [];
+
+function onTokenRefreshed(newToken) {
+  _refreshSubscribers.forEach((cb) => cb(newToken));
+  _refreshSubscribers = [];
+}
+
+export async function refreshSession() {
+  const refreshToken = getStoredRefreshToken();
+
+  const res = await fetch(`${BASE}/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken: refreshToken || undefined }),
+    credentials: 'include',
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.success === false) {
+    saveTokens(null, null);
+    throw new Error(data.error || 'Refresh failed');
+  }
+
+  saveTokens(data.token, data.refreshToken);
+  return data.token;
+}
+
 function getTimeoutForPath(path) {
   if (path.startsWith('/auth'))     return TIMEOUT_MS.auth;
   if (path === '/projects/item')    return TIMEOUT_MS.upsert;
@@ -37,7 +86,9 @@ function getTimeoutForPath(path) {
 async function parseJson(res) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.success === false) {
-    throw new Error(data.error || `Request failed (${res.status})`);
+    const error = new Error(data.error || `Request failed (${res.status})`);
+    error.status = res.status;
+    throw error;
   }
   return data;
 }
@@ -62,6 +113,7 @@ export async function authFetch(path, options = {}) {
   try {
     const res = await fetch(`${BASE}${path}`, {
       method: fetchOptions.method || 'GET',
+      credentials: 'include',
       ...fetchOptions,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -81,6 +133,45 @@ export async function authFetch(path, options = {}) {
       console.warn('[api] authFetch TIMEOUT', path, `${elapsed}ms`);
       throw new Error('Request timed out');
     }
+    
+    // Auto-intercept 401 Unauthorized (access token expired) -> Silent Refresh & Retry
+    if (
+      err.status === 401 &&
+      !path.startsWith('/auth/login') &&
+      !path.startsWith('/auth/register') &&
+      !path.startsWith('/auth/refresh') &&
+      !options._retry
+    ) {
+      console.warn('[api] 401 Unauthorized on path', path, '— attempting silent token refresh');
+      
+      if (!_isRefreshing) {
+        _isRefreshing = true;
+        try {
+          const newToken = await refreshSession();
+          _isRefreshing = false;
+          onTokenRefreshed(newToken);
+          return authFetch(path, { ...options, token: newToken, _retry: true });
+        } catch (refreshErr) {
+          _isRefreshing = false;
+          _refreshSubscribers = [];
+          console.warn('[api] Silent token refresh failed — dispatching unauthorized event');
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+          }
+          throw refreshErr;
+        }
+      }
+
+      // If refresh is already in progress, wait for it to complete and retry with new token
+      return new Promise((resolve, reject) => {
+        _refreshSubscribers.push((newToken) => {
+          authFetch(path, { ...options, token: newToken, _retry: true })
+            .then(resolve)
+            .catch(reject);
+        });
+      });
+    }
+
     console.warn('[api] authFetch ERROR', path, `${elapsed}ms`, err.message || err);
     throw err;
   } finally {

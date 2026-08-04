@@ -1,15 +1,62 @@
 const crypto = require('crypto');
 const User = require('../models/User');
-const { signToken } = require('../utils/jwt');
+const { signAccessToken, signRefreshToken, verifyToken } = require('../utils/jwt');
 const { sendOtpEmail } = require('../utils/email');
 
+const isProd = process.env.NODE_ENV === 'production';
+
+function setRefreshTokenCookie(res, refreshToken) {
+  res.cookie('acadoc_refresh', refreshToken, {
+    httpOnly: true,                                // Prevents XSS attacks from reading token via JS
+    secure: isProd,                                // Requires HTTPS in production
+    sameSite: isProd ? 'none' : 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000,                // 7 days
+    path: '/api/auth',
+  });
+}
+
 function issueAuthResponse(user, res, statusCode = 200) {
-  const token = signToken(user._id);
+  const token = signAccessToken(user._id);
+  const refreshToken = signRefreshToken(user._id);
+  
+  setRefreshTokenCookie(res, refreshToken);
+
   return res.status(statusCode).json({
     success: true,
     token,
+    refreshToken,
     user: user.toPublicJSON(),
   });
+}
+
+async function refreshAuthToken(req, res, next) {
+  try {
+    const reqRefreshToken = req.cookies?.acadoc_refresh || req.body?.refreshToken;
+    if (!reqRefreshToken) {
+      return res.status(401).json({ success: false, error: 'Refresh token required' });
+    }
+
+    const payload = verifyToken(reqRefreshToken, true);
+    const user = await User.findById(payload.sub);
+    if (!user) {
+      return res.status(401).json({ success: false, error: 'User not found' });
+    }
+
+    const token = signAccessToken(user._id);
+    const newRefreshToken = signRefreshToken(user._id);
+
+    setRefreshTokenCookie(res, newRefreshToken);
+
+    return res.status(200).json({
+      success: true,
+      token,
+      refreshToken: newRefreshToken,
+      user: user.toPublicJSON(),
+    });
+  } catch (err) {
+    res.clearCookie('acadoc_refresh', { path: '/api/auth' });
+    return res.status(401).json({ success: false, error: 'Invalid or expired refresh token' });
+  }
 }
 
 async function register(req, res, next) {
@@ -294,6 +341,7 @@ async function resetWithCurrentPassword(req, res, next) {
 module.exports = {
   register,
   login,
+  refreshAuthToken,
   getMe,
   updateMe,
   changePassword,

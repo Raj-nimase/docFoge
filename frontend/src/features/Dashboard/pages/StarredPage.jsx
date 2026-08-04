@@ -94,11 +94,13 @@ export default function StarredPage() {
                   variants={cardVariants}
                   whileHover={hoverLift}
                   className="project-card"
+                  onClick={() => handleOpen(project.id)}
+                  style={{ cursor: 'pointer' }}
                 >
                   <motion.button
                     type="button"
                     className="project-card-pin project-card-pin--active"
-                    onClick={() => togglePinProject(project.id)}
+                    onClick={(e) => { e.stopPropagation(); togglePinProject(project.id); }}
                     whileTap={{ scale: 0.85 }}
                     title="Unstar paper"
                   >
@@ -127,14 +129,14 @@ export default function StarredPage() {
                   <div className="project-card-actions">
                     <motion.button
                       className="btn-primary btn-sm"
-                      onClick={() => handleOpen(project.id)}
+                      onClick={(e) => { e.stopPropagation(); handleOpen(project.id); }}
                       whileTap={{ scale: 0.96 }}
                     >
                       {t('openWorkspace')}
                     </motion.button>
                     <motion.button
                       className="btn-ghost btn-sm btn-danger-hover project-card-delete"
-                      onClick={() => trashProject(project.id)}
+                      onClick={(e) => { e.stopPropagation(); trashProject(project.id); }}
                       whileTap={{ scale: 0.9 }}
                       title="Move to Trash"
                     >

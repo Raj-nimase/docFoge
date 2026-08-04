@@ -35,6 +35,10 @@ export default function App() {
   const locationRef = useRef(location);
   locationRef.current = location;
 
+  // Track previous auth status so we can distinguish "initial bootstrap"
+  // from an actual login transition and avoid redundant project fetches.
+  const prevAuthRef = useRef(authStatus);
+
 
 
 
@@ -66,8 +70,17 @@ export default function App() {
   }, [bootstrap, loadProjectsForUser]);
 
   useEffect(() => {
+    const prev = prevAuthRef.current;
+    prevAuthRef.current = authStatus;
+
     if (authStatus === "authenticated") {
-      loadProjectsForUser(true); // force=true: bypass cache, always fetch fresh from cloud after login
+      // Only force-refresh when this is an actual login transition
+      // (e.g. guest/unauthenticated → authenticated), NOT on initial
+      // bootstrap where the bootstrap effect already loads projects.
+      const isLoginTransition = prev !== null && prev !== "loading" && prev !== "authenticated";
+      if (isLoginTransition) {
+        loadProjectsForUser(true);
+      }
       // ensure we're on the app after sign in (return to the guarded page if we came from one)
       if (window.location.pathname === "/auth") {
         navigate(locationRef.current.state?.from || "/dashboard", { replace: true });
@@ -83,7 +96,7 @@ export default function App() {
   };
 
   const handleAuthSuccess = async () => {
-    const result = await loadProjectsForUser();
+    const result = await loadProjectsForUser(true); // force=true: fresh cloud fetch after login
     navigate("/dashboard");
     if (result?.offline) {
       showToast(

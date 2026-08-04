@@ -358,6 +358,8 @@ export default function DashboardHomePage() {
                   exit="exit"
                   whileHover={hoverLift}
                   className={`project-card${isPinned ? ' project-card--pinned' : ''}`}
+                  onClick={() => handleOpen(project.id)}
+                  style={{ cursor: 'pointer' }}
                 >
                   <motion.button
                     type="button"
@@ -402,12 +404,12 @@ export default function DashboardHomePage() {
                     </div>
                   </div>
                   <div className="project-card-actions">
-                    <motion.button className="btn-primary btn-sm" onClick={() => handleOpen(project.id)} whileTap={{ scale: 0.96 }}>
+                    <motion.button className="btn-primary btn-sm" onClick={(e) => { e.stopPropagation(); handleOpen(project.id); }} whileTap={{ scale: 0.96 }}>
                       {t('openWorkspace')}
                     </motion.button>
                     <motion.button
                       className="btn-ghost btn-sm btn-danger-hover project-card-delete"
-                      onClick={() => setConfirmDelete(project.id)}
+                      onClick={(e) => { e.stopPropagation(); setConfirmDelete(project.id); }}
                       whileTap={{ scale: 0.9 }}
                       aria-label={t('deleteWorkspaceTitle')}
                     >

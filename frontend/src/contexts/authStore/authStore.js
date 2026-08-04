@@ -43,17 +43,18 @@ async function prefetchUserProjects() {
 
 export const useAuthStore = create((set, get) => ({
   user: null,
-  token: loadToken(),
+  token: api.getStoredToken(),
+  refreshToken: api.getStoredRefreshToken(),
   status: 'idle', // idle | loading | authenticated | guest
 
-  setAuth(token, user) {
-    saveToken(token);
-    set({ token, user, status: 'authenticated' });
+  setAuth(token, user, refreshToken) {
+    api.saveTokens(token, refreshToken);
+    set({ token, refreshToken, user, status: 'authenticated' });
   },
 
   clearAuth() {
-    saveToken(null);
-    set({ token: null, user: null, status: 'guest' });
+    api.saveTokens(null, null);
+    set({ token: null, refreshToken: null, user: null, status: 'guest' });
   },
 
   isAuthenticated() {
@@ -93,9 +94,13 @@ export const useAuthStore = create((set, get) => ({
       await prefetchUserProjects();
       set({ user, token, status: 'authenticated' });
       return true;
-    } catch {
+    } catch (err) {
+      console.warn('[authStore] token validation failed (expired/invalid):', err.message);
       saveToken(null);
       ensureTrialStarted();
+      try {
+        useProjectStore.getState().resetProjects(true);
+      } catch (_) {}
       set({ token: null, user: null, status: 'guest' });
       return false;
     }
@@ -103,21 +108,21 @@ export const useAuthStore = create((set, get) => ({
 
   async register(payload) {
     const data = await api.register(payload);
-    saveToken(data.token);
+    api.saveTokens(data.token, data.refreshToken);
     await prefetchUserProjects();
-    get().setAuth(data.token, data.user);
+    get().setAuth(data.token, data.user, data.refreshToken);
     return data.user;
   },
 
   async login(email, password) {
     const data = await api.login(email, password);
-    saveToken(data.token);
+    api.saveTokens(data.token, data.refreshToken);
     // Clear any stale project state from previous session before loading new user projects
     try {
       useProjectStore.getState().resetProjects(true);
     } catch (_) {}
     await prefetchUserProjects();
-    get().setAuth(data.token, data.user);
+    get().setAuth(data.token, data.user, data.refreshToken);
     return data.user;
   },
 
@@ -135,23 +140,23 @@ export const useAuthStore = create((set, get) => ({
 
   async resetPassword(email, resetToken, newPassword) {
     const data = await api.resetPassword(email, resetToken, newPassword);
-    saveToken(data.token);
+    api.saveTokens(data.token, data.refreshToken);
     try {
       useProjectStore.getState().resetProjects(true);
     } catch (_) {}
     await prefetchUserProjects();
-    get().setAuth(data.token, data.user);
+    get().setAuth(data.token, data.user, data.refreshToken);
     return data.user;
   },
 
   async resetWithCurrentPassword(email, currentPassword, newPassword) {
     const data = await api.resetWithCurrentPassword(email, currentPassword, newPassword);
-    saveToken(data.token);
+    api.saveTokens(data.token, data.refreshToken);
     try {
       useProjectStore.getState().resetProjects(true);
     } catch (_) {}
     await prefetchUserProjects();
-    get().setAuth(data.token, data.user);
+    get().setAuth(data.token, data.user, data.refreshToken);
     return data.user;
   },
 
@@ -182,5 +187,13 @@ export const useAuthStore = create((set, get) => ({
     return '?';
   },
 }));
+
+// Listen for global 401 Unauthorized events (JWT token expired during active session)
+if (typeof window !== 'undefined') {
+  window.addEventListener('auth:unauthorized', () => {
+    console.warn('[authStore] automatic logout triggered due to expired JWT session (401)');
+    useAuthStore.getState().logout();
+  });
+}
 
 export default useAuthStore;
