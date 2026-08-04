@@ -17,9 +17,13 @@ const imageRoutes    = require('./src/routes/imageRoutes');
 
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const compression = require('compression');
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
+
+// Enable Gzip/Brotli payload compression (reduces wire sizes by 70–80%)
+app.use(compression());
 
 // 1. MUST BE FIRST: CORS middleware (attaches CORS headers to all responses including 429 rate limiters & preflights)
 app.use(cors({

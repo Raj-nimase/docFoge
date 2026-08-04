@@ -172,7 +172,18 @@ export async function processSyncQueue() {
         processedItemIds.push(item.id);
       } else if (item.type === 'UPSERT' || item.type === 'TRASH' || item.type === 'RESTORE') {
         if (item.payload) {
-          dirtyProjectsMap.set(item.projectId, item.payload);
+          const sanitized = {
+            ...item.payload,
+            chapters: (item.payload.chapters || []).map(ch => ({
+              ...ch,
+              content: stripBase64FromDoc(ch.content),
+            })),
+            frontMatter: (item.payload.frontMatter || []).map(fm => ({
+              ...fm,
+              content: stripBase64FromDoc(fm.content),
+            })),
+          };
+          dirtyProjectsMap.set(item.projectId, sanitized);
         }
         processedItemIds.push(item.id);
       }
@@ -225,12 +236,50 @@ export async function clearProjectsLocal() {
   await delIDBItem(LS_KEY);
 }
 
-// Safety net: if the user closes the tab while a debounced write is pending,
-// flush it synchronously. beforeunload allows one synchronous localStorage write.
+// Safety net: if the user closes the tab or switches apps while a debounced sync is pending,
+// flush it using navigator.sendBeacon and synchronous localStorage write.
 if (typeof window !== 'undefined') {
-  window.addEventListener('beforeunload', () => {
+  const flushPendingBeacon = () => {
     if (_lsPending !== null) {
       try { localStorage.setItem(LS_KEY, JSON.stringify(_lsPending)); } catch (_) {}
+    }
+
+    try {
+      const queue = loadSyncQueue();
+      if (queue.length === 0) return;
+
+      const deleteIds = [];
+      const dirtyProjectsMap = new Map();
+
+      for (const item of queue) {
+        if (item.type === 'DELETE') {
+          deleteIds.push(item.projectId);
+        } else if (item.type === 'UPSERT' || item.type === 'TRASH' || item.type === 'RESTORE') {
+          if (item.payload) {
+            dirtyProjectsMap.set(item.projectId, item.payload);
+          }
+        }
+      }
+
+      const projectsToUpsert = Array.from(dirtyProjectsMap.values());
+      if (projectsToUpsert.length === 0 && deleteIds.length === 0) return;
+
+      const token = api.getStoredToken();
+      if (!token) return;
+
+      const payload = JSON.stringify({ projects: projectsToUpsert, deleteIds });
+      const blob = new Blob([payload], { type: 'application/json' });
+
+      // Send beacon reliably on tab exit / unload
+      const backendUrl = api.API_URL || 'http://localhost:3001/api';
+      navigator.sendBeacon(`${backendUrl}/projects/sync/all`, blob);
+    } catch (_) {}
+  };
+
+  window.addEventListener('beforeunload', flushPendingBeacon);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      flushPendingBeacon();
     }
   });
 }

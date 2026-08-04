@@ -3,10 +3,17 @@ const { verifyToken } = require('../utils/jwt');
 
 async function requireAuth(req, res, next) {
   try {
+    let token = '';
     const header = req.headers.authorization || '';
-    const [scheme, token] = header.split(' ');
+    const [scheme, bearerToken] = header.split(' ');
 
-    if (scheme !== 'Bearer' || !token) {
+    if (scheme === 'Bearer' && bearerToken) {
+      token = bearerToken;
+    } else if (req.cookies?.acadoc_token || req.cookies?.acadoc_refresh) {
+      token = req.cookies.acadoc_token || req.cookies.acadoc_refresh;
+    }
+
+    if (!token) {
       return res.status(401).json({ success: false, error: 'Authentication required' });
     }
 

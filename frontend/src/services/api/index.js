@@ -352,14 +352,10 @@ export async function uploadImage(file) {
  * @returns {{ jobId: string }}
  */
 export async function compileProject(project) {
-  const res = await fetch(`${BASE}/compile`, {
+  return authFetch('/compile', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ project }),
+    body: { project },
   });
-  const data = await res.json();
-  if (!res.ok || !data.success) throw new Error(data.error || 'Compile failed');
-  return data; // { jobId }
 }
 
 /**
@@ -367,17 +363,21 @@ export async function compileProject(project) {
  * @returns {{ status: string, error?: string }}
  */
 export async function getCompileStatus(jobId) {
-  const res  = await fetch(`${BASE}/compile/${jobId}/status`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Status check failed');
-  return data;
+  return authFetch(`/compile/${jobId}/status`);
 }
 
 /**
  * Get the compiled PDF blob URL.
  */
 export async function fetchCompiledPdf(jobId) {
-  const res = await fetch(`${BASE}/compile/${jobId}/pdf`);
+  const token = getStoredToken();
+  const headers = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE}/compile/${jobId}/pdf`, {
+    headers,
+    credentials: 'include',
+  });
   if (!res.ok) throw new Error(`PDF fetch failed (${res.status})`);
   const blob = await res.blob();
   return URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
@@ -387,7 +387,14 @@ export async function fetchCompiledPdf(jobId) {
  * Get the exported PDF blob URL (from the /documents/export route).
  */
 export async function fetchExportPdf(jobId) {
-  const res = await fetch(`${BASE}/documents/export/${jobId}/pdf`);
+  const token = getStoredToken();
+  const headers = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE}/documents/export/${jobId}/pdf`, {
+    headers,
+    credentials: 'include',
+  });
   if (!res.ok) throw new Error(`Export PDF fetch failed (${res.status})`);
   const blob = await res.blob();
   return URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
