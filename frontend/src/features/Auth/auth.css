@@ -635,6 +635,62 @@
   }
 }
 
+/* ── Recovery Option Cards ── */
+.auth-method-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.auth-method-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--card);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  box-shadow: 0 1px 3px rgba(44, 42, 38, 0.04);
+}
+
+.auth-method-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 6px 16px rgba(44, 42, 38, 0.08);
+}
+
+.auth-method-icon-wrap {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: rgba(99, 102, 241, 0.08);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.auth-method-content {
+  flex: 1;
+}
+
+.auth-method-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.auth-method-desc {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
 @media (max-width: 560px) {
   .auth-form-panel {
     padding: 26px 20px 24px;

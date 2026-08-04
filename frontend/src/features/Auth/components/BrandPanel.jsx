@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import { GraduationCap, Hourglass } from 'lucide-react';
+import { GraduationCap } from 'lucide-react';
 import {
   SketchHeroAccent,
   SketchUnderline,
@@ -17,8 +17,8 @@ const QUOTES = [
 
 const QUOTE_INTERVAL = 6000;
 
-/** Left branding panel — wordmark, sketch art, rotating quotes, trial notice. */
-export default function BrandPanel({ trialExpired = false }) {
+/** Left branding panel — wordmark, sketch art, rotating quotes. */
+export default function BrandPanel() {
   const [quoteIdx, setQuoteIdx] = useState(0);
   const reducedMotion = useReducedMotion();
 
@@ -41,13 +41,6 @@ export default function BrandPanel({ trialExpired = false }) {
       <motion.p className="auth-brand-tagline" variants={childVariants}>
         Sign in to save projects to the cloud and sync across devices.
       </motion.p>
-
-      {trialExpired && (
-        <motion.div className="auth-brand-trial" variants={childVariants}>
-          <Hourglass size={14} />
-          <span>Your free trial has ended — sign in or create an account to keep working.</span>
-        </motion.div>
-      )}
 
       <motion.div className="auth-brand-art" variants={childVariants} aria-hidden>
         <SketchCircle size={150} />

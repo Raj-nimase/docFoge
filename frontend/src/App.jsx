@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import useAcaStore from "@/contexts/projectStore/projectStore";
 import * as api from "@/services/api";
 import useAuthStore from "@/contexts/authStore/authStore";
@@ -10,16 +10,17 @@ import SettingsPage from "@/features/Dashboard/pages/SettingsPage";
 import NewProject from "@/features/NewProject/pages/NewProjectPage";
 import Editor from "@/features/Editor/pages/EditorPage";
 import Auth from "@/features/Auth/pages/AuthPage";
+import LandingPage from "@/features/Landing/pages/LandingPage";
+import RequireAuth from "@/components/RequireAuth/RequireAuth";
 import Toast from "@/components/Toast/Toast";
 import MobileEditorPage from "@/features/Editor/pages/MobileEditorPage";
 import PdfTesterPage from "@/pages/PdfTesterPage";
-import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 
 
 export default function App() {
   const authStatus = useAuthStore((s) => s.status);
   const bootstrap = useAuthStore((s) => s.bootstrap);
-  const canAccessApp = useAuthStore((s) => s.canAccessApp);
   const signedIn = authStatus === "authenticated";
   const logout = useAuthStore((s) => s.logout);
   const loadProjectsForUser = useAcaStore((s) => s.loadProjectsForUser);
@@ -28,6 +29,11 @@ export default function App() {
 
   const [booting, setBooting] = useState(true);
   const navigate = useNavigate();
+  const location = useLocation();
+  // keep latest location in a ref so the post-login effect can read
+  // state.from without re-running on every navigation
+  const locationRef = useRef(location);
+  locationRef.current = location;
 
 
 
@@ -62,8 +68,10 @@ export default function App() {
   useEffect(() => {
     if (authStatus === "authenticated") {
       loadProjectsForUser(true); // force=true: bypass cache, always fetch fresh from cloud after login
-      // ensure we're on the app after sign in
-      if (window.location.pathname === "/auth") navigate("/");
+      // ensure we're on the app after sign in (return to the guarded page if we came from one)
+      if (window.location.pathname === "/auth") {
+        navigate(locationRef.current.state?.from || "/dashboard", { replace: true });
+      }
     }
   }, [authStatus, loadProjectsForUser, navigate]);
 
@@ -72,14 +80,11 @@ export default function App() {
     resetProjects(true);
     navigate("/");
     showToast("success", "Signed out successfully.");
-    if (!useAuthStore.getState().canAccessApp()) {
-      navigate("/auth");
-    }
   };
 
   const handleAuthSuccess = async () => {
     const result = await loadProjectsForUser();
-    navigate("/");
+    navigate("/dashboard");
     if (result?.offline) {
       showToast(
         "warning",
@@ -118,51 +123,52 @@ export default function App() {
     );
   }
 
-  if (!canAccessApp()) {
-    return (
-      <>
-        <Auth trialExpired onSuccess={handleAuthSuccess} />
-        <Toast />
-      </>
-    );
-  }
-
   return (
     <>
       <Routes>
+        {/* landing is for new/logged-out visitors; signed-in users go straight to the app */}
         <Route
           path="/"
+          element={signedIn ? <Navigate to="/dashboard" replace /> : <LandingPage />}
+        />
+        <Route
+          path="/dashboard"
           element={
-            <DashboardLayout
-              onNewProject={() => navigate("/new-project")}
-              onLogout={signedIn ? handleLogout : undefined}
-              onSignIn={() => navigate("/auth")}
-            />
+            <RequireAuth>
+              <DashboardLayout
+                onNewProject={() => navigate("/new-project")}
+                onLogout={signedIn ? handleLogout : undefined}
+              />
+            </RequireAuth>
           }
         >
           <Route index element={<DashboardHomePage />} />
           <Route path="starred" element={<StarredPage />} />
           <Route path="trash" element={<TrashPage />} />
           <Route path="settings" element={<SettingsPage />} />
-          <Route path="templates" element={<Navigate to="/" replace />} />
-          <Route path="exports" element={<Navigate to="/" replace />} />
+          <Route path="templates" element={<Navigate to="/dashboard" replace />} />
+          <Route path="exports" element={<Navigate to="/dashboard" replace />} />
         </Route>
         <Route
           path="/new-project"
           element={
-            <NewProject
-              onCreated={() => navigate("/editor")}
-              onCancel={() => navigate("/")}
-            />
+            <RequireAuth>
+              <NewProject
+                onCreated={() => navigate("/editor")}
+                onCancel={() => navigate("/dashboard")}
+              />
+            </RequireAuth>
           }
         />
         <Route
           path="/editor"
           element={
-            <Editor
-              onGoToDashboard={() => navigate("/")}
-              onLogout={signedIn ? handleLogout : undefined}
-            />
+            <RequireAuth>
+              <Editor
+                onGoToDashboard={() => navigate("/dashboard")}
+                onLogout={signedIn ? handleLogout : undefined}
+              />
+            </RequireAuth>
           }
         />
         <Route
@@ -170,7 +176,7 @@ export default function App() {
           element={
             <Auth
               allowDismiss
-              onDismiss={() => navigate(-1)}
+              onDismiss={() => navigate("/")}
               onSuccess={handleAuthSuccess}
             />
           }
@@ -179,6 +185,10 @@ export default function App() {
           path="/pdf-test"
           element={<PdfTesterPage />}
         />
+        {/* Legacy bookmarks from when the dashboard lived at "/" */}
+        <Route path="/starred" element={<Navigate to="/dashboard/starred" replace />} />
+        <Route path="/trash" element={<Navigate to="/dashboard/trash" replace />} />
+        <Route path="/settings" element={<Navigate to="/dashboard/settings" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <Toast />

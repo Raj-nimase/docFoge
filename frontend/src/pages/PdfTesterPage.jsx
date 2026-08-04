@@ -159,7 +159,7 @@ export default function PdfTesterPage() {
             </p>
           </div>
           <button
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/dashboard")}
             style={{
               padding: "0.5rem 1rem",
               backgroundColor: "#21262d",

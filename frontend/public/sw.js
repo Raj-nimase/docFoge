@@ -1,4 +1,4 @@
-const CACHE_NAME = 'acadoc-pro-cache-v1';
+const CACHE_NAME = 'acadoc-pro-cache-v2';
 
 // Assets to cache during service worker installation
 const PRECACHE_ASSETS = [

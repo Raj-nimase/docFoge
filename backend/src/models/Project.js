@@ -16,6 +16,7 @@ const projectSchema = new mongoose.Schema(
     metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
     frontMatter: { type: [mongoose.Schema.Types.Mixed], default: [] },
     chapters: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    isPinned: { type: Boolean, default: false },
     createdAt: { type: Number, default: () => Date.now() },
     updatedAt: { type: Number, default: () => Date.now() },
   },
@@ -31,6 +32,7 @@ projectSchema.methods.toClientJSON = function toClientJSON() {
     metadata: this.metadata,
     frontMatter: this.frontMatter,
     chapters: this.chapters,
+    isPinned: !!this.isPinned,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,
   };

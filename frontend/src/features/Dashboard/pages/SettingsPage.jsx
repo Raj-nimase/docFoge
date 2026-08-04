@@ -4,7 +4,16 @@ import { useOutletContext } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import useAuthStore from '@/contexts/authStore/authStore';
 import useAcaStore from '@/contexts/projectStore/projectStore';
-import { LogOut, KeyRound, Check } from 'lucide-react';
+import {
+  LogOut,
+  Check,
+  User,
+  Mail,
+  Briefcase,
+  Building2,
+  GraduationCap,
+  ShieldCheck
+} from 'lucide-react';
 import { pageVariants, itemVariants } from '../dashboardMotion';
 
 /* Button label that morphs between idle / busy / saved states */
@@ -27,16 +36,13 @@ function MorphLabel({ stateKey, children }) {
 
 export default function SettingsPage() {
   const { t } = useTranslation();
-  const { onLogout, onSignIn } = useOutletContext();
+  const { onLogout } = useOutletContext();
 
-  const user            = useAuthStore(s => s.user);
-  const authStatus      = useAuthStore(s => s.status);
-  const getTrialLabel   = useAuthStore(s => s.getTrialLabel);
-  const updateProfile   = useAuthStore(s => s.updateProfile);
-  const changePassword  = useAuthStore(s => s.changePassword);
-  const isGuest         = authStatus === 'guest';
-  const signedIn        = authStatus === 'authenticated';
-  const trialLabel      = getTrialLabel();
+  const user          = useAuthStore(s => s.user);
+  const authStatus    = useAuthStore(s => s.status);
+  const updateProfile = useAuthStore(s => s.updateProfile);
+  const getInitials   = useAuthStore(s => s.getInitials);
+  const signedIn      = authStatus === 'authenticated';
 
   const showToast = useAcaStore(s => s.showToast);
 
@@ -48,14 +54,6 @@ export default function SettingsPage() {
   });
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
-
-  const [passwordForm, setPasswordForm] = useState({
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: '',
-  });
-  const [updatingPassword, setUpdatingPassword] = useState(false);
-  const [passwordSaved, setPasswordSaved] = useState(false);
 
   const savedTimers = useRef([]);
   useEffect(() => () => savedTimers.current.forEach(clearTimeout), []);
@@ -69,90 +67,123 @@ export default function SettingsPage() {
     if (!user) return;
     setProfileForm({
       name: user.name || '',
-      role: user.role || '',
+      role: user.role || 'Student',
       institution: user.institution || '',
       department: user.department || '',
     });
   }, [user]);
 
-  // Guest view
-  if (isGuest) {
-    return (
-      <motion.div variants={pageVariants} initial="hidden" animate="show">
-        <motion.div className="dashboard-section-title" variants={itemVariants}>
-          {t('accountSection')}
-        </motion.div>
-        <motion.div className="settings-card" variants={itemVariants}>
-          <p className="modal-desc">
-            {t('settingsGuestDesc')}
-            {trialLabel && <>{t('settingsGuestTrialLabel', { trialLabel })}</>}
-          </p>
-          {onSignIn && (
-            <motion.button type="button" className="btn-primary" onClick={onSignIn} whileTap={{ scale: 0.96 }}>
-              {t('signInOrCreate')}
-            </motion.button>
-          )}
-        </motion.div>
-      </motion.div>
-    );
-  }
-
   // Authenticated view
   return (
-    <motion.div className="settings-stack" variants={pageVariants} initial="hidden" animate="show">
+    <motion.div className="settings-stack" variants={pageVariants} initial="hidden" animate="show" style={{ maxWidth: 880 }}>
+      {/* Header Profile Hero Card */}
+      <motion.div className="settings-card settings-hero-card" variants={itemVariants}>
+        <div className="settings-hero-avatar">
+          {getInitials()}
+        </div>
+        <div className="settings-hero-info">
+          <div className="settings-hero-name-row">
+            <h2 className="settings-hero-name">{user?.name || 'Academic User'}</h2>
+            <span className="settings-hero-badge">
+              <ShieldCheck size={12} /> Verified Account
+            </span>
+          </div>
+          <p className="settings-hero-email">{user?.email}</p>
+          <div className="settings-hero-meta">
+            <span>Role: <b>{profileForm.role || 'Member'}</b></span>
+            {user?.institution && <span>• {user.institution}</span>}
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Account Profile Card */}
       <motion.section variants={itemVariants}>
-        <div className="dashboard-section-title">{t('accountProfile')}</div>
-        <div className="settings-card">
-          <div className="metadata-field">
-            <label className="metadata-label">{t('fullName')}</label>
-            <input
-              type="text"
-              className="metadata-input"
-              value={profileForm.name}
-              onChange={e => setProfileForm(f => ({ ...f, name: e.target.value }))}
-            />
+        <div className="dashboard-section-title" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <User size={18} style={{ color: 'var(--accent)' }} /> {t('accountProfile')}
+        </div>
+
+        <div className="settings-card settings-form-card">
+          <div className="settings-form-grid">
+            {/* Full Name */}
+            <div className="metadata-field">
+              <label className="metadata-label">
+                <User size={14} /> {t('fullName')}
+              </label>
+              <input
+                type="text"
+                className="metadata-input"
+                value={profileForm.name}
+                onChange={e => setProfileForm(f => ({ ...f, name: e.target.value }))}
+                placeholder="Your full name"
+              />
+            </div>
+
+            {/* Email Address */}
+            <div className="metadata-field">
+              <label className="metadata-label">
+                <Mail size={14} /> {t('email')}
+              </label>
+              <input
+                type="email"
+                className="metadata-input metadata-input--disabled"
+                value={user?.email || ''}
+                disabled
+              />
+            </div>
+
+            {/* Academic Role */}
+            <div className="metadata-field">
+              <label className="metadata-label">
+                <Briefcase size={14} /> {t('role')}
+              </label>
+              <select
+                className="metadata-input"
+                style={{ width: '100%' }}
+                value={profileForm.role}
+                onChange={e => setProfileForm(f => ({ ...f, role: e.target.value }))}
+              >
+                <option value="Student">{t('student')}</option>
+                <option value="Faculty">{t('faculty')}</option>
+                <option value="Researcher">{t('researcher')}</option>
+                <option value="Administrator">{t('administrator')}</option>
+              </select>
+            </div>
+
+            {/* Institution */}
+            <div className="metadata-field">
+              <label className="metadata-label">
+                <Building2 size={14} /> {t('institution')}
+              </label>
+              <input
+                type="text"
+                className="metadata-input"
+                value={profileForm.institution}
+                onChange={e => setProfileForm(f => ({ ...f, institution: e.target.value }))}
+                placeholder="University or Research Institute"
+              />
+            </div>
+
+            {/* Department */}
+            <div className="metadata-field" style={{ gridColumn: 'span 2' }}>
+              <label className="metadata-label">
+                <GraduationCap size={14} /> {t('department')}
+              </label>
+              <input
+                type="text"
+                className="metadata-input"
+                value={profileForm.department}
+                onChange={e => setProfileForm(f => ({ ...f, department: e.target.value }))}
+                placeholder="Department of Computer Science, Physics..."
+              />
+            </div>
           </div>
-          <div className="metadata-field">
-            <label className="metadata-label">{t('email')}</label>
-            <input type="email" className="metadata-input" value={user?.email || ''} disabled />
-          </div>
-          <div className="metadata-field">
-            <label className="metadata-label">{t('role')}</label>
-            <select
-              className="metadata-input"
-              style={{ width: '100%' }}
-              value={profileForm.role}
-              onChange={e => setProfileForm(f => ({ ...f, role: e.target.value }))}
-            >
-              <option>{t('student')}</option>
-              <option>{t('faculty')}</option>
-              <option>{t('researcher')}</option>
-              <option>{t('administrator')}</option>
-            </select>
-          </div>
-          <div className="metadata-field">
-            <label className="metadata-label">{t('institution')}</label>
-            <input
-              type="text"
-              className="metadata-input"
-              value={profileForm.institution}
-              onChange={e => setProfileForm(f => ({ ...f, institution: e.target.value }))}
-            />
-          </div>
-          <div className="metadata-field">
-            <label className="metadata-label">{t('department')}</label>
-            <input
-              type="text"
-              className="metadata-input"
-              value={profileForm.department}
-              onChange={e => setProfileForm(f => ({ ...f, department: e.target.value }))}
-            />
-          </div>
+
           <div className="settings-card-footer">
             <motion.button
               className="btn-primary"
               disabled={savingProfile}
               whileTap={{ scale: 0.97 }}
+              whileHover={{ scale: 1.01 }}
               onClick={async () => {
                 setSavingProfile(true);
                 try {
@@ -174,97 +205,19 @@ export default function SettingsPage() {
                     : t('saveProfile')}
               </MorphLabel>
             </motion.button>
-          </div>
-        </div>
-      </motion.section>
 
-      <motion.section variants={itemVariants}>
-        <div className="dashboard-section-title dashboard-section-title--icon">
-          <KeyRound size={18} /> {t('changePassword', { defaultValue: 'Change Password' })}
-        </div>
-        <div className="settings-card">
-          <div className="metadata-field">
-            <label className="metadata-label">{t('currentPassword', { defaultValue: 'Current Password' })}</label>
-            <input
-              type="password"
-              className="metadata-input"
-              value={passwordForm.currentPassword}
-              onChange={e => setPasswordForm(p => ({ ...p, currentPassword: e.target.value }))}
-              placeholder={t('enterCurrentPassword', { defaultValue: 'Enter current password' })}
-            />
+            {signedIn && onLogout && (
+              <motion.button
+                type="button"
+                className="btn-ghost nav-signout-btn profile-page-signout"
+                onClick={onLogout}
+                whileTap={{ scale: 0.96 }}
+              >
+                <LogOut size={14} style={{ marginRight: 6 }} />
+                {t('signOut')}
+              </motion.button>
+            )}
           </div>
-          <div className="metadata-field">
-            <label className="metadata-label">{t('newPassword', { defaultValue: 'New Password' })}</label>
-            <input
-              type="password"
-              className="metadata-input"
-              value={passwordForm.newPassword}
-              onChange={e => setPasswordForm(p => ({ ...p, newPassword: e.target.value }))}
-              placeholder={t('passwordMinLength', { defaultValue: 'At least 8 characters' })}
-            />
-          </div>
-          <div className="metadata-field">
-            <label className="metadata-label">{t('confirmNewPassword', { defaultValue: 'Confirm New Password' })}</label>
-            <input
-              type="password"
-              className="metadata-input"
-              value={passwordForm.confirmPassword}
-              onChange={e => setPasswordForm(p => ({ ...p, confirmPassword: e.target.value }))}
-              placeholder={t('reenterNewPassword', { defaultValue: 'Re-enter new password' })}
-            />
-          </div>
-          <div className="settings-card-footer">
-            <motion.button
-              className="btn-primary"
-              disabled={updatingPassword}
-              whileTap={{ scale: 0.97 }}
-              onClick={async () => {
-                if (!passwordForm.currentPassword || !passwordForm.newPassword) {
-                  showToast('error', 'Please fill in all password fields');
-                  return;
-                }
-                if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-                  showToast('error', 'New passwords do not match');
-                  return;
-                }
-                if (passwordForm.newPassword.length < 8) {
-                  showToast('error', 'New password must be at least 8 characters');
-                  return;
-                }
-                setUpdatingPassword(true);
-                try {
-                  await changePassword(passwordForm.currentPassword, passwordForm.newPassword);
-                  showToast('success', 'Password updated successfully');
-                  setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-                  flashSaved(setPasswordSaved);
-                } catch (err) {
-                  showToast('error', err.message);
-                } finally {
-                  setUpdatingPassword(false);
-                }
-              }}
-            >
-              <MorphLabel stateKey={updatingPassword ? 'updating' : passwordSaved ? 'saved' : 'idle'}>
-                {updatingPassword
-                  ? t('updatingPassword', { defaultValue: 'Updating...' })
-                  : passwordSaved
-                    ? <><Check size={14} /> {t('updatedLabel', { defaultValue: 'Updated' })}</>
-                    : t('updatePassword', { defaultValue: 'Update Password' })}
-              </MorphLabel>
-            </motion.button>
-          </div>
-
-          {signedIn && onLogout && (
-            <button
-              type="button"
-              className="btn-ghost nav-signout-btn nav-signout-btn--block"
-              style={{ marginTop: 24 }}
-              onClick={onLogout}
-            >
-              <LogOut size={15} style={{ marginRight: 6 }} />
-              {t('signOut')}
-            </button>
-          )}
         </div>
       </motion.section>
     </motion.div>

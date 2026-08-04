@@ -144,6 +144,17 @@ export const useAuthStore = create((set, get) => ({
     return data.user;
   },
 
+  async resetWithCurrentPassword(email, currentPassword, newPassword) {
+    const data = await api.resetWithCurrentPassword(email, currentPassword, newPassword);
+    saveToken(data.token);
+    try {
+      useProjectStore.getState().resetProjects(true);
+    } catch (_) {}
+    await prefetchUserProjects();
+    get().setAuth(data.token, data.user);
+    return data.user;
+  },
+
   logout() {
     get().clearAuth();
     ensureTrialStarted();

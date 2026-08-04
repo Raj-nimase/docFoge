@@ -137,6 +137,14 @@ export async function resetPassword(email, resetToken, newPassword) {
   });
 }
 
+export async function resetWithCurrentPassword(email, currentPassword, newPassword) {
+  return authFetch('/auth/reset-with-current-password', {
+    method: 'POST',
+    body: { email: email.trim(), currentPassword, newPassword },
+    token: null,
+  });
+}
+
 export async function getMe(token) {
   const data = await authFetch('/auth/me', { token });
   return data.user;

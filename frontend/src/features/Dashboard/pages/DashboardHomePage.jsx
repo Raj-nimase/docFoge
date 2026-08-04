@@ -15,13 +15,17 @@ import {
   Trash2,
   Search,
   HelpCircle,
-  X
+  X,
+  FileUp,
+  FileType,
+  AlertCircle,
+  FileCheck,
+  UploadCloud
 } from 'lucide-react';
 import { getTemplate, getTemplateIcon, formatDate } from './dashboardUtils.jsx';
-import { TEMPLATES } from '@/utils/templates';
 import { SketchHeroAccent, SketchUnderline, SketchDocument } from '@/components/SketchDecor/SketchDecor';
 import * as api from '@/services/api';
-import { parseImportedTextIntoChapters } from '../utils/importParsing';
+import { parseImportedHtmlIntoChapters } from '../utils/importParsing';
 import {
   EASE,
   pageVariants,
@@ -99,6 +103,14 @@ export default function DashboardHomePage() {
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    if (file.name.toLowerCase().endsWith('.pdf')) {
+      setError('PDF extraction is coming soon! Only Microsoft Word (.docx) files are supported for now.');
+      setImportFile(null);
+      return;
+    }
+
+    setError(null);
     setImportFile(file);
     const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
     setImportTitle(baseName);
@@ -110,11 +122,11 @@ export default function DashboardHomePage() {
     setError(null);
     try {
       const result = await api.uploadDocument(importFile);
-      if (!result.success || !result.text) {
-        throw new Error(result.error || 'Failed to extract text from the file.');
+      if (!result.success || (!result.html && !result.text)) {
+        throw new Error(result.error || 'Failed to extract content from the file.');
       }
 
-      const chaptersList = parseImportedTextIntoChapters(result.text);
+      const chaptersList = parseImportedHtmlIntoChapters(result.html || result.text, importTitle);
       createImportedProject(importTitle, chaptersList);
       setShowImportModal(false);
       // Reset state
@@ -129,11 +141,19 @@ export default function DashboardHomePage() {
   };
 
   const filteredProjects = useMemo(() => {
-    return activeProjects.filter(p => {
+    const list = activeProjects.filter(p => {
       const titleMatch = (p.metadata?.title || 'Untitled').toLowerCase().includes(searchQuery.toLowerCase());
       const authorMatch = (p.metadata?.authors || '').toLowerCase().includes(searchQuery.toLowerCase());
       const tplMatch = (getTemplate(p.templateId)?.name || '').toLowerCase().includes(searchQuery.toLowerCase());
       return titleMatch || authorMatch || tplMatch;
+    });
+
+    return list.sort((a, b) => {
+      const aPinned = !!(a.isPinned || a.pinned);
+      const bPinned = !!(b.isPinned || b.pinned);
+      if (aPinned && !bPinned) return -1;
+      if (!aPinned && bPinned) return 1;
+      return (b.updatedAt || 0) - (a.updatedAt || 0);
     });
   }, [activeProjects, searchQuery]);
 
@@ -152,18 +172,6 @@ export default function DashboardHomePage() {
     togglePinProject(id);
   };
 
-  const handleCreateFromTemplate = (templateId, templateName) => {
-    const proj = createProject(templateId, {
-      title: `My ${templateName}`,
-      authors: user?.name || '',
-      institution: user?.institution || '',
-      department: user?.department || '',
-      year: new Date().getFullYear().toString(),
-    });
-    openProject(proj.id);
-    navigate('/editor');
-  };
-
   return (
     <motion.div
       variants={pageVariants}
@@ -173,20 +181,24 @@ export default function DashboardHomePage() {
       {/* Hero Welcome banner */}
       <motion.div className="db-hero" variants={itemVariants}>
         <SketchHeroAccent className="db-hero-sketch" />
-        <span className="db-hero-greeting">{t(greetingKey, { defaultValue: greetingDefault })}</span>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 8, padding: '4px 12px', borderRadius: 99, background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.18)', fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent)' }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', boxShadow: '0 0 8px var(--accent)' }} />
+          {t(greetingKey, { defaultValue: greetingDefault })} • Academic Workspace
+        </div>
         <h2 className="db-hero-welcome display-heading">
           {welcomeTitle}
           <SketchUnderline />
         </h2>
         <p className="db-hero-subtitle">{welcomeSubtitle}</p>
         <div className="db-hero-actions">
-          <motion.button type="button" className="btn-primary" onClick={onNewProject} whileTap={{ scale: 0.96 }}>
+          <motion.button type="button" className="btn-primary" onClick={onNewProject} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.96 }}>
             <Sparkles size={14} /> {t('newProjectHero')}
           </motion.button>
           <motion.button
             type="button"
             className="btn-secondary"
             onClick={() => setShowImportModal(true)}
+            whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.96 }}
           >
             <FileText size={14} /> {t('importDocument', { defaultValue: 'Import Document' })}
@@ -241,47 +253,6 @@ export default function DashboardHomePage() {
         </motion.div>
       </motion.div>
 
-      {/* Start from a Template Showcase */}
-      <motion.div className="dashboard-template-showcase" variants={itemVariants} style={{ marginBottom: 28 }}>
-        <div className="dashboard-section-title" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <Sparkles size={16} style={{ color: 'var(--accent)' }} /> Start from a Template
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: 14 }}>
-          {TEMPLATES.map(tpl => (
-            <motion.div
-              key={tpl.id}
-              whileHover={{ y: -3 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => handleCreateFromTemplate(tpl.id, tpl.name)}
-              style={{
-                background: 'var(--card)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-lg)',
-                padding: '14px 16px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                boxShadow: 'var(--shadow-card)',
-                transition: 'border-color 0.2s ease, box-shadow 0.2s ease'
-              }}
-            >
-              <div className="project-card-icon" style={{ width: 40, height: 40, margin: 0, flexShrink: 0 }}>
-                {getTemplateIcon(tpl.icon)}
-              </div>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {tpl.name}
-                </div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--accent-warm)', marginTop: 2, fontWeight: 500 }}>
-                  1-Click Launch →
-                </div>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </motion.div>
-
       {/* Projects Header with Search */}
       <motion.div className="project-toolbar" variants={itemVariants}>
         <div className="dashboard-section-title">
@@ -326,17 +297,25 @@ export default function DashboardHomePage() {
             {t('emptyDesc')}
           </p>
           <div className="dashboard-empty-actions">
-            <motion.button className="btn-primary btn-large" onClick={onNewProject} whileTap={{ scale: 0.96 }}>
+            <motion.button className="btn-primary btn-large" onClick={onNewProject} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.96 }}>
               {t('newProjectBtn')}
             </motion.button>
             <motion.button
               className="btn-secondary btn-large"
               onClick={() => setShowImportModal(true)}
+              whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.96 }}
             >
               <FileText size={16} /> {t('importDocument', { defaultValue: 'Import Document' })}
             </motion.button>
           </div>
+        </motion.div>
+      ) : filteredProjects.length === 0 ? (
+        <motion.div className="dashboard-empty" variants={itemVariants} style={{ padding: '48px 24px' }}>
+          <Search size={40} style={{ color: 'var(--text-muted)', marginBottom: 12 }} />
+          <h3 style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>No documents found</h3>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 16 }}>No papers match "{searchQuery}". Try searching for another keyword or template.</p>
+          <button className="btn-secondary btn-sm" onClick={() => setSearchQuery('')}>Clear Search</button>
         </motion.div>
       ) : (
         <motion.div className="projects-grid" variants={gridVariants}>
@@ -371,12 +350,14 @@ export default function DashboardHomePage() {
             {filteredProjects.map(project => {
               const tpl = getTemplate(project.templateId);
               const isPinned = !!(project.isPinned || project.pinned);
+              const chapterCount = project.chapters?.length || 0;
               return (
                 <motion.div
                   key={project.id}
                   variants={cardVariants}
+                  exit="exit"
                   whileHover={hoverLift}
-                  className="project-card"
+                  className={`project-card${isPinned ? ' project-card--pinned' : ''}`}
                 >
                   <motion.button
                     type="button"
@@ -396,8 +377,20 @@ export default function DashboardHomePage() {
                     <div className="project-card-title">
                       {project.metadata?.title || 'Untitled Draft'}
                     </div>
-                    <div className="project-card-template">
-                      {tpl?.name || 'Blank Template'}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, marginBottom: 4, flexWrap: 'wrap' }}>
+                      <span className="project-card-template" style={{ margin: 0 }}>
+                        {tpl?.name || 'Blank Template'}
+                      </span>
+                      {chapterCount > 0 && (
+                        <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: 4, background: 'rgba(99, 102, 241, 0.08)', color: 'var(--accent)', fontWeight: 600 }}>
+                          {chapterCount} {chapterCount === 1 ? 'Ch.' : 'Chs.'}
+                        </span>
+                      )}
+                      {isPinned && (
+                        <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: 4, background: 'rgba(217, 119, 6, 0.14)', color: 'var(--accent-warm)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                          <Pin size={9} style={{ transform: 'rotate(45deg)' }} /> Pinned
+                        </span>
+                      )}
                     </div>
                     {project.metadata?.authors && (
                       <div className="project-card-author">
@@ -484,38 +477,48 @@ export default function DashboardHomePage() {
             <motion.div
               className="modal-panel"
               variants={modalVariants}
-              style={{ maxWidth: 500 }}
+              style={{ maxWidth: 520, padding: 24 }}
               onClick={e => e.stopPropagation()}
             >
-              <div className="modal-header">
-                <span className="modal-title dashboard-section-title--icon">
-                  <Sparkles size={15} style={{ color: 'var(--accent)' }} /> {t('importDocument', { defaultValue: 'Import Document' })}
+              <div className="modal-header" style={{ marginBottom: 16 }}>
+                <span className="modal-title dashboard-section-title--icon" style={{ fontSize: '1.05rem' }}>
+                  <FileUp size={18} style={{ color: 'var(--accent)' }} /> {t('importDocument', { defaultValue: 'Import Document' })}
                 </span>
                 <button className="modal-close" onClick={() => !importing && setShowImportModal(false)}>
                   <X size={14} />
                 </button>
               </div>
               <div className="modal-body">
-                <p className="modal-desc">
-                  {t('importDescription', { defaultValue: 'Upload a PDF, DOCX, or text file. We will extract the text, split it into chapters automatically, and create a workspace for you to edit.' })}
+                <p className="modal-desc" style={{ marginBottom: 16, lineHeight: 1.55, fontSize: '0.88rem' }}>
+                  {t('importDescription', { defaultValue: 'Upload a Microsoft Word document. We will automatically extract the content, split sections into chapters, and build your editable workspace.' })}
                 </p>
 
+                {/* Format Support Pills */}
+                <div className="import-format-pills" style={{ marginBottom: 20 }}>
+                  <span className="import-format-pill import-format-pill--active">
+                    <span className="word-icon-badge">W</span> Word (.docx) Supported
+                  </span>
+                  <span className="import-format-pill import-format-pill--disabled">
+                    <AlertCircle size={11} /> PDF Extraction (Coming Soon)
+                  </span>
+                </div>
+
                 {/* Project Title Input */}
-                <div className="metadata-field">
-                  <label className="metadata-label">{t('projectTitle', { defaultValue: 'Project Title' })}</label>
+                <div className="metadata-field" style={{ marginBottom: 18 }}>
+                  <label className="metadata-label" style={{ marginBottom: 6 }}>{t('projectTitle', { defaultValue: 'Project Title' })}</label>
                   <input
                     type="text"
                     className="metadata-input"
                     value={importTitle}
                     onChange={e => setImportTitle(e.target.value)}
-                    placeholder="e.g. My Imported Document"
+                    placeholder="e.g. Research Manuscript"
                     disabled={importing}
                   />
                 </div>
 
                 {/* File Input container */}
-                <div className="metadata-field">
-                  <label className="metadata-label">{t('selectFile', { defaultValue: 'Select File (.pdf, .docx, .txt)' })}</label>
+                <div className="metadata-field" style={{ marginBottom: 8 }}>
+                  <label className="metadata-label" style={{ marginBottom: 6 }}>{t('selectFile', { defaultValue: 'Select Word File (.docx)' })}</label>
                   <div
                     className={`import-dropzone${importFile ? ' import-dropzone--has-file' : ''}`}
                     onClick={() => !importing && document.getElementById('import-file-input').click()}
@@ -523,30 +526,33 @@ export default function DashboardHomePage() {
                     <input
                       id="import-file-input"
                       type="file"
-                      accept=".pdf,.docx,.txt,.md"
+                      accept=".docx,.doc,.txt"
                       onChange={handleFileChange}
                       style={{ display: 'none' }}
                       disabled={importing}
                     />
                     {importFile ? (
-                      <>
-                        <FileText size={28} />
-                        <div className="import-dropzone-name">{importFile.name}</div>
-                        <div className="import-dropzone-hint">{(importFile.size / 1024).toFixed(1)} KB</div>
-                      </>
+                      <div className="import-selected-card">
+                        <span className="word-icon-large">W</span>
+                        <div className="import-selected-meta">
+                          <div className="import-dropzone-name">{importFile.name}</div>
+                          <div className="import-dropzone-hint">{(importFile.size / 1024).toFixed(1)} KB • Microsoft Word Document</div>
+                        </div>
+                        <span className="import-change-btn">Change</span>
+                      </div>
                     ) : (
-                      <>
-                        <Folder size={28} />
-                        <div>{t('clickToSelectFile', { defaultValue: 'Click to select file' })}</div>
-                        <div className="import-dropzone-hint">{t('supportedFormats', { defaultValue: 'Supports PDF, Word (DOCX), Text (TXT)' })}</div>
-                      </>
+                      <div className="import-empty-dropzone">
+                        <span className="word-icon-large">W</span>
+                        <div className="import-dropzone-title">{t('clickToSelectFile', { defaultValue: 'Click to choose Word (.docx) file' })}</div>
+                        <div className="import-dropzone-hint">{t('supportedFormats', { defaultValue: 'Supports Microsoft Word (.docx, .doc)' })}</div>
+                      </div>
                     )}
                   </div>
                 </div>
 
                 {error && (
                   <div className="import-error">
-                    ⚠️ {error}
+                    <AlertCircle size={14} /> {error}
                   </div>
                 )}
 

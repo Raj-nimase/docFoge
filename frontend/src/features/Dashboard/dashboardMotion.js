@@ -7,6 +7,7 @@ export const EASE_IN = [0.4, 0, 1, 1];
 
 export const SPRING_MODAL = { type: 'spring', stiffness: 450, damping: 30 };
 export const SPRING_PILL = { type: 'spring', stiffness: 400, damping: 34 };
+export const SPRING_LAYOUT = { type: 'spring', stiffness: 380, damping: 32 };
 
 export const SIDEBAR_WIDTH = 250;
 export const SIDEBAR_COLLAPSED = 68;
@@ -35,15 +36,27 @@ export const itemVariants = {
 
 /* Grid containers — stagger their cards */
 export const gridVariants = {
-  hidden: {},
-  show: { transition: { staggerChildren: 0.05 } },
+  hidden: { opacity: 0, y: 14 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.35,
+      ease: EASE,
+      staggerChildren: 0.05,
+      delayChildren: 0.02,
+    },
+  },
 };
 
-/* Cards inside grids */
+/* Cards inside grids — synced with itemVariants for unified page load stagger */
 export const cardVariants = {
-  hidden: { opacity: 0, y: 14, scale: 0.98 },
-  show: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.35, ease: EASE } },
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: EASE } },
+  exit: { opacity: 0, scale: 0.96, y: -4, transition: { duration: 0.18, ease: EASE_IN } },
 };
+
+export const minimalCardVariants = cardVariants;
 
 /* Dropdown panels (notifications) — pair with CSS transform-origin */
 export const dropdownVariants = {

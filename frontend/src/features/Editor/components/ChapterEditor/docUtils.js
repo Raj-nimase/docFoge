@@ -55,10 +55,19 @@ export function mergeChaptersToSingleDoc(frontMatter = [], chapters = []) {
       const nodes = ch.content.content;
       for (let i = 0; i < nodes.length; i++) {
         const node = nodes[i];
-        if (i === 0 && node.type === "heading" && node.attrs?.level === 1) {
-          const text = node.content?.[0]?.text || "";
-          if (text.toUpperCase().includes(`CHAPTER ${chNum}`) || text.toUpperCase() === cleanTitle.toUpperCase()) {
-            continue; // Skip duplicate H1
+        if (i === 0 && node.type === "heading") {
+          const nodeText = (node.content ? node.content.map((c) => c.text || "").join("") : "").trim();
+          const cleanNodeText = stripHeadingPrefix(nodeText).toUpperCase();
+          const normCleanTitle = cleanTitle.toUpperCase();
+          const normRawTitle = rawTitle.toUpperCase();
+
+          if (
+            nodeText.toUpperCase().includes(`CHAPTER ${chNum}`) ||
+            cleanNodeText === normCleanTitle ||
+            cleanNodeText === normRawTitle ||
+            (normCleanTitle && (cleanNodeText.includes(normCleanTitle) || normCleanTitle.includes(cleanNodeText)))
+          ) {
+            continue; // Skip duplicate H1/H2 heading at start of chapter
           }
         }
         mergedContent.push(node);

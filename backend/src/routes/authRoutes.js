@@ -5,6 +5,7 @@ const {
   getMe,
   updateMe,
   changePassword,
+  resetWithCurrentPassword,
   forgotPassword,
   verifyOtp,
   resetPassword,
@@ -16,6 +17,7 @@ const router = express.Router();
 router.post('/register', register);
 router.post('/login', login);
 router.post('/change-password', requireAuth, changePassword);
+router.post('/reset-with-current-password', resetWithCurrentPassword);
 router.post('/forgot-password', forgotPassword);
 router.post('/verify-otp', verifyOtp);
 router.post('/reset-password', resetPassword);

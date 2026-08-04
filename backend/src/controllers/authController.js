@@ -259,12 +259,45 @@ async function updateMe(req, res, next) {
   }
 }
 
+/** Reset password using email & current password */
+async function resetWithCurrentPassword(req, res, next) {
+  try {
+    const { email, currentPassword, newPassword } = req.body;
+
+    if (!email?.trim() || !currentPassword || !newPassword) {
+      return res.status(400).json({ success: false, error: 'Email, current password, and new password are required' });
+    }
+
+    if (String(newPassword).length < 8) {
+      return res.status(400).json({ success: false, error: 'New password must be at least 8 characters' });
+    }
+
+    const user = await findUserWithPassword(email);
+    if (!user?.password) {
+      return res.status(401).json({ success: false, error: 'Invalid email or current password' });
+    }
+
+    const valid = await user.comparePassword(String(currentPassword));
+    if (!valid) {
+      return res.status(401).json({ success: false, error: 'Current password is incorrect' });
+    }
+
+    user.password = String(newPassword);
+    await user.save();
+
+    return issueAuthResponse(user, res);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   register,
   login,
   getMe,
   updateMe,
   changePassword,
+  resetWithCurrentPassword,
   forgotPassword,
   verifyOtp,
   resetPassword,

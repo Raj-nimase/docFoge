@@ -262,7 +262,20 @@ function createProjectFromTemplate(templateId, metadata) {
     templateId,
     createdAt: now,
     updatedAt: now,
-    metadata: { ...metadata },
+    metadata: {
+      fontFamily: 'Times New Roman',
+      fontSize: '12pt',
+      lineSpacing: '1.5',
+      pageSize: 'a4paper',
+      marginTop: '2.5cm',
+      marginBottom: '2.5cm',
+      marginLeft: '3.5cm',
+      marginRight: '1.25cm',
+      enableChapterNumbers: true,
+      enableListOfFigures: true,
+      enableListOfTables: true,
+      ...metadata,
+    },
     frontMatter: tpl.frontMatter.map((fm) => ({
       ...fm,
       content: null,
@@ -378,23 +391,14 @@ export const useProjectStore = create((set, get) => ({
     const token = api.getStoredToken();
 
     // Immediately set local cached projects so UI is instant!
-    if (local.length > 0 && !get().projectsLoaded) {
-      set({ projects: local, projectsLoaded: true });
-      console.log('[projects] instant load from local cache', `count=${local.length}`);
-    }
+    set({ projects: local, projectsLoaded: true });
 
     if (!token) {
-      set({ projects: local, projectsLoaded: true });
       _projectsLoadedOnce = true;
       return { count: local.length, guest: true };
     }
 
     // Return immediately if already loaded and not forced
-    if (!force && _projectsLoadedOnce && get().projectsLoaded) {
-      return { count: get().projects.length, cached: true };
-    }
-
-    // Deduplicate: if a load is already in-flight return the same promise
     if (!force && _loadProjectsPromise) return _loadProjectsPromise;
 
     _loadProjectsPromise = (async () => {
@@ -564,11 +568,22 @@ export const useProjectStore = create((set, get) => ({
     return project;
   },
 
-  createImportedProject(title, chaptersList) {
+  createImportedProject(title, importData) {
+    const chaptersList = Array.isArray(importData) ? importData : (importData?.chapters || []);
+    const fmData = Array.isArray(importData) ? {} : (importData?.frontMatterData || {});
+
+    const frontMatterList = [];
+    if (fmData.abstract) {
+      frontMatterList.push({ id: genId(), label: "Abstract", auto: false, content: fmData.abstract });
+    }
+    if (fmData.acknowledgement) {
+      frontMatterList.push({ id: genId(), label: "Acknowledgement", auto: false, content: fmData.acknowledgement });
+    }
+
     const now = Date.now();
     const project = {
       id: genId(),
-      templateId: "report", // Default to report template
+      templateId: frontMatterList.length > 0 ? "diploma-project-report" : "blank",
       createdAt: now,
       updatedAt: now,
       metadata: {
@@ -577,15 +592,19 @@ export const useProjectStore = create((set, get) => ({
         institution: "",
         department: "",
         year: new Date().getFullYear().toString(),
+        fontFamily: 'Times New Roman',
+        fontSize: '12pt',
+        lineSpacing: '1.5',
+        pageSize: 'a4paper',
+        marginTop: '2.5cm',
+        marginBottom: '2.5cm',
+        marginLeft: '3.5cm',
+        marginRight: '1.25cm',
         enableChapterNumbers: true,
         enableListOfFigures: true,
         enableListOfTables: true
       },
-      frontMatter: [
-        { id: genId(), label: "Title Page", content: null },
-        { id: genId(), label: "Abstract", content: null },
-        { id: genId(), label: "Table of Contents", content: null }
-      ],
+      frontMatter: frontMatterList,
       chapters: chaptersList.map((ch) => ({
         id: genId(),
         title: ch.title,
@@ -623,7 +642,9 @@ export const useProjectStore = create((set, get) => ({
   togglePinProject(projectId) {
     const updated = get().projects.map(p => {
       if (p.id !== projectId) return p;
-      return { ...p, isPinned: !p.isPinned, updatedAt: Date.now() };
+      const current = !!(p.isPinned || p.pinned);
+      const nextPinned = !current;
+      return { ...p, isPinned: nextPinned, pinned: nextPinned, updatedAt: Date.now() };
     });
     saveProjectsLocal(updated, true);
     set({ projects: updated });

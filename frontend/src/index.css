@@ -1835,9 +1835,9 @@ body {
 .tiptap-editor .ProseMirror {
   outline: none;
   min-height: 700px;
-  font-family: var(--font-editor);
+  font-family: var(--font-editor, 'Times New Roman', Times, serif);
   font-size: 12pt;
-  line-height: 2;
+  line-height: 1.6;
   color: #000000;
   text-align: justify;
   word-wrap: break-word;
@@ -1876,8 +1876,8 @@ body {
 
 .tiptap-editor .ProseMirror p {
   font-size: 12pt;
-  line-height: 2;
-  margin-bottom: 0;
+  line-height: 1.6;
+  margin-bottom: 6pt;
   text-align: justify;
   word-wrap: break-word;
   overflow-wrap: break-word;

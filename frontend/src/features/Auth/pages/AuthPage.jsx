@@ -39,17 +39,20 @@ function AnimatedHeightPane({ children }) {
   );
 }
 
-export default function Auth({ trialExpired = false, allowDismiss = false, onDismiss, onSuccess }) {
+export default function Auth({ allowDismiss = false, onDismiss, onSuccess }) {
   const register = useAuthStore(s => s.register);
   const login = useAuthStore(s => s.login);
   const forgotPassword = useAuthStore(s => s.forgotPassword);
   const verifyOtp = useAuthStore(s => s.verifyOtp);
   const resetPassword = useAuthStore(s => s.resetPassword);
+  const resetWithCurrentPassword = useAuthStore(s => s.resetWithCurrentPassword);
 
   const [mode, setMode] = useState('login'); // login | register | forgot
+  const [resetMethod, setResetMethod] = useState(null); // null | 'otp' | 'current_password'
   const [forgotStep, setForgotStep] = useState(1); // 1: email, 2: OTP, 3: new password
   const [direction, setDirection] = useState(1);
   const [resetToken, setResetToken] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [otpErrorCount, setOtpErrorCount] = useState(0);
   const [newPassword, setNewPassword] = useState('');
@@ -83,7 +86,10 @@ export default function Auth({ trialExpired = false, allowDismiss = false, onDis
     if (next === mode) return;
     setDirection(Math.sign(ORDER[next] - ORDER[mode]) || 1);
     setMode(next);
-    if (next === 'forgot') setForgotStep(1);
+    if (next === 'forgot') {
+      setResetMethod(null);
+      setForgotStep(1);
+    }
     clearMessages();
   };
 
@@ -93,12 +99,18 @@ export default function Auth({ trialExpired = false, allowDismiss = false, onDis
   };
 
   const backToLogin = () => {
-    setDirection(1);
-    setMode('login');
-    setForgotStep(1);
+    setDirection(-1);
+    if (resetMethod) {
+      setResetMethod(null);
+      setForgotStep(1);
+    } else {
+      setMode('login');
+      setForgotStep(1);
+    }
     setOtpCode('');
     setOtpErrorCount(0);
     setResetToken('');
+    setCurrentPassword('');
     setNewPassword('');
     setConfirmPassword('');
     clearMessages();
@@ -177,12 +189,31 @@ export default function Auth({ trialExpired = false, allowDismiss = false, onDis
     }).catch(() => {});
   };
 
+  const submitCurrentPasswordReset = async () => {
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+    if (newPassword.length < 8) {
+      setError('New password must be at least 8 characters.');
+      return;
+    }
+    await runSubmit(async () => {
+      await resetWithCurrentPassword(form.email, currentPassword, newPassword);
+      await onSuccess?.();
+    }).catch(() => {});
+  };
+
   const handleForgotSubmit = async (e) => {
     e.preventDefault();
     clearMessages();
-    if (forgotStep === 1) await submitForgotEmail();
-    else if (forgotStep === 2) await submitOtp(otpCode);
-    else await submitNewPassword();
+    if (resetMethod === 'current_password') {
+      await submitCurrentPasswordReset();
+    } else {
+      if (forgotStep === 1) await submitForgotEmail();
+      else if (forgotStep === 2) await submitOtp(otpCode);
+      else await submitNewPassword();
+    }
   };
 
   const handleResend = async () => {
@@ -193,7 +224,7 @@ export default function Auth({ trialExpired = false, allowDismiss = false, onDis
     }).catch(() => {});
   };
 
-  const paneKey = mode === 'forgot' ? `forgot-${forgotStep}` : mode;
+  const paneKey = mode === 'forgot' ? `forgot-${resetMethod || 'select'}-${forgotStep}` : mode;
 
   const focusFirstField = () => {
     // Skip autofocus on touch/mobile widths to avoid keyboard pop
@@ -215,7 +246,7 @@ export default function Auth({ trialExpired = false, allowDismiss = false, onDis
             </button>
           )}
 
-          <BrandPanel trialExpired={trialExpired} />
+          <BrandPanel />
 
           <div className="auth-form-panel">
             <motion.div variants={childVariants}>
@@ -240,9 +271,9 @@ export default function Auth({ trialExpired = false, allowDismiss = false, onDis
                     className="auth-forgot-header"
                   >
                     <button type="button" className="auth-back-btn" onClick={backToLogin}>
-                      <ArrowLeft size={16} /> Back to sign in
+                      <ArrowLeft size={16} /> {resetMethod ? 'Back to options' : 'Back to sign in'}
                     </button>
-                    <StepDots step={forgotStep} />
+                    {resetMethod === 'otp' && <StepDots step={forgotStep} />}
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -286,9 +317,18 @@ export default function Auth({ trialExpired = false, allowDismiss = false, onDis
                   )}
                   {mode === 'forgot' && (
                     <ForgotFlow
+                      method={resetMethod}
+                      onSelectMethod={(m) => {
+                        setDirection(1);
+                        setResetMethod(m);
+                        setForgotStep(1);
+                        clearMessages();
+                      }}
                       step={forgotStep}
                       email={form.email}
                       onEmailChange={v => set('email', v)}
+                      currentPassword={currentPassword}
+                      onCurrentPasswordChange={setCurrentPassword}
                       otpCode={otpCode}
                       onOtpChange={(v) => { setOtpCode(v); if (otpErrorCount) setOtpErrorCount(0); }}
                       onOtpComplete={submitOtp}
