@@ -8,9 +8,10 @@
 
 const express = require("express");
 const { v4: uuidv4 } = require("uuid");
-const { generateProjectLatex } = require("../services/latexGenerator");
-const { compileTex, cleanupJob, warmUp } = require("../services/tectonicRunner");
+const { generateProjectTypst } = require("../services/typstGenerator");
+const { compileTypst, cleanupJob, warmUp } = require("../services/typstRunner");
 const { renderCertificateVectorPdf } = require("../services/certificatePdfService");
+const { PDFDocument } = require("pdf-lib");
 const { logger } = require("../utils/logger");
 const { requireAuth } = require("../middleware/auth");
 const path = require("path");
@@ -31,7 +32,7 @@ setInterval(
     const cutoff = Date.now() - 30 * 60 * 1000;
     for (const [id, job] of jobs.entries()) {
       if (job.updatedAt < cutoff) {
-        cleanupJob(id);
+        cleanupJob(id, job?.imageFiles || []);
         jobs.delete(id);
       }
     }
@@ -100,7 +101,7 @@ router.get("/:jobId/pdf", (req, res) => {
   stream.pipe(res);
   stream.on("end", () =>
     setTimeout(() => {
-      cleanupJob(req.params.jobId);
+      cleanupJob(req.params.jobId, job?.imageFiles || []);
       jobs.delete(req.params.jobId);
     }, 30_000),
   );
@@ -113,9 +114,9 @@ router.post("/preview-tex", (req, res) => {
   if (!project)
     return res.status(400).json({ success: false, error: "project required" });
   try {
-    const { latex } = generateProjectLatex(project);
+    const { typst } = generateProjectTypst(project);
     res.setHeader("Content-Type", "text/plain");
-    res.send(latex);
+    res.send(typst);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -152,6 +153,7 @@ async function processCompile(jobId, project) {
                 .replace(/^data:image\/[a-z]+;base64,/, "");
               fs.writeFileSync(vectorPdfPath, Buffer.from(base64Data, "base64"));
               fm.content.vectorPdfFilename = vectorPdfFilename;
+              fm.content.vectorPdfPath = vectorPdfPath;
               console.log(`${ts()} Pre-Step: Saved Uploaded Certificate PDF at ${vectorPdfPath}`);
             } catch (err) {
               console.warn("Failed to write uploaded certificate PDF:", err.message);
@@ -169,6 +171,7 @@ async function processCompile(jobId, project) {
               console.log(`${ts()} Pre-Step: Rendering pdf-lib Vector PDF (${vectorPdfFilename})...`);
               await renderCertificateVectorPdf(fm.content, project.metadata || {}, vectorPdfPath);
               fm.content.vectorPdfFilename = vectorPdfFilename;
+              fm.content.vectorPdfPath = vectorPdfPath;
               console.log(`${ts()} Pre-Step: Pure Vector PDF Ready at ${vectorPdfPath}`);
             } catch (pdfErr) {
               console.warn("Vector Certificate Rendering Warning:", pdfErr.message);
@@ -179,14 +182,14 @@ async function processCompile(jobId, project) {
     }
 
     // ── Step A: LaTeX generation ──────────────────────────────────────────────
-    console.log(`${ts()} Step A: Generating LaTeX...`);
+    console.log(`${ts()} Step A: Generating Typst markup...`);
     // Use a stable imagePrefix derived from project content — NOT jobId.
-    // jobId changes on every compile, which makes every LaTeX source unique
-    // and defeats the content-hash PDF cache in tectonicRunner.
+    // jobId changes on every compile, which makes every Typst source unique
+    // and defeats the content-hash PDF cache in typstRunner.
     const imagePrefix = project.id ?? jobId;
-    const { latex, images, safe, reason } = generateProjectLatex(project, imagePrefix);
-    console.log(`${ts()} Step A done. safe=${safe} latexBytes=${latex.length} images=${images?.length ?? 0}`);
-    if (!safe) throw new Error(`LaTeX safety check failed: ${reason}`);
+    const { typst, images, safe, reason } = generateProjectTypst(project, imagePrefix);
+    console.log(`${ts()} Step A done. safe=${safe} typstBytes=${typst.length} images=${images?.length ?? 0}`);
+    if (!safe) throw new Error(`Typst safety check failed: ${reason}`);
 
     // 1x1 transparent PNG fallback to prevent Tectonic LaTeX 'Division by 0' error if image fails to download
     const FALLBACK_PNG_BUFFER = Buffer.from(
@@ -195,10 +198,12 @@ async function processCompile(jobId, project) {
     );
 
     // ── Step B: Write temp dir & save images ─────────────────────────────────
+    job.imageFiles = [];
     if (images && images.length > 0) {
       console.log(`${ts()} Step B: Saving ${images.length} image(s)...`);
       for (const img of images) {
         const imgPath = path.join(tmpDir, img.filename);
+        job.imageFiles.push(img.filename);
         if (img.base64) {
           try {
             fs.writeFileSync(imgPath, Buffer.from(img.base64, "base64"));
@@ -229,10 +234,43 @@ async function processCompile(jobId, project) {
     }
 
 
-    // ── Step C: Run Tectonic ──────────────────────────────────────────────────
-    console.log(`${ts()} Step C: Starting Tectonic compilation...`);
-    const { pdfPath, cached } = await compileTex(latex, jobId);
+    // ── Step C: Run Typst ─────────────────────────────────────────────────────
+    console.log(`${ts()} Step C: Starting Typst compilation...`);
+    const { pdfPath, cached } = await compileTypst(typst, jobId);
     console.log(`${ts()} Step C done. PDF at ${pdfPath} (cached=${cached})`);
+
+    // ── Step D: Merge Pure Vector PDF Certificate Pages ───────────────────────
+    if (project.frontMatter && Array.isArray(project.frontMatter)) {
+      const vectorCerts = project.frontMatter.filter(fm => fm.content?.vectorPdfPath && fs.existsSync(fm.content.vectorPdfPath));
+      if (vectorCerts.length > 0) {
+        console.log(`${ts()} Step D: Merging ${vectorCerts.length} vector certificate PDF page(s)...`);
+        try {
+          const mainPdfBytes = fs.readFileSync(pdfPath);
+          const mainPdfDoc = await PDFDocument.load(mainPdfBytes);
+
+          for (let i = 0; i < project.frontMatter.length; i++) {
+            const fm = project.frontMatter[i];
+            if (fm.content?.vectorPdfPath && fs.existsSync(fm.content.vectorPdfPath)) {
+              const certBytes = fs.readFileSync(fm.content.vectorPdfPath);
+              const certDoc = await PDFDocument.load(certBytes);
+              const [copiedPage] = await mainPdfDoc.copyPages(certDoc, [0]);
+
+              // FrontMatter index: cover/title page is page 1 (index 0). So frontmatter item `i` is at page index `i + 1`.
+              const targetIdx = Math.min(i + 1, mainPdfDoc.getPageCount() - 1);
+              mainPdfDoc.removePage(targetIdx);
+              mainPdfDoc.insertPage(targetIdx, copiedPage);
+              console.log(`${ts()} Step D: Replaced page index ${targetIdx} with pure vector PDF (${fm.content.vectorPdfFilename || 'cert.pdf'})`);
+            }
+          }
+
+          const mergedBytes = await mainPdfDoc.save();
+          fs.writeFileSync(pdfPath, mergedBytes);
+          console.log(`${ts()} Step D done. Pure vector PDF certificate merged successfully.`);
+        } catch (mergeErr) {
+          console.warn(`${ts()} Step D warning: Vector PDF merge failed: ${mergeErr.message}`);
+        }
+      }
+    }
 
     job.status = "done";
     job.pdfPath = pdfPath;
@@ -262,6 +300,8 @@ Total Backend Time: ${job.durationMs}ms (${(job.durationMs / 1000).toFixed(2)}s)
 ===================================================
 `);
     logger.error("CompileRoute", `Job failed: ${jobId}`, err.message);
+    // Cleanup temporary files immediately on failure
+    cleanupJob(jobId, job.imageFiles || []);
   }
 }
 

@@ -271,7 +271,7 @@ if (typeof window !== 'undefined') {
       const blob = new Blob([payload], { type: 'application/json' });
 
       // Send beacon reliably on tab exit / unload
-      const backendUrl = api.API_URL || 'http://localhost:3001/api';
+      const backendUrl = api.API_BASE_URL || 'http://localhost:3001/api';
       navigator.sendBeacon(`${backendUrl}/projects/sync/all`, blob);
     } catch (_) {}
   };

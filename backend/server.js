@@ -8,12 +8,13 @@ const fs = require('fs');
 const { connectDB } = require('./src/config/db');
 const documentRoutes = require('./src/routes/documentRoutes');
 const compileRoutes  = require('./src/routes/compileRoutes');
-const { warmUp: tectonicWarmUp } = compileRoutes;
+const { warmUp: typstWarmUp } = compileRoutes;
 const templateRoutes = require('./src/routes/templateRoutes');
 const visionRoutes   = require('./src/routes/visionRoutes');
 const authRoutes     = require('./src/routes/authRoutes');
 const projectRoutes  = require('./src/routes/projectRoutes');
 const imageRoutes    = require('./src/routes/imageRoutes');
+const { startUploadsCleanupScheduler } = require('./src/utils/fileCleanup');
 
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -174,10 +175,13 @@ async function start() {
     console.log(`   Compile   : POST http://localhost:${PORT}/api/compile\n`);
   });
 
-  // Pre-warm Tectonic after the server is listening so startup isn't blocked.
-  // This compiles a tiny document to initialise the format cache and package
-  // loading, so the first real user compile is fast instead of cold-start slow.
-  tectonicWarmUp();
+  // Pre-warm Typst after the server is listening so startup isn't blocked.
+  // This compiles a tiny document to initialise the binary and OS file cache,
+  // so the first real user compile is fast instead of cold-start slow.
+  typstWarmUp();
+
+  // Start periodic uploads/ directory cleaner
+  startUploadsCleanupScheduler();
 
   // Keep the Render free-tier dyno alive (no-op in local dev).
   startKeepAlive();

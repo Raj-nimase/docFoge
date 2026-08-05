@@ -56,7 +56,7 @@ export default function useCompile() {
       const final = await pollUntilDone(jobId, status => {
         console.log(`[${new Date().toISOString()}] Step 3 (Poll): Status updated to ${status.status}`);
         setCompileJob(prev => ({ ...prev, ...status, _tick: Date.now() }));
-      }, { intervalMs: 1500, maxAttempts: 30 });
+      }, { intervalMs: 250, maxAttempts: 60 });
 
       if (final.status === 'done') {
         const backendTime = final.durationMs ? `${(final.durationMs / 1000).toFixed(2)}s` : 'unknown';

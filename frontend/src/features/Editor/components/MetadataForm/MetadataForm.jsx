@@ -8,7 +8,14 @@ export default function MetadataForm({ onDone }) {
   const currentProject = useAcaStore(s => s.getCurrentProject());
   const template = TEMPLATES.find(t => t.id === currentProject?.templateId);
 
-  const [fields, setFields] = useState(currentProject?.metadata || {});
+  const [fields, setFields] = useState(() => {
+    const meta = currentProject?.metadata || {};
+    return {
+      ...meta,
+      headerRule: meta.headerRule !== undefined ? meta.headerRule : true,
+      footerRule: meta.footerRule !== undefined ? meta.footerRule : true
+    };
+  });
   const [open, setOpen] = useState(false);
 
   const handleSave = () => {
@@ -256,7 +263,14 @@ export default function MetadataForm({ onDone }) {
                   <input
                     type="checkbox"
                     checked={!!fields.enableHeader}
-                    onChange={e => setFields(f => ({ ...f, enableHeader: e.target.checked }))}
+                    onChange={e => {
+                      const checked = e.target.checked;
+                      setFields(f => ({
+                        ...f,
+                        enableHeader: checked,
+                        headerRule: checked ? true : f.headerRule
+                      }));
+                    }}
                   />
                   Enable Custom Header
                 </label>
@@ -311,7 +325,14 @@ export default function MetadataForm({ onDone }) {
                   <input
                     type="checkbox"
                     checked={!!fields.enableFooter}
-                    onChange={e => setFields(f => ({ ...f, enableFooter: e.target.checked }))}
+                    onChange={e => {
+                      const checked = e.target.checked;
+                      setFields(f => ({
+                        ...f,
+                        enableFooter: checked,
+                        footerRule: checked ? true : f.footerRule
+                      }));
+                    }}
                   />
                   Enable Custom Footer
                 </label>

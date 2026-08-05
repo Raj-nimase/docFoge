@@ -8,8 +8,8 @@
  * Job lifecycle: pending → processing → done | failed
  */
 
-const { generateLatex } = require('./latexGenerator');
-const { compileTex, cleanupJob } = require('./tectonicRunner');
+const { generateProjectTypst } = require('./typstGenerator');
+const { compileTypst, cleanupJob } = require('./typstRunner');
 const { validateBlocks } = require('../utils/blockSchema');
 const { logger } = require('../utils/logger');
 const path = require('path');
@@ -76,15 +76,15 @@ async function processJob(jobId) {
     }
     console.log(`${ts()} Step 1 done. Blocks valid.`);
 
-    // Generate LaTeX
-    console.log(`${ts()} Step 2: Generating LaTeX...`);
-    const { latex, safe, reason } = generateLatex(title, validation.blocks, template);
-    console.log(`${ts()} Step 2 done. safe=${safe} latexBytes=${latex.length}`);
-    if (!safe) throw new Error(`LaTeX safety check failed: ${reason}`);
+    // Generate Typst markup
+    console.log(`${ts()} Step 2: Generating Typst markup...`);
+    const { typst, safe, reason } = generateProjectTypst({ metadata: { title }, chapters: [{ title, content: { type: 'doc', content: validation.blocks } }], templateId: template });
+    console.log(`${ts()} Step 2 done. safe=${safe} typstBytes=${typst.length}`);
+    if (!safe) throw new Error(`Typst safety check failed: ${reason}`);
 
     // Compile
-    console.log(`${ts()} Step 3: Compiling LaTeX to PDF...`);
-    const { pdfPath, cached } = await compileTex(latex, jobId);
+    console.log(`${ts()} Step 3: Compiling Typst to PDF...`);
+    const { pdfPath, cached } = await compileTypst(typst, jobId);
     console.log(`${ts()} Step 3 done. PDF at ${pdfPath}, cached=${cached}`);
 
     job.status = 'done';

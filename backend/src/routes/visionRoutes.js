@@ -1,8 +1,11 @@
 const express = require("express");
 const { model } = require("../config/gemini");
 const { logger } = require("../utils/logger");
+const { requireAuth } = require("../middleware/auth");
 
 const router = express.Router();
+
+router.use(requireAuth);
 
 router.post("/math", async (req, res) => {
   const { base64Image } = req.body;
