@@ -1,3 +1,4 @@
+
 const crypto = require('crypto');
 
 let imageCounter = 0;
@@ -544,7 +545,6 @@ function generateProjectTypst(project, imagePrefix = 'img') {
     footerRight = '',
     headerRule = false,
     footerRule = false,
-    enableChapterNumbers = true,
     enableListOfFigures = false,
     enableListOfTables = false,
     title = 'Document',
@@ -556,6 +556,10 @@ function generateProjectTypst(project, imagePrefix = 'img') {
     abstract = '',
     keywords = ''
   } = project.metadata || {};
+
+  const enableChapterNumbers =
+    project.settings?.enableChapterNumbers !== false &&
+    project.metadata?.enableChapterNumbers !== false;
 
   const templateId = project.templateId || 'blank';
   let typst = '';
@@ -591,7 +595,8 @@ function generateProjectTypst(project, imagePrefix = 'img') {
     fontName = 'New Computer Modern';
   } else if (templateId === 'diploma-project-report') {
     pagePaper = 'a4';
-    pageMargin = `(top: 2.5cm, bottom: 2.5cm, left: 3.5cm, right: 1.25cm)`;
+    pageMargin = `(top: 2.2cm, bottom: 2.2cm, left: 3.5cm, right: 1.25cm)`;
+    fontName = 'Times New Roman';
   } else if (templateId === 'thesis') {
     pagePaper = 'a4';
     pageMargin = `(top: 2.5cm, bottom: 2.5cm, left: 3.5cm, right: 2.5cm)`;
@@ -601,15 +606,15 @@ function generateProjectTypst(project, imagePrefix = 'img') {
     pageMargin = `(top: 2cm, bottom: 2cm, left: 2cm, right: 2cm)`;
   }
 
-  const isHeaderActive = Boolean(enableHeader || headerLeft || headerCenter || headerRight);
-  const isFooterActive = Boolean(enableFooter || footerLeft || footerCenter || footerRight);
-  const isHeaderRule = headerRule !== false;
-  const isFooterRule = footerRule !== false;
+  const isHeaderActive = Boolean(enableHeader);
+  const isFooterActive = enableFooter !== false;
+  const isHeaderRule = headerRule !== false || templateId === 'diploma-project-report';
+  const isFooterRule = footerRule !== false || templateId === 'diploma-project-report';
 
   // Header & Footer Typst layout code using grid and stack
   let headerCode = '';
   if (isHeaderActive) {
-    const hLeft = escapeTypst(headerLeft || '');
+    const hLeft = escapeTypst(headerLeft || title);
     const hCenter = escapeTypst(headerCenter || '');
     const hRight = escapeTypst(headerRight || '');
     const hGrid = `grid(columns: (1fr, 1fr, 1fr), align(left)[${hLeft}], align(center)[${hCenter}], align(right)[${hRight}])`;
@@ -642,14 +647,19 @@ function generateProjectTypst(project, imagePrefix = 'img') {
 )\n\n`;
 
   // Text & Line Spacing Settings
-  const effFontSize = templateId === 'ieee-paper' ? '10pt' : fontSize;
+  let effFontSize = fontSize;
+  if (templateId === 'ieee-paper') effFontSize = '10pt';
+  else if (templateId === 'diploma-project-report') effFontSize = '12pt';
+
   if (fontName) {
     typst += `#set text(font: "${fontName}", size: ${effFontSize})\n`;
   } else {
     typst += `#set text(size: ${effFontSize})\n`;
   }
 
-  const spacingNum = parseFloat(lineSpacing) || 1.5;
+  // Double spacing for diploma-project-report (leading ~1.3em), else use user setting
+  let spacingNum = parseFloat(lineSpacing) || 1.5;
+  if (templateId === 'diploma-project-report') spacingNum = 2.0;
   const leadingVal = (0.65 * spacingNum).toFixed(3);
   typst += `#set par(leading: ${leadingVal}em, spacing: 1.2em, justify: true)\n`;
 
@@ -677,11 +687,68 @@ function generateProjectTypst(project, imagePrefix = 'img') {
     typst += `
 #show heading.where(level: 1): it => block(
   above: 1.4em, below: 0.8em,
-  text(size: 16pt, weight: "bold", it.body)
+  text(size: 16pt, weight: "bold", upper(it.body))
 )
 #show heading.where(level: 2): it => block(
   above: 1.2em, below: 0.6em,
   text(size: 13pt, weight: "bold", it.body)
+)
+\n`;
+  } else if (templateId === 'diploma-project-report') {
+    // MSBTE / Academic Report Layout (Chapter=14pt, Section/Subsection=12pt)
+    if (enableChapterNumbers) {
+      typst += `#set heading(numbering: "1.1")\n`;
+    }
+    typst += `
+#show heading.where(level: 1): it => block(
+  above: 2.8em, below: 1.8em, width: 100%,
+  {
+    if it.numbering != none {
+      let num = counter(heading).display()
+      align(center)[
+        #text(font: "Times New Roman", size: 14pt, weight: "bold")[CHAPTER #num] \
+        #v(0.4em)
+        #text(font: "Times New Roman", size: 14pt, weight: "bold")[#upper(it.body)]
+      ]
+    } else {
+      align(center)[
+        #text(font: "Times New Roman", size: 14pt, weight: "bold")[#upper(it.body)]
+      ]
+    }
+  }
+)
+#show heading.where(level: 2): it => block(
+  above: 1.8em, below: 0.8em,
+  {
+    if it.numbering != none {
+      let num = counter(heading).display()
+      text(font: "Times New Roman", size: 12pt, weight: "bold")[#num #h(0.6em) #upper(it.body)]
+    } else {
+      text(font: "Times New Roman", size: 12pt, weight: "bold")[#upper(it.body)]
+    }
+  }
+)
+#show heading.where(level: 3): it => block(
+  above: 1.4em, below: 0.6em,
+  {
+    if it.numbering != none {
+      let num = counter(heading).display()
+      text(font: "Times New Roman", size: 12pt, weight: "bold")[#num #h(0.6em) #it.body]
+    } else {
+      text(font: "Times New Roman", size: 12pt, weight: "bold")[#it.body]
+    }
+  }
+)
+#show heading.where(level: 4): it => block(
+  above: 1.2em, below: 0.5em,
+  {
+    if it.numbering != none {
+      let num = counter(heading).display()
+      text(font: "Times New Roman", size: 12pt, weight: "bold")[#num #h(0.6em) #it.body]
+    } else {
+      text(font: "Times New Roman", size: 12pt, weight: "bold")[#it.body]
+    }
+  }
 )
 \n`;
   } else {
@@ -690,20 +757,48 @@ function generateProjectTypst(project, imagePrefix = 'img') {
     }
     typst += `
 #show heading.where(level: 1): it => block(
-  above: 1.8em, below: 1em,
-  text(size: 20pt, weight: "bold", it.body)
+  above: 2.8em, below: 1.8em,
+  {
+    if it.numbering != none {
+      let num = counter(heading).display()
+      text(size: 20pt, weight: "bold")[CHAPTER #num: #upper(it.body)]
+    } else {
+      text(size: 20pt, weight: "bold", it.body)
+    }
+  }
 )
 #show heading.where(level: 2): it => block(
-  above: 1.4em, below: 0.8em,
-  text(size: 16pt, weight: "bold", it.body)
+  above: 1.8em, below: 0.8em,
+  {
+    if it.numbering != none {
+      let num = counter(heading).display()
+      text(size: 16pt, weight: "bold")[#num #it.body]
+    } else {
+      text(size: 16pt, weight: "bold", it.body)
+    }
+  }
 )
 #show heading.where(level: 3): it => block(
-  above: 1.2em, below: 0.6em,
-  text(size: 13.5pt, weight: "bold", it.body)
+  above: 1.4em, below: 0.6em,
+  {
+    if it.numbering != none {
+      let num = counter(heading).display()
+      text(size: 13.5pt, weight: "bold")[#num #it.body]
+    } else {
+      text(size: 13.5pt, weight: "bold", it.body)
+    }
+  }
 )
 #show heading.where(level: 4): it => block(
-  above: 1em, below: 0.5em,
-  text(size: 12pt, weight: "semibold", it.body)
+  above: 1.2em, below: 0.5em,
+  {
+    if it.numbering != none {
+      let num = counter(heading).display()
+      text(size: 12pt, weight: "semibold")[#num #it.body]
+    } else {
+      text(size: 12pt, weight: "semibold", it.body)
+    }
+  }
 )
 \n`;
   }
@@ -904,22 +999,28 @@ function generateProjectTypst(project, imagePrefix = 'img') {
     }
   }
 
-  // 5. Chapters - Enable Headers & Footers exclusively for Chapter Body Pages
-  if (isHeaderActive || isFooterActive) {
-    typst += `#set page(\n`;
-    if (isHeaderActive) {
-      typst += `  header: context {\n    ${headerCode}\n  }`;
-    }
-    if (isFooterActive) {
-      typst += `${isHeaderActive ? ',\n' : ''}  footer: context {\n    ${footerCode}\n  }`;
-    }
-    typst += `\n)\n\n`;
+  // 5. Chapters - Enable Headers & Page Numbering Footers
+  typst += `#set page(\n`;
+  typst += `  header-ascent: 1.2em,\n`;
+  typst += `  footer-descent: 1.2em,\n`;
+  if (isHeaderActive && headerCode) {
+    typst += `  header: context {\n    ${headerCode}\n  },\n`;
+  } else {
+    typst += `  header: none,\n`;
   }
+  if (isFooterActive && footerCode) {
+    typst += `  footer: context {\n    ${footerCode}\n  }\n`;
+  } else if (isFooterActive) {
+    typst += `  footer: context {\n    align(center)[#counter(page).display("1")]\n  }\n`;
+  } else {
+    typst += `  footer: none\n`;
+  }
+  typst += `)\n\n`;
 
   if (Array.isArray(project.chapters) && project.chapters.length > 0) {
-    project.chapters.forEach(chapter => {
-      const chapterTitle = stripAllPrefixes(chapter.title || 'Chapter');
-      
+    project.chapters.forEach((chapter, index) => {
+      const cleanTitle = stripAllPrefixes(chapter.title || 'Chapter');
+
       // Extract content nodes from TipTap JSON (object with .content array)
       let contentNodes = [];
       if (chapter.content && chapter.content.content && Array.isArray(chapter.content.content)) {
@@ -929,7 +1030,7 @@ function generateProjectTypst(project, imagePrefix = 'img') {
       }
       if (contentNodes.length > 0 && contentNodes[0].type === 'heading') {
         const firstHeadingText = stripAllPrefixes(contentNodes[0].content?.map(n => n.text).join('') || '');
-        if (firstHeadingText.toLowerCase() === chapterTitle.toLowerCase()) {
+        if (firstHeadingText.toLowerCase() === cleanTitle.toLowerCase()) {
           contentNodes = contentNodes.slice(1);
         }
       }
@@ -949,9 +1050,12 @@ function generateProjectTypst(project, imagePrefix = 'img') {
       // We want the min level to map to 2 (since 1 is chapter title)
       const shift = minLevel === 99 ? 0 : 2 - minLevel;
       
-      typst += `#heading(level: 1)[${escapeTypst(chapterTitle)}]\n\n`;
+      // Emit level 1 heading with clean title — the #show rule auto-formats as "CHAPTER N: TITLE"
+      typst += `#heading(level: 1)[${escapeTypst(cleanTitle)}]\n\n`;
       typst += convertTipTapToTypst(contentNodes, imagePrefix, shift);
-      typst += `#pagebreak()\n\n`;
+      if (index < project.chapters.length - 1) {
+        typst += `\n#pagebreak()\n\n`;
+      }
     });
   }
 

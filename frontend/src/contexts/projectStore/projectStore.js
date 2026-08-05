@@ -972,8 +972,12 @@ export const useProjectStore = create((set, get) => ({
         // layout owned solely by CertificateCanvasEditor. Document-level saves
         // must never overwrite it, or the measured geometry the PDF depends on
         // is lost and the certificate silently reverts to a flowed layout.
-        if (oldFm.content?.isCertificateCanvas && !newFm.content?.isCertificateCanvas) {
-          return { ...oldFm, ...newFm, content: oldFm.content };
+        const isCert =
+          oldFm.id === "certificate" ||
+          (oldFm.label && String(oldFm.label).toLowerCase().trim() === "certificate") ||
+          oldFm.content?.isCertificateCanvas;
+        if (isCert) {
+          return { ...oldFm, ...newFm, content: oldFm.content || newFm.content };
         }
         return { ...oldFm, ...newFm };
       });

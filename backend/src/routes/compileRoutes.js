@@ -139,42 +139,95 @@ async function processCompile(jobId, project) {
     const tmpDir = path.join(os.tmpdir(), "docforge");
     if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 
+    // Clean up stale cert_vector files before generating new ones
+    try {
+      const existingTmpFiles = fs.readdirSync(tmpDir);
+      for (const file of existingTmpFiles) {
+        if (file.startsWith("cert_vector_") && file.endsWith(".pdf")) {
+          try { fs.unlinkSync(path.join(tmpDir, file)); } catch (e) {}
+        }
+      }
+    } catch (e) {}
+
     // ── Pre-Step: Render Pure pdf-lib Vector PDF for Certificate/Fixed Document pages ──
     if (project.frontMatter && Array.isArray(project.frontMatter)) {
       for (let i = 0; i < project.frontMatter.length; i++) {
         const fm = project.frontMatter[i];
-        if (fm.content) {
-          if (fm.content.mode === "upload" && fm.content.uploadedPdf) {
-            try {
-              const vectorPdfFilename = `cert_vector_${i + 1}.pdf`;
-              const vectorPdfPath = path.join(tmpDir, vectorPdfFilename);
-              const base64Data = fm.content.uploadedPdf
-                .replace(/^data:application\/pdf;base64,/, "")
-                .replace(/^data:image\/[a-z]+;base64,/, "");
-              fs.writeFileSync(vectorPdfPath, Buffer.from(base64Data, "base64"));
-              fm.content.vectorPdfFilename = vectorPdfFilename;
-              fm.content.vectorPdfPath = vectorPdfPath;
-              console.log(`${ts()} Pre-Step: Saved Uploaded Certificate PDF at ${vectorPdfPath}`);
-            } catch (err) {
-              console.warn("Failed to write uploaded certificate PDF:", err.message);
-            }
-          } else if (
-            fm.content.isCertificateCanvas ||
-            fm.content.objects ||
-            fm.content.scene ||
-            fm.id === "certificate" ||
-            fm.type === "certificate"
-          ) {
-            try {
-              const vectorPdfFilename = `cert_vector_${i + 1}.pdf`;
-              const vectorPdfPath = path.join(tmpDir, vectorPdfFilename);
-              console.log(`${ts()} Pre-Step: Rendering pdf-lib Vector PDF (${vectorPdfFilename})...`);
-              await renderCertificateVectorPdf(fm.content, project.metadata || {}, vectorPdfPath);
-              fm.content.vectorPdfFilename = vectorPdfFilename;
-              fm.content.vectorPdfPath = vectorPdfPath;
-              console.log(`${ts()} Pre-Step: Pure Vector PDF Ready at ${vectorPdfPath}`);
-            } catch (pdfErr) {
-              console.warn("Vector Certificate Rendering Warning:", pdfErr.message);
+        if (fm && fm.content) {
+          let contentObj = fm.content;
+          if (typeof contentObj === "string") {
+            try { contentObj = JSON.parse(contentObj); } catch (e) {}
+          }
+
+          if (contentObj && typeof contentObj === "object") {
+            if (contentObj.mode === "upload" && contentObj.uploadedPdf) {
+              try {
+                const vectorPdfFilename = `cert_vector_${i + 1}.pdf`;
+                const vectorPdfPath = path.join(tmpDir, vectorPdfFilename);
+                const base64Data = contentObj.uploadedPdf
+                  .replace(/^data:application\/pdf;base64,/, "")
+                  .replace(/^data:image\/[a-z]+;base64,/, "");
+                fs.writeFileSync(vectorPdfPath, Buffer.from(base64Data, "base64"));
+                if (typeof fm.content === "object" && fm.content !== null) {
+                  fm.content.vectorPdfFilename = vectorPdfFilename;
+                  fm.content.vectorPdfPath = vectorPdfPath;
+                } else {
+                  fm.content = { ...contentObj, vectorPdfFilename, vectorPdfPath };
+                }
+                console.log(`${ts()} Pre-Step: Saved Uploaded Certificate PDF at ${vectorPdfPath}`);
+              } catch (err) {
+                console.warn("Failed to write uploaded certificate PDF:", err.message);
+              }
+            } else if (
+              contentObj.isCertificateCanvas ||
+              contentObj.objects ||
+              contentObj.scene ||
+              fm.id === "certificate" ||
+              fm.type === "certificate" ||
+              (fm.label && String(fm.label).toLowerCase().trim() === "certificate")
+            ) {
+              try {
+                const vectorPdfFilename = `cert_vector_${i + 1}.pdf`;
+                const vectorPdfPath = path.join(tmpDir, vectorPdfFilename);
+                const vectorHashPath = `${vectorPdfPath}.hash`;
+
+                const combinedMetadata = {
+                  ...(project.metadata || {}),
+                  ...(contentObj.mergeData || {}),
+                };
+
+                const crypto = require("crypto");
+                const currentHash = crypto
+                  .createHash("sha256")
+                  .update(JSON.stringify({ scene: contentObj, metadata: combinedMetadata }))
+                  .digest("hex");
+
+                let cacheValid = false;
+                if (fs.existsSync(vectorPdfPath) && fs.existsSync(vectorHashPath)) {
+                  try {
+                    const savedHash = fs.readFileSync(vectorHashPath, "utf8").trim();
+                    if (savedHash === currentHash) cacheValid = true;
+                  } catch (e) {}
+                }
+
+                if (cacheValid) {
+                  console.log(`${ts()} Pre-Step: Certificate JSON scene unchanged. Skipping render (Cache HIT: ${vectorPdfFilename}).`);
+                } else {
+                  console.log(`${ts()} Pre-Step: Rendering pdf-lib Vector PDF (${vectorPdfFilename})...`);
+                  await renderCertificateVectorPdf(contentObj, combinedMetadata, vectorPdfPath);
+                  try { fs.writeFileSync(vectorHashPath, currentHash, "utf8"); } catch (e) {}
+                }
+
+                if (typeof fm.content === "object" && fm.content !== null) {
+                  fm.content.vectorPdfFilename = vectorPdfFilename;
+                  fm.content.vectorPdfPath = vectorPdfPath;
+                } else {
+                  fm.content = { ...contentObj, vectorPdfFilename, vectorPdfPath };
+                }
+                console.log(`${ts()} Pre-Step: Pure Vector PDF Ready at ${vectorPdfPath}`);
+              } catch (pdfErr) {
+                console.warn("Vector Certificate Rendering Warning:", pdfErr.message);
+              }
             }
           }
         }
@@ -248,18 +301,45 @@ async function processCompile(jobId, project) {
           const mainPdfBytes = fs.readFileSync(pdfPath);
           const mainPdfDoc = await PDFDocument.load(mainPdfBytes);
 
+          const hasCoverPage = (project.templateId || "MSBTE-project-report") !== "blank";
+          let currentPdfIndex = hasCoverPage ? 1 : 0;
+
           for (let i = 0; i < project.frontMatter.length; i++) {
             const fm = project.frontMatter[i];
+            const isTitlePage =
+              fm.id === "title_page" ||
+              (fm.label && String(fm.label).toLowerCase().trim() === "title page");
+
+            if (isTitlePage) {
+              // Title page is skipped in Typst frontmatter rendering
+              continue;
+            }
+
             if (fm.content?.vectorPdfPath && fs.existsSync(fm.content.vectorPdfPath)) {
               const certBytes = fs.readFileSync(fm.content.vectorPdfPath);
               const certDoc = await PDFDocument.load(certBytes);
-              const [copiedPage] = await mainPdfDoc.copyPages(certDoc, [0]);
+              const certPageCount = certDoc.getPageCount();
 
-              // FrontMatter index: cover/title page is page 1 (index 0). So frontmatter item `i` is at page index `i + 1`.
-              const targetIdx = Math.min(i + 1, mainPdfDoc.getPageCount() - 1);
-              mainPdfDoc.removePage(targetIdx);
-              mainPdfDoc.insertPage(targetIdx, copiedPage);
-              console.log(`${ts()} Step D: Replaced page index ${targetIdx} with pure vector PDF (${fm.content.vectorPdfFilename || 'cert.pdf'})`);
+              if (certPageCount > 0) {
+                const copiedPages = await mainPdfDoc.copyPages(certDoc, certDoc.getPageIndices());
+                const targetIdx = Math.min(currentPdfIndex, mainPdfDoc.getPageCount() - 1);
+                
+                // Remove the single Typst placeholder page
+                mainPdfDoc.removePage(targetIdx);
+
+                // Insert all pages from the vector certificate PDF
+                for (let p = 0; p < copiedPages.length; p++) {
+                  mainPdfDoc.insertPage(targetIdx + p, copiedPages[p]);
+                }
+
+                console.log(
+                  `${ts()} Step D: Replaced page index ${targetIdx} with ${copiedPages.length} pure vector PDF page(s) (${fm.content.vectorPdfFilename || "cert.pdf"})`
+                );
+                currentPdfIndex += certPageCount;
+              }
+            } else {
+              // Regular frontmatter page generated by Typst
+              currentPdfIndex += 1;
             }
           }
 

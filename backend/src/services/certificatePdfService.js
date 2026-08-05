@@ -17,13 +17,128 @@ function hexToPdfRgb(hexStr, defaultRgb = rgb(0, 0, 0)) {
   return rgb(r, g, b);
 }
 
+const DEFAULT_MERGE_DATA = {
+  student_name: "Alexander Wright",
+  college_name: "GOVERNMENT ENGINEERING COLLEGE",
+  department_name: "COMPUTER SCIENCE & ENGINEERING",
+  roll_number: "2025-CS-101",
+  project_title: "AI POWERED DOCUMENT FORGE SYSTEM",
+  academic_year: "2025 - 2026",
+  percentage: "94.5",
+  grade: "A+",
+};
+
+const DEFAULT_CERTIFICATE_OBJECTS = [
+  {
+    id: "border-frame",
+    type: "shape",
+    shapeType: "border",
+    borderStyle: "double",
+    stroke: "#1e3a8a",
+    strokeWidth: 2,
+    margin: 24,
+    x: 0, y: 0, width: 595, height: 842,
+  },
+  {
+    id: "college-header",
+    type: "text",
+    x: 40, y: 60, width: 515, height: 30,
+    text: "{{college_name}}",
+    fontFamily: "Helvetica", fontSize: 20, fontWeight: "bold",
+    fill: "#1e3a8a", align: "center",
+  },
+  {
+    id: "dept-name",
+    type: "text",
+    x: 40, y: 95, width: 515, height: 20,
+    text: "DEPARTMENT OF {{department_name}}",
+    fontFamily: "Helvetica", fontSize: 13, fontWeight: "bold",
+    fill: "#4b5563", align: "center",
+  },
+  {
+    id: "cert-title",
+    type: "text",
+    x: 40, y: 150, width: 515, height: 45,
+    text: "CERTIFICATE OF ACHIEVEMENT",
+    fontFamily: "Times-Roman", fontSize: 26, fontWeight: "bold",
+    fill: "#111827", align: "center",
+  },
+  {
+    id: "sub-text",
+    type: "text",
+    x: 40, y: 215, width: 515, height: 20,
+    text: "This is proudly presented to",
+    fontFamily: "Helvetica", fontSize: 13, fontWeight: "normal",
+    fill: "#6b7280", align: "center",
+  },
+  {
+    id: "candidate-name",
+    type: "text",
+    x: 40, y: 245, width: 515, height: 40,
+    text: "{{student_name}}",
+    fontFamily: "Times-Roman", fontSize: 28, fontWeight: "bold",
+    fill: "#1d4ed8", align: "center",
+  },
+  {
+    id: "cert-body",
+    type: "text",
+    x: 60, y: 305, width: 475, height: 90,
+    text: 'For successfully completing the project titled "{{project_title}}" with outstanding performance in the academic year {{academic_year}}.\n\nRoll No: {{roll_number}}  |  Grade: {{grade}}',
+    fontFamily: "Helvetica", fontSize: 13, fontWeight: "normal",
+    fill: "#374151", align: "center", lineHeight: 1.5,
+  },
+  {
+    id: "details-table",
+    type: "table",
+    x: 60, y: 410, width: 475, height: 100,
+    headers: ["Roll No", "Course", "Marks", "Grade"],
+    rows: [
+      ["{{roll_number}}", "Computer Engineering", "{{percentage}}%", "{{grade}}"],
+      ["102", "Data Structures & Algorithms", "94%", "A+"],
+    ],
+    headerBg: "#ffffff",
+    borderColor: "#000000",
+    fontSize: 11,
+    cellPadding: 8,
+  },
+  {
+    id: "qr-code",
+    type: "qr",
+    x: 70, y: 700, size: 70,
+    text: "https://verify.edu/cert/{{roll_number}}",
+  },
+  {
+    id: "guide-sig",
+    type: "text",
+    x: 230, y: 720, width: 140, height: 40,
+    text: "_____________________\nProject Guide",
+    fontFamily: "Helvetica", fontSize: 11, fontWeight: "bold",
+    fill: "#374151", align: "center",
+  },
+  {
+    id: "hod-sig",
+    type: "text",
+    x: 390, y: 720, width: 140, height: 40,
+    text: "_____________________\nHead of Department",
+    fontFamily: "Helvetica", fontSize: 11, fontWeight: "bold",
+    fill: "#374151", align: "center",
+  },
+];
+
 function replacePlaceholders(text, data = {}) {
   if (typeof text !== "string") return "";
   let result = text;
-  result = result.replace(/\[PROJECT TITLE\]/gi, data.title || "Project Title");
-  result = result.replace(/\[CANDIDATE NAME\]/gi, data.authors || "Candidate Name");
+  result = result.replace(/\[PROJECT TITLE\]/gi, data.title || data.project_title || "Project Title");
+  result = result.replace(/\[CANDIDATE NAME\]/gi, data.authors || data.student_name || "Candidate Name");
   result = result.replace(/\{\{\s*([\w_]+)\s*\}\}/g, (match, p1) => {
-    return data[p1] !== undefined ? data[p1] : match;
+    if (data[p1] !== undefined && data[p1] !== "") return data[p1];
+    if (p1 === "student_name" && data.authors) return data.authors;
+    if (p1 === "college_name" && data.institution) return data.institution;
+    if (p1 === "department_name" && data.department) return data.department;
+    if (p1 === "project_title" && data.title) return data.title;
+    if (p1 === "academic_year" && data.year) return data.year;
+    if (DEFAULT_MERGE_DATA[p1] !== undefined) return DEFAULT_MERGE_DATA[p1];
+    return match;
   });
   return result;
 }
@@ -107,10 +222,35 @@ async function renderCertificateVectorPdf(certData, metadata = {}, outputPath) {
     const fontHelveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const fontTimes = await pdfDoc.embedFont(StandardFonts.TimesRoman);
     const fontTimesBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+    const fontCourier = await pdfDoc.embedFont(StandardFonts.Courier);
+    const fontCourierBold = await pdfDoc.embedFont(StandardFonts.CourierBold);
 
-    // Render structured JSON objects if present
-    if (certData.objects && Array.isArray(certData.objects)) {
-      for (const obj of certData.objects) {
+    const getFont = (fontFamily = "Helvetica", fontWeight = "normal") => {
+      const isBold = fontWeight === "bold" || fontWeight === "700" || Number(fontWeight) >= 700;
+      const family = String(fontFamily || "").toLowerCase();
+      if (
+        family.includes("times") ||
+        family.includes("cinzel") ||
+        family.includes("playfair") ||
+        family.includes("vibes") ||
+        family.includes("georgia") ||
+        family.includes("serif")
+      ) {
+        return isBold ? fontTimesBold : fontTimes;
+      }
+      if (family.includes("courier") || family.includes("mono") || family.includes("code")) {
+        return isBold ? fontCourierBold : fontCourier;
+      }
+      return isBold ? fontHelveticaBold : fontHelvetica;
+    };
+
+    // Render structured JSON objects (or default canvas objects)
+    const renderObjects = (certData?.objects && Array.isArray(certData.objects) && certData.objects.length > 0)
+      ? certData.objects
+      : DEFAULT_CERTIFICATE_OBJECTS;
+
+    if (renderObjects && Array.isArray(renderObjects)) {
+      for (const obj of renderObjects) {
         if (!obj || obj.hidden) continue;
 
         const objX = Number(obj.x || 0);
@@ -122,7 +262,7 @@ async function renderCertificateVectorPdf(certData, metadata = {}, outputPath) {
           const rawText = replacePlaceholders(obj.text || "", metadata);
           if (!rawText) continue;
           const fontSize = Number(obj.fontSize || 14);
-          const font = (obj.fontWeight === "bold" || obj.fontWeight === "700") ? fontHelveticaBold : fontHelvetica;
+          const font = getFont(obj.fontFamily, obj.fontWeight);
           const textColor = hexToPdfRgb(obj.fill, rgb(0, 0, 0));
           const lines = wrapText(rawText, font, fontSize, objW);
           const lineHeight = fontSize * (obj.lineHeight || 1.25);
@@ -154,6 +294,17 @@ async function renderCertificateVectorPdf(certData, metadata = {}, outputPath) {
             } else if (obj.src.startsWith("data:image/jpeg;base64,") || obj.src.startsWith("data:image/jpg;base64,")) {
               const base64Data = obj.src.replace(/^data:image\/jpe?g;base64,/, "");
               img = await pdfDoc.embedJpg(Buffer.from(base64Data, "base64"));
+            } else if (obj.src.startsWith("http://") || obj.src.startsWith("https://")) {
+              const res = await fetch(obj.src);
+              if (res.ok) {
+                const arrayBuf = await res.arrayBuffer();
+                const buf = Buffer.from(arrayBuf);
+                if (obj.src.toLowerCase().includes(".png")) {
+                  img = await pdfDoc.embedPng(buf);
+                } else {
+                  img = await pdfDoc.embedJpg(buf);
+                }
+              }
             }
             if (img) {
               page.drawImage(img, {
@@ -198,6 +349,25 @@ async function renderCertificateVectorPdf(certData, metadata = {}, outputPath) {
               borderColor: strokeColor,
               borderWidth: strokeColor ? borderWidth : 0,
             });
+          } else if (shapeKind === "circle") {
+            const rx = objW / 2;
+            const ry = objH / 2;
+            page.drawEllipse({
+              x: objX + rx,
+              y: pageH - objY - ry,
+              xScale: rx,
+              yScale: ry,
+              color: fillColor,
+              borderColor: strokeColor,
+              borderWidth: strokeColor ? borderWidth : 0,
+            });
+          } else if (shapeKind === "line") {
+            page.drawLine({
+              start: { x: objX, y: pageH - objY },
+              end: { x: objX + objW, y: pageH - objY - objH },
+              thickness: borderWidth,
+              color: strokeColor || fillColor || hexToPdfRgb("#000000"),
+            });
           } else if (shapeKind === "border") {
             const margin = Number(obj.margin || 20);
             page.drawRectangle({
@@ -206,7 +376,7 @@ async function renderCertificateVectorPdf(certData, metadata = {}, outputPath) {
               width: pageW - margin * 2,
               height: pageH - margin * 2,
               borderColor: strokeColor || hexToPdfRgb("#1e3a8a"),
-              borderWidth: 2,
+              borderWidth: borderWidth || 2,
             });
           }
         } else if (obj.type === "table") {

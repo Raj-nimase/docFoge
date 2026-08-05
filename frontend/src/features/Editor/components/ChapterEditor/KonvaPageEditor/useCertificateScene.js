@@ -22,17 +22,21 @@ const DEFAULT_PAGE = { width: 595, height: 842, bg: "#ffffff" };
  */
 function readScene(section, metadata = {}) {
   const stored = section?.content;
-  const hasObjects = Array.isArray(stored?.objects);
+  const hasObjects = Array.isArray(stored?.objects) && stored.objects.length > 0;
 
   const seededDefaults = {
     ...DEFAULT_MERGE_DATA,
     ...(metadata.authors ? { student_name: metadata.authors } : {}),
     ...(metadata.title ? { project_title: metadata.title } : {}),
+    ...(metadata.institution ? { college_name: metadata.institution } : {}),
+    ...(metadata.department ? { department_name: metadata.department } : {}),
+    ...(metadata.year ? { academic_year: metadata.year } : {}),
   };
 
   if (!hasObjects) {
     const template = PRESET_TEMPLATES[0];
     return {
+      isCertificateCanvas: true,
       page: { ...DEFAULT_PAGE, ...template.page },
       objects: JSON.parse(JSON.stringify(template.objects)),
       mergeData: seededDefaults,
@@ -40,6 +44,7 @@ function readScene(section, metadata = {}) {
   }
 
   return {
+    isCertificateCanvas: true,
     page: { ...DEFAULT_PAGE, ...(stored.page || {}) },
     objects: stored.objects,
     mergeData: { ...seededDefaults, ...(stored.mergeData || {}) },
@@ -106,7 +111,10 @@ export default function useCertificateScene(section) {
     (nextScene) => {
       // The section id is captured with the payload, so a pending write can
       // never land on a section the user has since switched away from.
-      pendingSceneRef.current = { sectionId: section?.id, data: nextScene };
+      pendingSceneRef.current = {
+        sectionId: section?.id,
+        data: { ...nextScene, isCertificateCanvas: true },
+      };
       if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
       persistTimerRef.current = setTimeout(flushPersist, PERSIST_MS);
     },
@@ -127,6 +135,11 @@ export default function useCertificateScene(section) {
     historyIdxRef.current = 0;
     lastCommitRef.current = { key: null, at: 0 };
     setHistoryMeta({ canUndo: false, canRedo: false });
+
+    // Auto-persist default canvas scene if section content was empty/uninitialized
+    if (!section?.content?.objects || !Array.isArray(section.content.objects) || section.content.objects.length === 0) {
+      schedulePersist(fresh);
+    }
     // Re-reading on every `section` identity change would fight the user's own
     // edits, since our writes flow back through the store. Key on id only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
