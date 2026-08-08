@@ -1,4 +1,5 @@
 const Project = require('../models/Project');
+const { deleteProjectImages } = require('../services/storageService');
 
 async function listProjects(req, res, next) {
   try {
@@ -83,6 +84,11 @@ async function syncProjects(req, res, next) {
           filter: { userId: req.user._id, clientId: { $in: deleteIds } }
         }
       });
+      deleteIds.forEach((pId) => {
+        deleteProjectImages(req.user._id.toString(), pId).catch((err) =>
+          console.warn(`[syncProjects] Cloudinary cleanup failed for ${pId}:`, err.message)
+        );
+      });
     }
 
     if (ops.length > 0) {
@@ -131,6 +137,9 @@ async function deleteProject(req, res, next) {
   try {
     const { clientId } = req.params;
     await Project.deleteOne({ userId: req.user._id, clientId });
+    deleteProjectImages(req.user._id.toString(), clientId).catch((err) =>
+      console.warn(`[deleteProject] Cloudinary cleanup failed for ${clientId}:`, err.message)
+    );
     res.json({ success: true });
   } catch (err) {
     next(err);

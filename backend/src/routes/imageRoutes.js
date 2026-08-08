@@ -1,5 +1,5 @@
 /**
- * imageRoutes.js — POST /api/images/upload
+ * imageRoutes.js — POST /api/images/upload, DELETE /api/images/delete
  *
  * Accepts a multipart/form-data request with a single `file` field.
  * Validates type and size, then uploads to Cloudinary via storageService.
@@ -9,7 +9,7 @@
 const express = require('express');
 const multer  = require('multer');
 const { requireAuth } = require('../middleware/auth');
-const { uploadImageBuffer } = require('../services/storageService');
+const { uploadImageBuffer, deleteImageByUrl } = require('../services/storageService');
 
 const router = express.Router();
 
@@ -48,7 +48,8 @@ router.post(
 
     try {
       const userId = req.user._id.toString();
-      const url = await uploadImageBuffer(userId, req.file.buffer, req.file.mimetype);
+      const projectId = req.body?.projectId || req.query?.projectId || '';
+      const url = await uploadImageBuffer(userId, projectId, req.file.buffer, req.file.mimetype);
       res.json({ success: true, url });
     } catch (err) {
       console.error('[images] upload failed', err.message);
@@ -57,4 +58,20 @@ router.post(
   },
 );
 
+router.delete('/delete', requireAuth, async (req, res) => {
+  try {
+    const { url } = req.body || {};
+    if (!url) {
+      return res.status(400).json({ success: false, error: 'Image URL is required' });
+    }
+
+    await deleteImageByUrl(url);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[images] delete failed', err.message);
+    res.status(500).json({ success: false, error: 'Image deletion failed' });
+  }
+});
+
 module.exports = router;
+

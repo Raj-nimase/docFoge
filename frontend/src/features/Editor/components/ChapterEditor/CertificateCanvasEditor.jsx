@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CircleAlert } from "lucide-react";
 import useAcaStore from "@/contexts/projectStore/projectStore";
+import { uploadImage, deleteImage } from "@/services/api";
 import { generateVectorPdfFromScene } from "@/utils/pdfVectorRenderer";
 import KonvaStage from "./KonvaPageEditor/KonvaStage";
 import EditorToolbar from "./KonvaPageEditor/EditorToolbar";
@@ -128,12 +129,20 @@ export default function CertificateCanvasEditor({ section }) {
     if (!file) return;
 
     try {
-      const { src, width, height } = await prepareImageFile(file);
+      showToast("Uploading image...", "info");
+      const { width, height } = await prepareImageFile(file);
+      const imageUrl = await uploadImage(file, currentProject?.id);
       const targetId = replaceTargetRef.current;
       replaceTargetRef.current = null;
 
       if (targetId) {
-        updateObject(targetId, { src });
+        const oldObj = scene.objects?.find((o) => o.id === targetId);
+        if (oldObj?.src && oldObj.src.includes("res.cloudinary.com")) {
+          deleteImage(oldObj.src).catch((err) =>
+            console.warn("Failed to delete old image from Cloudinary:", err)
+          );
+        }
+        updateObject(targetId, { src: imageUrl });
         showToast("Image replaced.");
         return;
       }
@@ -146,9 +155,10 @@ export default function CertificateCanvasEditor({ section }) {
       const w = ratio >= 1 ? maxEdge : Math.round(maxEdge * ratio);
       const h = ratio >= 1 ? Math.round(maxEdge / ratio) : maxEdge;
 
-      addObject("image", { src, overrides: { width: w, height: h } });
+      addObject("image", { src: imageUrl, overrides: { width: w, height: h } });
+      showToast("Image added successfully.");
     } catch (err) {
-      showToast(err.message || "Could not add that image.", "error");
+      showToast(err.message || "Could not upload image.", "error");
     }
   };
 

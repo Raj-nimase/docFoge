@@ -1,3 +1,5 @@
+import { compressImageForUpload } from '@/utils/imageCompressor';
+
 /** Single source of truth for the backend URL. Change this one line to switch environments. */
 export const API_BASE_URL = (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'))
   ? 'http://localhost:3001/api'
@@ -325,14 +327,17 @@ export async function fetchProject(clientId) {
  * Upload an image file to Cloudinary via the backend proxy.
  * Returns the secure HTTPS URL of the uploaded image.
  * @param {File} file
+ * @param {string} [projectId]
  * @returns {Promise<string>} Cloudinary secure URL
  */
-export async function uploadImage(file) {
+export async function uploadImage(file, projectId = '') {
+  const compressedFile = await compressImageForUpload(file);
   const token = getStoredToken();
   const form  = new FormData();
-  form.append('file', file);
+  form.append('file', compressedFile);
 
-  const res = await fetch(`${BASE}/images/upload`, {
+  const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
+  const res = await fetch(`${BASE}/images/upload${query}`, {
     method: 'POST',
     // NOTE: Do NOT set Content-Type — the browser sets multipart/form-data + boundary automatically
     headers: { Authorization: `Bearer ${token}` },
@@ -342,6 +347,18 @@ export async function uploadImage(file) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.success) throw new Error(data.error || 'Image upload failed');
   return data.url;
+}
+
+/**
+ * Delete an image from Cloudinary via the backend proxy.
+ * @param {string} url - Secure HTTPS URL of the image to delete
+ * @returns {Promise<object>} Result from backend
+ */
+export async function deleteImage(url) {
+  return authFetch('/images/delete', {
+    method: 'DELETE',
+    body: { url },
+  });
 }
 
 // ─── Compile ──────────────────────────────────────────────────────────────────

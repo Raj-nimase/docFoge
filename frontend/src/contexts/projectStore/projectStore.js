@@ -168,7 +168,8 @@ export async function processSyncQueue() {
 
     for (const item of queue) {
       if (item.type === 'DELETE') {
-        deleteIds.push(item.projectId);
+        dirtyProjectsMap.delete(item.projectId);
+        if (!deleteIds.includes(item.projectId)) deleteIds.push(item.projectId);
         processedItemIds.push(item.id);
       } else if (item.type === 'UPSERT' || item.type === 'TRASH' || item.type === 'RESTORE') {
         if (item.payload) {
@@ -184,6 +185,8 @@ export async function processSyncQueue() {
             })),
           };
           dirtyProjectsMap.set(item.projectId, sanitized);
+          const delIdx = deleteIds.indexOf(item.projectId);
+          if (delIdx !== -1) deleteIds.splice(delIdx, 1);
         }
         processedItemIds.push(item.id);
       }
@@ -237,7 +240,7 @@ export async function clearProjectsLocal() {
 }
 
 // Safety net: if the user closes the tab or switches apps while a debounced sync is pending,
-// flush it using navigator.sendBeacon and synchronous localStorage write.
+// flush it using fetch with keepalive: true and proper Authorization header.
 if (typeof window !== 'undefined') {
   const flushPendingBeacon = () => {
     if (_lsPending !== null) {
@@ -253,10 +256,13 @@ if (typeof window !== 'undefined') {
 
       for (const item of queue) {
         if (item.type === 'DELETE') {
-          deleteIds.push(item.projectId);
+          dirtyProjectsMap.delete(item.projectId);
+          if (!deleteIds.includes(item.projectId)) deleteIds.push(item.projectId);
         } else if (item.type === 'UPSERT' || item.type === 'TRASH' || item.type === 'RESTORE') {
           if (item.payload) {
             dirtyProjectsMap.set(item.projectId, item.payload);
+            const delIdx = deleteIds.indexOf(item.projectId);
+            if (delIdx !== -1) deleteIds.splice(delIdx, 1);
           }
         }
       }
@@ -268,11 +274,18 @@ if (typeof window !== 'undefined') {
       if (!token) return;
 
       const payload = JSON.stringify({ projects: projectsToUpsert, deleteIds });
-      const blob = new Blob([payload], { type: 'application/json' });
-
-      // Send beacon reliably on tab exit / unload
       const backendUrl = api.API_BASE_URL || 'http://localhost:3001/api';
-      navigator.sendBeacon(`${backendUrl}/projects/sync/all`, blob);
+
+      // Use fetch with keepalive: true so auth header is preserved on unload
+      fetch(`${backendUrl}/projects/sync/all`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: payload,
+        keepalive: true,
+      }).catch(() => {});
     } catch (_) {}
   };
 
@@ -289,20 +302,43 @@ function genId() {
 }
 
 /**
- * Walk a Tiptap JSON doc tree and replace any image nodes whose src is a
- * data: URI with a placeholder empty string.
- * Returns the cleaned doc (mutates-in-place for performance).
+ * Walk a JSON doc tree (TipTap doc or Canvas Scene) and replace any image
+ * nodes/objects whose src is a data: URI with a placeholder empty string.
+ * Returns the cleaned doc.
  */
 function stripBase64FromDoc(doc) {
   if (!doc || typeof doc !== 'object') return doc;
   if (Array.isArray(doc)) return doc.map(stripBase64FromDoc);
-  if (doc.type === 'image' && typeof doc.attrs?.src === 'string' && doc.attrs.src.startsWith('data:')) {
-    return { ...doc, attrs: { ...doc.attrs, src: '' } };
+
+  let updatedDoc = doc;
+
+  if (updatedDoc.type === 'image' && typeof updatedDoc.attrs?.src === 'string' && updatedDoc.attrs.src.startsWith('data:')) {
+    updatedDoc = { ...updatedDoc, attrs: { ...updatedDoc.attrs, src: '' } };
   }
-  if (doc.content) {
-    return { ...doc, content: doc.content.map(stripBase64FromDoc) };
+
+  if (Array.isArray(updatedDoc.objects)) {
+    const hasBase64Src = updatedDoc.objects.some(obj => typeof obj?.src === 'string' && obj.src.startsWith('data:'));
+    if (hasBase64Src) {
+      updatedDoc = {
+        ...updatedDoc,
+        objects: updatedDoc.objects.map(obj => {
+          if (typeof obj?.src === 'string' && obj.src.startsWith('data:')) {
+            return { ...obj, src: '' };
+          }
+          return obj;
+        }),
+      };
+    }
   }
-  return doc;
+
+  if (updatedDoc.content) {
+    const newContent = stripBase64FromDoc(updatedDoc.content);
+    if (newContent !== updatedDoc.content) {
+      updatedDoc = { ...updatedDoc, content: newContent };
+    }
+  }
+
+  return updatedDoc;
 }
 
 /**
@@ -495,6 +531,22 @@ export const useProjectStore = create((set, get) => ({
     const t0 = Date.now();
     const token = api.getStoredToken();
 
+    // ── Dedup: if a sync is already running, join it immediately ───
+    if (_loadProjectsPromise) {
+      console.log('[projects] sync already in-flight — joining existing promise');
+      return _loadProjectsPromise;
+    }
+
+    // ── Throttle: skip duplicate cloud sync if we synced in the last 3 seconds ───
+    if (!force && _projectsLoadedOnce && (Date.now() - _lastSyncTime) < SYNC_THROTTLE_MS) {
+      console.log('[projects] sync throttled — using cached data', `(${Math.round((Date.now() - _lastSyncTime) / 1000)}s since last sync)`);
+      return { count: get().projects.length, cached: true };
+    }
+    if (force && _projectsLoadedOnce && (Date.now() - _lastSyncTime) < 3000) {
+      console.log('[projects] sync completed very recently — skipping redundant force sync');
+      return { count: get().projects.length, cached: true };
+    }
+
     if (force) {
       // Force reload / User transition: reset sync state and wipe local baseline
       _lastSyncTime = 0;
@@ -534,18 +586,6 @@ export const useProjectStore = create((set, get) => ({
       _projectsLoadedOnce = true;
       set({ projects: effectiveLocal, projectsLoaded: true });
       return { count: effectiveLocal.length, guest: true };
-    }
-
-    // ── Throttle: skip cloud sync if we synced recently ─────────────────
-    if (!force && _projectsLoadedOnce && (Date.now() - _lastSyncTime) < SYNC_THROTTLE_MS) {
-      console.log('[projects] sync throttled — using cached data', `(${Math.round((Date.now() - _lastSyncTime) / 1000)}s since last sync)`);
-      return { count: get().projects.length, cached: true };
-    }
-
-    // ── Dedup: if a sync is already running, join it (even for force) ───
-    if (_loadProjectsPromise) {
-      console.log('[projects] sync already in-flight — joining existing promise');
-      return _loadProjectsPromise;
     }
 
     _loadProjectsPromise = (async () => {
