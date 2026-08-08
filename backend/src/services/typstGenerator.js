@@ -351,17 +351,25 @@ function processTextNodeWithMath(text) {
 /**
  * Core TipTap to Typst converter function
  */
-function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0) {
+function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { lastOrderedEnd: 0, lastWasContinuation: false }, isTopLevel = true) {
   if (!nodes || !Array.isArray(nodes)) return '';
 
   let output = '';
 
   for (const node of nodes) {
     if (node.type === 'paragraph') {
-      const content = convertTipTapToTypst(node.content, imagePrefix, headingShift);
+      const content = convertTipTapToTypst(node.content, imagePrefix, headingShift, state, false);
+      if (isTopLevel && content.trim()) {
+        state.lastOrderedEnd = 0;
+        state.lastWasContinuation = false;
+      }
       output += `${content}\n\n`;
     } else if (node.type === 'heading') {
-      let headingContent = convertTipTapToTypst(node.content, imagePrefix, headingShift).trim();
+      if (isTopLevel) {
+        state.lastOrderedEnd = 0;
+        state.lastWasContinuation = false;
+      }
+      let headingContent = convertTipTapToTypst(node.content, imagePrefix, headingShift, state, false).trim();
       headingContent = stripAllPrefixes(headingContent);
       
       let level = (node.attrs?.level || 1) + headingShift;
@@ -370,9 +378,13 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0) {
       
       output += `${'='.repeat(level)} ${headingContent}\n\n`;
     } else if (node.type === 'bulletList') {
+      if (isTopLevel) {
+        state.lastOrderedEnd = 0;
+        state.lastWasContinuation = false;
+      }
       if (node.content) {
         node.content.forEach(li => {
-          const content = convertTipTapToTypst(li.content, imagePrefix, headingShift).trim();
+          const content = convertTipTapToTypst(li.content, imagePrefix, headingShift, state, false).trim();
           const lines = content.split('\n');
           const formatted = lines.map((line, idx) => (idx === 0 ? `- ${line}` : line.trim() ? `  ${line}` : '')).join('\n');
           output += `${formatted}\n`;
@@ -380,20 +392,39 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0) {
       }
       output += '\n';
     } else if (node.type === 'orderedList') {
-      if (node.content) {
+      if (node.content && node.content.length > 0) {
+        let startNum = 1;
+        if (state.lastOrderedEnd > 0 && state.lastWasContinuation) {
+          startNum = state.lastOrderedEnd + 1;
+        }
+
+        // Always emit #set enum(start: startNum) to reset Typst's global enum counter for new/continued lists
+        output += `#set enum(start: ${startNum})\n`;
+
+        let itemCount = 0;
         node.content.forEach(li => {
-          const content = convertTipTapToTypst(li.content, imagePrefix, headingShift).trim();
+          itemCount++;
+          const content = convertTipTapToTypst(li.content, imagePrefix, headingShift, state, false).trim();
           const lines = content.split('\n');
           const formatted = lines.map((line, idx) => (idx === 0 ? `+ ${line}` : line.trim() ? `  ${line}` : '')).join('\n');
           output += `${formatted}\n`;
         });
+
+        if (isTopLevel) {
+          state.lastOrderedEnd = startNum + itemCount - 1;
+          state.lastWasContinuation = true;
+        }
       }
       output += '\n';
     } else if (node.type === 'taskList') {
+      if (isTopLevel) {
+        state.lastOrderedEnd = 0;
+        state.lastWasContinuation = false;
+      }
       if (node.content) {
         node.content.forEach(item => {
           const checked = item.attrs?.checked ? 'x' : ' ';
-          const content = convertTipTapToTypst(item.content, imagePrefix, headingShift).trim();
+          const content = convertTipTapToTypst(item.content, imagePrefix, headingShift, state, false).trim();
           const lines = content.split('\n');
           const formatted = lines.map((line, idx) => (idx === 0 ? `- [${checked}] ${line}` : line.trim() ? `  ${line}` : '')).join('\n');
           output += `${formatted}\n`;
@@ -403,12 +434,18 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0) {
     } else if (node.type === 'codeBlock') {
       const code = node.content?.map(n => n.text || '').join('') || '';
       const lang = node.attrs?.language || '';
-      output += '`' + '`' + '`' + lang + '\n' + code + '\n' + '`' + '`' + '`' + '\n\n';
+      const backtickMatches = code.match(/`{3,}/g);
+      let fence = '```';
+      if (backtickMatches) {
+        const maxLen = Math.max(...backtickMatches.map(m => m.length));
+        fence = '`'.repeat(maxLen + 1);
+      }
+      output += fence + lang + '\n' + code + '\n' + fence + '\n\n';
     } else if (node.type === 'blockquote') {
-      const content = convertTipTapToTypst(node.content, imagePrefix, headingShift);
+      const content = convertTipTapToTypst(node.content, imagePrefix, headingShift, state, false);
       output += `#block(stroke: (left: 2pt + gray), inset: (left: 10pt, y: 0pt))[${content}]\n\n`;
     } else if (node.type === 'callout' || node.type === 'notice') {
-      const content = convertTipTapToTypst(node.content, imagePrefix, headingShift).trim();
+      const content = convertTipTapToTypst(node.content, imagePrefix, headingShift, state, false).trim();
       output += `#rect(width: 100%, inset: 10pt, radius: 4pt, fill: rgb("#f0f4f8"), stroke: 0.5pt + rgb("#cbd5e1"))[${content}]\n\n`;
     } else if (node.type === 'table') {
       let cols = 1;
@@ -420,7 +457,7 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0) {
       
       node.content?.forEach(row => {
         row.content?.forEach(cell => {
-          const cellContent = convertTipTapToTypst(cell.content, imagePrefix, headingShift).trim();
+          const cellContent = convertTipTapToTypst(cell.content, imagePrefix, headingShift).trim().replace(/\n{2,}/g, '\n');
           if (cell.type === 'tableHeader') {
             tableContent += `  [*${cellContent}*],\n`;
           } else {
@@ -483,6 +520,10 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0) {
         }
       }
       output += t;
+    } else {
+      if (isTopLevel) {
+        state.lastWasContinuation = false;
+      }
     }
   }
 

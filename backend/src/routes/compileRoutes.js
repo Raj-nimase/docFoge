@@ -241,6 +241,7 @@ async function processCompile(jobId, project) {
     // and defeats the content-hash PDF cache in typstRunner.
     const imagePrefix = project.id ?? jobId;
     const { typst, images, safe, reason } = generateProjectTypst(project, imagePrefix);
+    console.log("=== FULL GENERATED TYPST ===\n", typst);
     console.log(`${ts()} Step A done. safe=${safe} typstBytes=${typst.length} images=${images?.length ?? 0}`);
     if (!safe) throw new Error(`Typst safety check failed: ${reason}`);
 

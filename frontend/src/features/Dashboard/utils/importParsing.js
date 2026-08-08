@@ -103,8 +103,10 @@ export function htmlToTipTapNode(el) {
   }
 
   if (tag === 'ol') {
+    const startAttr = el.getAttribute('start');
+    const start = startAttr ? parseInt(startAttr, 10) : undefined;
     const items = Array.from(el.children).map(htmlToTipTapNode).filter(Boolean);
-    return { type: 'orderedList', content: items };
+    return { type: 'orderedList', attrs: start ? { start } : {}, content: items };
   }
 
   if (tag === 'li') {

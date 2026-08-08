@@ -49,6 +49,7 @@ export default function useCompile() {
       }
 
       const freshProject = useAcaStore.getState().getCurrentProject() || currentProject;
+      console.log(`[COMPILE_DEBUG] Chapters AST sent to backend:`, JSON.stringify(freshProject.chapters, null, 2));
 
       // Sync project to the cloud before compilation
       const syncActiveProjectNow = useAcaStore.getState().syncActiveProjectNow;

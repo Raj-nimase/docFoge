@@ -729,7 +729,9 @@ export function parseMarkdownMathToHtml(text) {
 
     // Markdown code block fence
     if (trimmed.startsWith("```")) {
-      flushList();
+      if (listStack.length === 0) {
+        flushList();
+      }
       const lang = trimmed.slice(3).trim();
       const codeLines = [];
       i++;
