@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   Bold,
   Italic,
@@ -21,6 +22,9 @@ import {
   Tag,
   Sigma,
   FileText,
+  Type,
+  ChevronDown,
+  Check,
 } from 'lucide-react';
 import { useEditorState } from '@tiptap/react';
 import { HEADING_LEVELS, getActiveHeadingLevel, toggleHeading, clearHeading } from '@/features/Editor/utils/editorFormatActions';
@@ -91,6 +95,103 @@ function convertTextToParagraphsAndLists(lines) {
   }
   flushBlock();
   return blocks;
+}
+
+const FONT_OPTIONS = [
+  {
+    id: 'Times New Roman',
+    label: 'Times New Roman',
+    tag: 'Academic Standard (IEEE/MSBTE)',
+    fontFamily: "'Times New Roman', Times, serif",
+  },
+  {
+    id: 'Arial',
+    label: 'Arial',
+    tag: 'Clean Sans-Serif',
+    fontFamily: "'Arial', 'Helvetica Neue', sans-serif",
+  },
+  {
+    id: 'Courier New',
+    label: 'Courier New',
+    tag: 'Monospace / Code',
+    fontFamily: "'Courier New', Courier, monospace",
+  },
+  {
+    id: 'New Computer Modern',
+    label: 'New Computer Modern',
+    tag: 'LaTeX Math Paper',
+    fontFamily: "'New Computer Modern', 'Computer Modern', serif",
+  },
+  {
+    id: 'Libertinus Serif',
+    label: 'Libertinus Serif',
+    tag: 'Journal Serif',
+    fontFamily: "'Libertinus Serif', 'Georgia', serif",
+  },
+];
+
+function FontSelector() {
+  const [isOpen, setIsOpen] = useState(false);
+  const currentProject = useAcaStore((s) => s.getCurrentProject());
+  const updateMetadata = useAcaStore((s) => s.updateMetadata);
+
+  const activeFontId = currentProject?.metadata?.fontFamily || 'Times New Roman';
+  const activeFont = FONT_OPTIONS.find((f) => f.id === activeFontId) || FONT_OPTIONS[0];
+
+  const handleSelect = (fontId) => {
+    updateMetadata({ fontFamily: fontId });
+    setIsOpen(false);
+  };
+
+  return (
+    <div className="toolbar-font-container">
+      <button
+        type="button"
+        className="toolbar-btn toolbar-btn--font"
+        onClick={() => setIsOpen((prev) => !prev)}
+        aria-expanded={isOpen}
+        title="Document PDF Font Family"
+      >
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, overflow: 'hidden', flex: 1, minWidth: 0 }}>
+          <Type size={14} className="toolbar-heading-icon" style={{ flexShrink: 0 }} />
+          <span className="toolbar-font-name" style={{ fontFamily: activeFont.fontFamily }}>
+            {activeFont.label}
+          </span>
+        </span>
+        <ChevronDown size={13} style={{ opacity: 0.65, transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease', flexShrink: 0 }} />
+      </button>
+
+      {isOpen && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 99988 }} onClick={() => setIsOpen(false)} />
+          <div className="toolbar-font-menu">
+            <div className="toolbar-font-header">
+              Document Font Family
+            </div>
+            {FONT_OPTIONS.map((f) => {
+              const selected = f.id === activeFontId;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  className={`toolbar-font-option ${selected ? 'toolbar-font-option--active' : ''}`}
+                  onClick={() => handleSelect(f.id)}
+                >
+                  <div>
+                    <div className="toolbar-font-option-title" style={{ fontFamily: f.fontFamily }}>
+                      {f.label}
+                    </div>
+                    <div className="toolbar-font-option-desc">{f.tag}</div>
+                  </div>
+                  {selected && <Check size={14} style={{ color: 'var(--accent)', marginLeft: 8, flexShrink: 0 }} />}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 export default function ToolbarGroups({ editor }) {
@@ -272,6 +373,10 @@ export default function ToolbarGroups({ editor }) {
 
   return (
     <div className="toolbar-groups-row">
+      {group('Font', <FontSelector />)}
+
+      {divider()}
+
       {group('Text', <>
         {iconBtn(() => editor.chain().focus().toggleBold().run(), <Bold size={15} />, 'Bold', 'Bold (Ctrl+B)', state.bold)}
         {iconBtn(() => editor.chain().focus().toggleItalic().run(), <Italic size={15} />, 'Italic', 'Italic (Ctrl+I)', state.italic)}

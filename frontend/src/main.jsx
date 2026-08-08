@@ -14,12 +14,21 @@ createRoot(document.getElementById("root")).render(
 );
 
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker
-      .register("/sw.js")
-      .then((reg) => console.log("[Service Worker] Registered with scope:", reg.scope))
-      .catch((err) => console.error("[Service Worker] Registration failed:", err));
-  });
+  if (import.meta.env.PROD) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker
+        .register("/sw.js")
+        .then((reg) => console.log("[Service Worker] Registered with scope:", reg.scope))
+        .catch((err) => console.error("[Service Worker] Registration failed:", err));
+    });
+  } else {
+    // In development mode, unregister active service worker to prevent stale dev caching
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      for (const registration of registrations) {
+        registration.unregister();
+      }
+    });
+  }
 }
 
 // Detect PWA standalone mode and apply class to html element

@@ -174,8 +174,11 @@ function runTypst(typPath, pdfPath) {
     // Typst CLI: typst compile <input.typ> <output.pdf>
     // --root sets the root directory for file access (images etc.)
     const rootDir = path.dirname(typPath);
+    const FONTS_DIR = path.resolve(__dirname, '..', '..', 'fonts');
     const args = [
       'compile',
+      '--ignore-system-fonts',
+      ...(fs.existsSync(FONTS_DIR) ? ['--font-path', FONTS_DIR] : []),
       '--root', rootDir,
       typPath,
       pdfPath,

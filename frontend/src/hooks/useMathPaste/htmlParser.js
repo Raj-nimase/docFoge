@@ -115,7 +115,7 @@ function ommlToLatex(node) {
   }
 }
 
-function convertOmmlInHtml(rawHtml) {
+function convertOmmlInHtml(rawHtml, parser) {
   if (!rawHtml) return "";
 
   let processedHtml = rawHtml.replace(
@@ -131,8 +131,8 @@ function convertOmmlInHtml(rawHtml) {
       if (!cleanXml) return "";
 
       try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(
+        const domParser = parser || new DOMParser();
+        const doc = domParser.parseFromString(
           `<root xmlns:m="http://schemas.microsoft.com/office/2004/12/omml" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${cleanXml}</root>`,
           "text/xml",
         );
@@ -164,9 +164,9 @@ function convertOmmlInHtml(rawHtml) {
   return processedHtml;
 }
 
-function cleanMsOfficeHtml(rawHtml) {
+function cleanMsOfficeHtml(rawHtml, parser) {
   if (!rawHtml) return "";
-  let cleaned = convertOmmlInHtml(rawHtml);
+  let cleaned = convertOmmlInHtml(rawHtml, parser);
   cleaned = cleaned.replace(/<!--\[if[\s\S]*?<!\[endif\]-->/gi, "");
   cleaned = cleaned
     .replace(/<o:p\b[^>]*>[\s\S]*?<\/o:p>/gi, "")
@@ -182,15 +182,40 @@ function transformWordListParagraphs(doc) {
     el.remove();
   });
 
-  const allBlocks = Array.from(doc.querySelectorAll("p, div, p.MsoListParagraph"));
-  const listItems = [];
+  const allBlocks = Array.from(doc.querySelectorAll("p, div"));
+  let currentGroup = [];
+  let currentListType = null;
 
-  allBlocks.forEach((el) => {
-    if (!el.isConnected) return;
+  const flushGroup = () => {
+    if (currentGroup.length === 0) return;
+    const firstEl = currentGroup[0];
+    const listEl = doc.createElement(currentListType);
+
+    currentGroup.forEach((el) => {
+      const li = doc.createElement("li");
+      let htmlContent = el.innerHTML.trim();
+      htmlContent = htmlContent.replace(/^([\u25CF\u2022\u25CB\u25A1\u25A0\u2013\u2014\u2212\uF0B7\u00B7\uF0A7*•-]\s*)+/i, "");
+      li.innerHTML = htmlContent || el.textContent;
+      listEl.appendChild(li);
+    });
+
+    firstEl.parentNode.insertBefore(listEl, firstEl);
+    currentGroup.forEach((el) => el.remove());
+    currentGroup = [];
+    currentListType = null;
+  };
+
+  for (let i = 0; i < allBlocks.length; i++) {
+    const el = allBlocks[i];
+    if (!el.isConnected) continue;
+
     const className = el.className || "";
     const style = el.getAttribute("style") || "";
     const text = el.textContent.trim();
-    if (!text) return;
+    if (!text) {
+      flushGroup();
+      continue;
+    }
 
     const isMsoList = /MsoListParagraph/i.test(className) || /mso-list\s*:/i.test(style);
     const hasBulletSymbol = /^[\u25CF\u2022\u25CB\u25A1\u25A0\u2013\u2014\u2212\uF0B7\u00B7\uF0A7*•-]\s*/.test(text);
@@ -199,51 +224,36 @@ function transformWordListParagraphs(doc) {
     // Skip math expressions that start with - (e.g. -\sum, -\frac, -\int, -\nabla, -\alpha)
     // or contain LaTeX display math / closing bracket ]
     const isMathExpr = /^\s*-\\[a-zA-Z]/.test(text) || (/\\[a-zA-Z]{2,}/.test(text) && (text.includes("]") || text.includes("[")));
-    if (isMathExpr && !isMsoList) return;
+    if (isMathExpr && !isMsoList) {
+      flushGroup();
+      continue;
+    }
 
     if (isMsoList || hasBulletSymbol || hasNumberMarker) {
       let type = "ul";
       if (hasNumberMarker && !hasBulletSymbol && !isMsoList) {
         type = "ol";
       }
-      listItems.push({ el, type });
-    }
-  });
 
-  let i = 0;
-  while (i < listItems.length) {
-    const group = [listItems[i]];
-    let j = i + 1;
-    while (j < listItems.length) {
-      const prevEl = listItems[j - 1].el;
-      const currEl = listItems[j].el;
-      if (prevEl.nextElementSibling === currEl || prevEl.nextSibling === currEl) {
-        group.push(listItems[j]);
-        j++;
+      if (currentGroup.length > 0) {
+        const lastEl = currentGroup[currentGroup.length - 1];
+        if (lastEl.nextElementSibling === el || lastEl.nextSibling === el) {
+          currentGroup.push(el);
+        } else {
+          flushGroup();
+          currentGroup = [el];
+          currentListType = type;
+        }
       } else {
-        break;
+        currentGroup = [el];
+        currentListType = type;
       }
+    } else {
+      flushGroup();
     }
-
-    if (group.length > 0) {
-      const firstEl = group[0].el;
-      const listType = group[0].type;
-      const listEl = doc.createElement(listType);
-
-      group.forEach(({ el }) => {
-        const li = doc.createElement("li");
-        let htmlContent = el.innerHTML.trim();
-        htmlContent = htmlContent.replace(/^([\u25CF\u2022\u25CB\u25A1\u25A0\u2013\u2014\u2212\uF0B7\u00B7\uF0A7*•-]\s*)+/i, "");
-        li.innerHTML = htmlContent || el.textContent;
-        listEl.appendChild(li);
-      });
-
-      firstEl.parentNode.insertBefore(listEl, firstEl);
-      group.forEach(({ el }) => el.remove());
-    }
-
-    i = j;
   }
+
+  flushGroup();
 }
 
 function transformWordHeadings(doc) {
@@ -800,8 +810,9 @@ export function transformMathHtml(html) {
   if (!html) return html;
 
   try {
-    const cleanedHtml = cleanMsOfficeHtml(html);
-    const doc = new DOMParser().parseFromString(cleanedHtml, "text/html");
+    const parser = new DOMParser();
+    const cleanedHtml = cleanMsOfficeHtml(html, parser);
+    const doc = parser.parseFromString(cleanedHtml, "text/html");
 
     // ── Word list paragraphs → <ul> / <ol> ──────────────────────────────
     transformWordListParagraphs(doc);

@@ -47,6 +47,7 @@ export function handleRichPaste(view, event, editor) {
   const rawText = (event.clipboardData?.getData("text/plain") || "").replace(/<\/?mark(?:\s+[^>]*)?>/gi, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const htmlText = event.clipboardData?.getData("text/html") || "";
 
+  // Step 1: Early exit if clipboard has no text or html
   if (!rawText && !htmlText) return false;
 
   // Pre-process: convert setext-style headings (text\n===) to ATX-style (# text)
@@ -74,37 +75,7 @@ export function handleRichPaste(view, event, editor) {
   // Normalize multi-line raw LaTeX pastes into a single unified formula string first
   const plainText = normalizeLatexPaste(preProcessedText);
 
-  const hasStructuredHtml = /<(table|ul|ol|li|h[1-6]|img|math|svg|pre|code|blockquote|section|article|figure|figcaption)[>\s]/i.test(htmlText);
-
-  const looksLikeMarkdownDoc = (text) => {
-    if (!text) return false;
-    return (
-      /^(#{1,6}\s+|[*\-+•◦▪]\s+|\d+[.)]\s+|\*\*|```)/m.test(text) ||
-      looksLikeMarkdownMath(text)
-    );
-  };
-
-  // Case 1: Plain text contains markdown document structure (headings, lists, bold, math, tables)
-  // Handles Markdown copied from ChatGPT, text files, or web pages with rich structure
-  if (looksLikeMarkdownDoc(plainText) && (!hasStructuredHtml || !/<(table|img|math|svg)[>\s]/i.test(htmlText))) {
-    event.preventDefault();
-    const cleanPlainText = plainText.includes("\n")
-      ? plainText
-      : reconstructPdfParagraphs(plainText);
-    const resultHtml = parseMarkdownMathToHtml(cleanPlainText);
-    insertHtmlContent(view, editor, resultHtml);
-    return true;
-  }
-
-  // Case 2: Clipboard contains structured HTML (MS Word, Google Docs, Webpage, MathML, KaTeX)
-  if (htmlText && htmlText.trim()) {
-    event.preventDefault();
-    const transformedHtml = transformMathHtml(htmlText);
-    insertHtmlContent(view, editor, transformedHtml);
-    return true;
-  }
-
-  // Case 3: Single standalone formula string
+  // Step 2: Check for single standalone formula string first
   if (isSingleFormula(plainText)) {
     event.preventDefault();
     let formula = plainText.trim();
@@ -122,7 +93,38 @@ export function handleRichPaste(view, event, editor) {
     }
   }
 
-  // Case 4: Squashed list from PDF text paste
+  const looksLikeMarkdownDoc = (text) => {
+    if (!text) return false;
+    return (
+      /^(#{1,6}\s+|[*\-+•◦▪]\s+|\d+[.)]\s+|\*\*|```)/m.test(text) ||
+      looksLikeMarkdownMath(text)
+    );
+  };
+
+  // Step 3: Check for structured HTML from Word/Docs/Web (MathML, KaTeX, MathJax, tables, lists, etc.)
+  const hasStructuredHtml =
+    /<(table|ul|ol|li|h[1-6]|img|math|svg|pre|code|blockquote|section|article|figure|figcaption)[>\s]/i.test(htmlText) ||
+    /mso-|MathJax|katex|mjx-|data-latex/i.test(htmlText) ||
+    /\$\$|\\\[|\\\(/s.test(htmlText);
+
+  if (htmlText && htmlText.trim() && (hasStructuredHtml || !looksLikeMarkdownDoc(plainText))) {
+    event.preventDefault();
+    const transformedHtml = transformMathHtml(htmlText);
+    insertHtmlContent(view, editor, transformedHtml);
+    return true;
+  }
+
+  // Step 4: Check plainText for Markdown document or List text structures
+  if (looksLikeMarkdownDoc(plainText)) {
+    event.preventDefault();
+    const cleanPlainText = plainText.includes("\n")
+      ? plainText
+      : reconstructPdfParagraphs(plainText);
+    const resultHtml = parseMarkdownMathToHtml(cleanPlainText);
+    insertHtmlContent(view, editor, resultHtml);
+    return true;
+  }
+
   const hasSemanticHtmlList = /<(ul|ol|li)[>\s]/i.test(htmlText);
   const isSquashedList = !plainText.includes("\n") && looksLikeList(plainText);
 
@@ -139,7 +141,7 @@ export function handleRichPaste(view, event, editor) {
     return true;
   }
 
-  // Fallback: Let TipTap handle standard HTML / Markdown / plain-text pastes natively
+  // Step 5: Fallback - Let TipTap handle standard HTML / plain-text pastes natively
   return false;
 }
 

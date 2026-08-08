@@ -272,26 +272,11 @@ function mmInlineMd(escaped) {
 // A line's inline content → HTML (formatted text interleaved with inline math and images).
 function mmInlineToHtml(raw) {
   if (!raw) return "";
-  const tokens = mmScanInline(raw);
-  const mathMap = [];
-  let placeholderStr = "";
-  for (const tk of tokens) {
-    if (tk.t === "math") {
-      const key = `___MATHTK_${mathMap.length}___`;
-      mathMap.push(mathSpan(tk.v, tk.display));
-      placeholderStr += key;
-    } else {
-      placeholderStr += tk.v;
-    }
-  }
-  let html = mmInlineMd(escapeHtml(placeholderStr));
+  let html = mmInlineMd(escapeHtml(raw));
   // Convert Markdown images ![alt](src) into <img> HTML elements
   html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, src) => {
     return `<img src="${src}" alt="${alt}" />`;
   });
-  for (let idx = 0; idx < mathMap.length; idx++) {
-    html = html.replace(`___MATHTK_${idx}___`, mathMap[idx]);
-  }
   return html;
 }
 
@@ -397,17 +382,30 @@ function splitTableRow(l) {
 
 // Main parser: pasted markdown-with-math → HTML (headings, lists, tables, math).
 export function parseMarkdownMathToHtml(text) {
+  if (!text) return "<p></p>";
+
+  // Pre-processing cleanup
   let cleanText = text
     .replace(/<\/?mark(?:\s+[^>]*)?>/gi, "")
     .replace(/\$([^$]+)\$\s*[’']/g, "$$1'$$")
     .replace(/\$([^$]+)\$\s+’/g, "$$1'$$")
     .replace(/\^\{\$([^$]+)\$\}/g, "^$1")
     .replace(/_\{\$([^$]+)\$\}/g, "_$1")
-    .replace(/\^(?:\{([^{}]+)\}|([a-zA-Z\\]+))\s*_\{?([a-zA-Z0-9_]+)\}?\s*\/\s*_\{\(([^()]+)\)\}/g, (m, g1, g2, g3, g4) => `\\frac{${(g1||g2).trim()}_{${g3.trim()}}}{${g4.trim()}}`)
-    .replace(/\^(?:\{([^{}]+)\}|([a-zA-Z\\]+))\s*_\{?([a-zA-Z0-9_]+)\}?/g, (m, g1, g2, g3) => `${(g1||g2).trim()}_{${g3.trim()}}`);
-  const rawLines = cleanText.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+    .replace(
+      /\^(?:\{([^{}]+)\}|([a-zA-Z\\]+))\s*_\{?([a-zA-Z0-9_]+)\}?\s*\/\s*_\{\(([^()]+)\)\}/g,
+      (m, g1, g2, g3, g4) =>
+        `\\frac{${(g1 || g2).trim()}_{${g3.trim()}}}{${g4.trim()}}`
+    )
+    .replace(
+      /\^(?:\{([^{}]+)\}|([a-zA-Z\\]+))\s*_\{?([a-zA-Z0-9_]+)\}?/g,
+      (m, g1, g2, g3) => `${(g1 || g2).trim()}_{${g3.trim()}}`
+    );
 
-  
+  const rawLines = cleanText
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n");
+
   // Pre-pass: Renumber broken/corrupted ordered list markers sequentially (1., 1., 3. → 1., 2., 3.)
   const lines = [];
   let currNum = 0;
@@ -433,35 +431,285 @@ export function parseMarkdownMathToHtml(text) {
     }
   }
 
+  // Math token storage
+  const mathTokens = new Map();
+  let tokenCounter = 0;
+  const createMathToken = (htmlVal) => {
+    const token = `__MATH_TOKEN_${tokenCounter++}__`;
+    mathTokens.set(token, htmlVal);
+    return token;
+  };
+
+  const tokenizeInlineMathInLine = (str) => {
+    if (!str) return "";
+    const tokens = mmScanInline(str);
+    let res = "";
+    for (const tk of tokens) {
+      if (tk.t === "math") {
+        const span = mathSpan(tk.v, tk.display);
+        res += createMathToken(span);
+      } else {
+        res += tk.v;
+      }
+    }
+    return res;
+  };
+
+  // Phase 1: Math Formula Tokenization Pass
+  const processedLines = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      processedLines.push(line);
+      i++;
+      continue;
+    }
+
+    // Pass through code block fence lines without tokenizing math inside
+    if (trimmed.startsWith("```")) {
+      processedLines.push(line);
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith("```")) {
+        processedLines.push(lines[i]);
+        i++;
+      }
+      if (i < lines.length) {
+        processedLines.push(lines[i]);
+        i++;
+      }
+      continue;
+    }
+
+    // 1. Single-line display math fence
+    const singleLineMatch = trimmed.match(
+      /^(?:\[|\\\[|\$\$)\s*(.+?)\s*(?:\]|\\\]|\$\$)$/
+    );
+    if (
+      singleLineMatch &&
+      !singleLineMatch[1].includes("$$") &&
+      !singleLineMatch[1].includes("\\]") &&
+      !/^\d+[.)]/.test(singleLineMatch[1])
+    ) {
+      const spanHtml = mathSpan(
+        singleLineMatch[1].replace(/={3,}/g, "=").trim(),
+        true
+      );
+      processedLines.push(createMathToken(spanHtml));
+      i++;
+      continue;
+    }
+
+    // 2. Multi-line display math fence ([ , \[ , $$)
+    let openDelim = null,
+      closeDelim = null;
+    if (trimmed === "[") {
+      openDelim = "[";
+      closeDelim = "]";
+    } else if (trimmed === "\\[") {
+      openDelim = "\\[";
+      closeDelim = "\\]";
+    } else if (trimmed === "$$") {
+      openDelim = "$$";
+      closeDelim = "$$";
+    }
+    if (openDelim) {
+      const fenceLines = [];
+      i++;
+      while (i < lines.length) {
+        let cl = lines[i];
+        let trimmedCl = cl.trim();
+        const isCloser =
+          (closeDelim === "]" && (trimmedCl === "]" || trimmedCl === "\\]")) ||
+          (closeDelim === "\\]" &&
+            (trimmedCl === "\\]" || trimmedCl === "]")) ||
+          (closeDelim === "$$" && trimmedCl === "$$");
+
+        if (isCloser) {
+          i++;
+          break;
+        }
+
+        if (trimmedCl) {
+          fenceLines.push(trimmedCl);
+        }
+        i++;
+      }
+
+      if (fenceLines.length > 0) {
+        const combinedLatex = convUnicodeMath(
+          fenceLines
+            .join(" ")
+            .replace(/={2,}/g, "=")
+            .replace(/\s+/g, " ")
+            .trim()
+        );
+        const spanHtml = mathSpan(combinedLatex, true);
+        processedLines.push(createMathToken(spanHtml));
+      }
+      continue;
+    }
+
+    // 3. ATX heading body looking like LaTeX
+    const hm = trimmed.match(/^(#{1,6})\s+(.*)$/);
+    if (hm) {
+      const headingBody = hm[2].trim();
+      if (/\\[a-zA-Z]{2,}/.test(headingBody) && mmWordy(headingBody) <= 3) {
+        const spanHtml = mathSpan(convUnicodeMath(headingBody), true);
+        processedLines.push(createMathToken(spanHtml));
+        i++;
+        continue;
+      }
+    }
+
+    // Check if line is a list item
+    const isListItem = /^(\s*)(?:([*\-+•◦▪])|(\d+)[.)]|([a-zA-Z])[.)])\s+/.test(
+      line
+    );
+
+    // 4. Standalone definition / legend line (non-list item)
+    if (!isListItem) {
+      const dfn = mmDefLine(trimmed);
+      if (dfn) {
+        const lhsMath = mathSpan(dfn.lhs, false);
+        const dfnHtml =
+          dfn.sep === ":"
+            ? `${lhsMath}: ${tokenizeInlineMathInLine(dfn.rhs)}`
+            : mathSpan(
+                dfn.lhs + " = \\text{" + mmTextEscape(dfn.rhs) + "}",
+                false
+              );
+        processedLines.push(createMathToken(dfnHtml));
+        i++;
+        continue;
+      }
+    }
+
+    // 5. Multi-line or single-line explicit LaTeX formula block
+    const isLatexLine = (l) => {
+      const tr = (l || "").trim();
+      if (!tr) return false;
+      if (tr.includes("|")) return false;
+      if (/^\s*[*+\-•◦▪]\s/.test(tr) || /^\s*\d+[.)]\s/.test(tr)) return false;
+      if (/^\*[a-zA-Z]/.test(tr)) return false;
+      if (/^[\[\]$$]/.test(tr)) return false;
+      if (/^[=]{3,}$/.test(tr) || /^[-]{3,}$/.test(tr)) return false;
+      if (mmWordy(tr) > 3) return false;
+      if (
+        /^\s*\\(text|frac|dfrac|tfrac|mathrm|mathbf|mathit|sum|prod|int|alpha|beta|theta|sigma|mu|lambda|phi|psi|omega|infty|pm|times|div|leq|geq|neq|partial|nabla|left|right|begin|end|underbrace|overbrace|mathbf)\b/.test(
+          tr
+        )
+      )
+        return true;
+      if (/^[\\{}]/.test(tr)) return true;
+      if (/^[=+\-/×÷]\s*(\\|\{|\w)/.test(tr) || /^=\s*$/.test(tr)) return true;
+      if (
+        tr.includes("\\") &&
+        /\\[a-zA-Z]{2,}/.test(tr) &&
+        !tr.includes("http")
+      )
+        return true;
+      return false;
+    };
+
+    if (!isListItem && isLatexLine(trimmed)) {
+      const latexBlock = [trimmed];
+      let currentInEnv = false;
+      let state = isUnclosedLatex(trimmed, currentInEnv);
+      currentInEnv = state.inEnv;
+      i++;
+
+      while (i < lines.length && isLatexLine(lines[i])) {
+        const nextTrimmed = lines[i].trim();
+        const isContinuation =
+          state.unclosed ||
+          /^[})\],{=+\-/×÷]/.test(nextTrimmed) ||
+          /^\s*\\(right|end)\b/.test(nextTrimmed);
+
+        if (isContinuation) {
+          latexBlock.push(nextTrimmed);
+          state = isUnclosedLatex(nextTrimmed, currentInEnv);
+          currentInEnv = state.inEnv;
+          i++;
+        } else {
+          break;
+        }
+      }
+      const combinedLatex = convUnicodeMath(
+        latexBlock.join(" ").replace(/\s+/g, " ").trim()
+      );
+      const spanHtml = mathSpan(combinedLatex, true);
+      processedLines.push(createMathToken(spanHtml));
+      continue;
+    }
+
+    // 6. Explicit-LaTeX line fallback (non-list item)
+    if (!isListItem) {
+      const convLine = convUnicodeMath(trimmed);
+      const isFullyWrapped =
+        (trimmed.startsWith("$$") && trimmed.endsWith("$$")) ||
+        (trimmed.startsWith("$") && trimmed.endsWith("$")) ||
+        (trimmed.startsWith("\\(") && trimmed.endsWith("\\)")) ||
+        (trimmed.startsWith("\\[") && trimmed.endsWith("\\]"));
+      const hasInlineDelim =
+        trimmed.includes("$") ||
+        trimmed.includes("\\(") ||
+        trimmed.includes("\\[");
+      const isMixedLine = hasInlineDelim && !isFullyWrapped;
+
+      const hasExplicitLatex =
+        /\\[a-zA-Z]+/.test(trimmed) && mmWordy(trimmed) <= 3 && !isMixedLine;
+      if (
+        !isMixedLine &&
+        (hasExplicitLatex ||
+          (convLine !== trimmed &&
+            mmMathScore(convLine) &&
+            mmWordy(convLine) <= 4))
+      ) {
+        const spanHtml = mathSpan(convLine.replace(/\s+/g, " ").trim(), true);
+        processedLines.push(createMathToken(spanHtml));
+        i++;
+        continue;
+      }
+    }
+
+    // 7. Tokenize inline math in line text
+    processedLines.push(tokenizeInlineMathInLine(line));
+    i++;
+  }
+
+  // Phase 2: Markdown Conversion Pass
   let html = "";
-  let headingSeen = false;
-
-
-  // Stack tracks open lists: { type: 'ul' | 'ol', indent: number }
   const listStack = [];
-
   const flushList = () => {
     while (listStack.length > 0) {
       html += `</li></${listStack.pop().type}>`;
     }
   };
 
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
+  i = 0;
+  while (i < processedLines.length) {
+    const line = processedLines[i];
     const trimmed = line.trim();
+
     if (trimmed === "") {
       if (listStack.length > 0) {
-        // Peek ahead to check if next non-empty line is another list item
         let nextIdx = i + 1;
-        while (nextIdx < lines.length && lines[nextIdx].trim() === "") {
+        while (
+          nextIdx < processedLines.length &&
+          processedLines[nextIdx].trim() === ""
+        ) {
           nextIdx++;
         }
-        if (nextIdx < lines.length) {
-          const nextLine = lines[nextIdx];
-          const isNextList = /^(\s*)(?:([*\-+•◦▪])|(\d+)[.)]|([a-zA-Z])[.)])\s+(.*)$/.test(nextLine);
+        if (nextIdx < processedLines.length) {
+          const nextLine = processedLines[nextIdx];
+          const isNextList = /^(\s*)(?:([*\-+•◦▪])|(\d+)[.)]|([a-zA-Z])[.)])\s+(.*)$/.test(
+            nextLine
+          );
           if (isNextList) {
-            // Keep list open across blank lines (loose list)
             i++;
             continue;
           }
@@ -472,51 +720,65 @@ export function parseMarkdownMathToHtml(text) {
       continue;
     }
 
-    // Horizontal rule ("---", "***", "___") or orphaned setext underline ("===") → skip
+    // Horizontal rule or orphaned setext underline
     if (/^[-*_]{3,}$/.test(trimmed) || /^={3,}$/.test(trimmed)) {
       flushList();
       i++;
       continue;
     }
 
-    // Markdown code block fence: ```lang ... ```
+    // Markdown code block fence
     if (trimmed.startsWith("```")) {
       flushList();
       const lang = trimmed.slice(3).trim();
       const codeLines = [];
       i++;
-      while (i < lines.length && !lines[i].trim().startsWith("```")) {
-        codeLines.push(lines[i]);
+      while (
+        i < processedLines.length &&
+        !processedLines[i].trim().startsWith("```")
+      ) {
+        codeLines.push(processedLines[i]);
         i++;
       }
-      if (i < lines.length && lines[i].trim().startsWith("```")) {
-        i++; // consume closing fence
+      if (
+        i < processedLines.length &&
+        processedLines[i].trim().startsWith("```")
+      ) {
+        i++;
       }
       while (codeLines.length > 0 && codeLines[0].trim() === "") {
         codeLines.shift();
       }
-      while (codeLines.length > 0 && codeLines[codeLines.length - 1].trim() === "") {
+      while (
+        codeLines.length > 0 &&
+        codeLines[codeLines.length - 1].trim() === ""
+      ) {
         codeLines.pop();
       }
       const codeContent = escapeHtml(codeLines.join("\n"));
-      html += `<pre><code${lang ? ` class="language-${escapeAttr(lang)}"` : ""}>${codeContent}</code></pre>`;
+      html += `<pre><code${
+        lang ? ` class="language-${escapeAttr(lang)}"` : ""
+      }>${codeContent}</code></pre>`;
       continue;
     }
 
-    // Markdown pipe table: a "| a | b |" header row followed by a
-    // "| --- | --- |" separator, then "| … | … |" body rows → a real <table>.
-    if (isTableRow(line) && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+    // Pipe table
+    if (
+      isTableRow(line) &&
+      i + 1 < processedLines.length &&
+      isTableSep(processedLines[i + 1])
+    ) {
       flushList();
       const header = splitTableRow(line);
       const cols = header.length;
-      i += 2; // consume header + separator
+      i += 2;
       const body = [];
       while (
-        i < lines.length &&
-        isTableRow(lines[i]) &&
-        !isTableSep(lines[i])
+        i < processedLines.length &&
+        isTableRow(processedLines[i]) &&
+        !isTableSep(processedLines[i])
       ) {
-        body.push(splitTableRow(lines[i]));
+        body.push(splitTableRow(processedLines[i]));
         i++;
       }
       const fit = (row) => {
@@ -544,96 +806,29 @@ export function parseMarkdownMathToHtml(text) {
       continue;
     }
 
-    // 1. Single-line display math fence: e.g. "[ P(x) = 1 ]" or "\[ P(x) = 1 \]" or "$$ P(x) = 1 $$"
-    const singleLineMatch = trimmed.match(
-      /^(?:\[|\\\[|\$\$)\s*(.+?)\s*(?:\]|\\\]|\$\$)$/,
-    );
+    // Setext heading
     if (
-      singleLineMatch &&
-      !singleLineMatch[1].includes("$$") &&
-      !singleLineMatch[1].includes("\\]") &&
-      !/^\d+[.)]/.test(singleLineMatch[1])
-    ) {
-      flushList();
-      const spanHtml = mathSpan(
-        singleLineMatch[1].replace(/={3,}/g, "=").trim(),
-        true,
-      );
-      html += `<p>${spanHtml}</p>`;
-      i++;
-      continue;
-    }
-
-    // 2. Multi-line display-math fence opened by a line that is strictly [ , \[ or $$
-    let openDelim = null,
-      closeDelim = null;
-    if (trimmed === "[") {
-      openDelim = "[";
-      closeDelim = "]";
-    } else if (trimmed === "\\[") {
-      openDelim = "\\[";
-      closeDelim = "\\]";
-    } else if (trimmed === "$$") {
-      openDelim = "$$";
-      closeDelim = "$$";
-    }
-    if (openDelim) {
-      const fenceLines = [];
-      i++;
-      while (i < lines.length) {
-        let cl = lines[i];
-        let trimmedCl = cl.trim();
-
-        // Check if this line is the standalone fence closer (e.g. "]", "\]", "$$")
-        const isCloser =
-          (closeDelim === "]" && (trimmedCl === "]" || trimmedCl === "\\]")) ||
-          (closeDelim === "\\]" &&
-            (trimmedCl === "\\]" || trimmedCl === "]")) ||
-          (closeDelim === "$$" && trimmedCl === "$$");
-
-        if (isCloser) {
-          i++;
-          break;
-        }
-
-        if (trimmedCl) {
-          fenceLines.push(trimmedCl);
-        }
-        i++;
-      }
-
-      flushList();
-      if (fenceLines.length > 0) {
-        const combinedLatex = convUnicodeMath(
-          fenceLines.join(" ").replace(/={2,}/g, "=").replace(/\s+/g, " ").trim(),
-        );
-        const spanHtml = mathSpan(combinedLatex, true);
-        html += `<p>${spanHtml}</p>`;
-      }
-      continue;
-    }
-
-    // Setext heading: a non-empty text line followed by a line of ===+ (H1) or ---+ (H2).
-    // Only applies when the text line does NOT look like math/LaTeX content.
-    if (
-      i + 1 < lines.length &&
+      i + 1 < processedLines.length &&
       trimmed.length > 0 &&
       !mmLooksMathy(trimmed) &&
-      !/^\\[a-zA-Z]/.test(trimmed)
+      !/^\\[a-zA-Z]/.test(trimmed) &&
+      !trimmed.startsWith("__MATH_TOKEN_")
     ) {
-      const nextTrimmed = lines[i + 1].trim();
+      const nextTrimmed = processedLines[i + 1].trim();
       if (/^={3,}$/.test(nextTrimmed) || /^-{3,}$/.test(nextTrimmed)) {
         flushList();
         const lvl = nextTrimmed[0] === "=" ? 1 : 2;
         const cleaned = stripHeadingPrefix(trimmed);
-        headingSeen = true;
-        html += `<h${Math.min(lvl, 3)}>${mmInlineToHtml(cleaned)}</h${Math.min(lvl, 3)}>`;
-        i += 2; // consume both the text line and the underline
+        html += `<h${Math.min(lvl, 3)}>${mmInlineToHtml(cleaned)}</h${Math.min(
+          lvl,
+          3
+        )}>`;
+        i += 2;
         continue;
       }
     }
 
-    // Standalone Markdown Image Check: ![alt](url)
+    // Standalone Markdown Image
     const imgMatch = trimmed.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
     if (imgMatch) {
       flushList();
@@ -644,39 +839,26 @@ export function parseMarkdownMathToHtml(text) {
       continue;
     }
 
-    // Markdown ATX heading (# ... ######)
+    // Markdown ATX heading
     const hm = trimmed.match(/^(#{1,6})\s+(.*)$/);
     if (hm) {
-      // If the heading body looks like LaTeX math, treat as display math instead
-      const headingBody = hm[2].trim();
-      if (/\\[a-zA-Z]{2,}/.test(headingBody) && mmWordy(headingBody) <= 3) {
-        flushList();
-        const spanHtml = mathSpan(convUnicodeMath(headingBody), true);
-        html += `<p>${spanHtml}</p>`;
-        i++;
-        continue;
-      }
       flushList();
       const lvl = Math.min(hm[1].length, 3);
       const cleaned = stripHeadingPrefix(hm[2]);
-      headingSeen = true;
       html += `<h${lvl}>${mmInlineToHtml(cleaned)}</h${lvl}>`;
       i++;
       continue;
     }
 
-    // List item check (bullet, number, or letter/roman list)
-    // This MUST come before section header detection, because list markers
-    // (* - • 1.) are unambiguous — they should always win over a heuristic guess.
+    // List item check
     const lm = line.match(
-      /^(\s*)(?:([*\-+•◦▪])|(\d+)[.)]|([a-zA-Z])[.)])\s+(.*)$/,
+      /^(\s*)(?:([*\-+•◦▪])|(\d+)[.)]|([a-zA-Z])[.)])\s+(.*)$/
     );
     if (lm) {
       const indent = lm[1].replace(/\t/g, "    ").length;
       const type = lm[2] ? "ul" : "ol";
       const content = lm[5].trim();
 
-      // Close deeper lists
       while (
         listStack.length > 0 &&
         indent < listStack[listStack.length - 1].indent
@@ -688,17 +870,14 @@ export function parseMarkdownMathToHtml(text) {
         listStack.length === 0 ||
         indent > listStack[listStack.length - 1].indent
       ) {
-        // Open new list
         listStack.push({ type, indent });
         html += `<${type}>`;
       } else if (indent === listStack[listStack.length - 1].indent) {
         if (listStack[listStack.length - 1].type !== type) {
-          // Different type at same level: close old list, open new
           html += `</li></${listStack.pop().type}>`;
           listStack.push({ type, indent });
           html += `<${type}>`;
         } else {
-          // Same list, close the previous item
           html += `</li>`;
         }
       }
@@ -711,7 +890,7 @@ export function parseMarkdownMathToHtml(text) {
             ? `${lhsMath}: ${mmInlineToHtml(itemDfn.rhs)}`
             : mathSpan(
                 itemDfn.lhs + " = \\text{" + mmTextEscape(itemDfn.rhs) + "}",
-                false,
+                false
               );
         html += `<li><p>${itemHtml}</p>`;
       } else {
@@ -721,113 +900,10 @@ export function parseMarkdownMathToHtml(text) {
       continue;
     }
 
-    // Standalone definition / legend line
-    const dfn = mmDefLine(trimmed);
-    if (dfn) {
-      flushList();
-      const lhsMath = mathSpan(dfn.lhs, false);
-      const dfnHtml =
-        dfn.sep === ":"
-          ? `${lhsMath}: ${mmInlineToHtml(dfn.rhs)}`
-          : mathSpan(
-              dfn.lhs + " = \\text{" + mmTextEscape(dfn.rhs) + "}",
-              false,
-            );
-      html += `<p>${dfnHtml}</p>`;
-      i++;
-      continue;
-    }
-
-    // Multi-line or single-line explicit LaTeX formula block detection
-    const isLatexLine = (l) => {
-      const tr = (l || "").trim();
-      if (!tr) return false;
-      if (tr.includes("|")) return false; // Markdown table rows must NOT be grouped as latex formula blocks
-      if (/^\s*[*+\-•◦▪]\s/.test(tr) || /^\s*\d+[.)]\s/.test(tr)) return false; // Markdown list items must NOT be grouped as latex formula blocks
-      if (/^\*[a-zA-Z]/.test(tr)) return false; // Markdown emphasis (*Text...) must NOT be latex lines
-      if (/^[\[\]$$]/.test(tr)) return false; // display fence handled above
-      // Setext heading underlines (===, ---) must NOT be treated as LaTeX operator lines
-      if (/^[=]{3,}$/.test(tr) || /^[-]{3,}$/.test(tr)) return false;
-      if (mmWordy(tr) > 3) return false; // Prose sentences with >3 words are text, NOT standalone display math
-      if (
-        /^\s*\\(text|frac|dfrac|tfrac|mathrm|mathbf|mathit|sum|prod|int|alpha|beta|theta|sigma|mu|lambda|phi|psi|omega|infty|pm|times|div|leq|geq|neq|partial|nabla|left|right|begin|end|underbrace|overbrace|mathbf)\b/.test(
-          tr,
-        )
-      )
-        return true;
-      if (/^[\\{}]/.test(tr)) return true;
-      if (/^[=+\-/×÷]\s*(\\|\{|\w)/.test(tr) || /^=\s*$/.test(tr)) return true;
-      if (
-        tr.includes("\\") &&
-        /\\[a-zA-Z]{2,}/.test(tr) &&
-        !tr.includes("http")
-      )
-        return true;
-      return false;
-    };
-
-    if (isLatexLine(trimmed)) {
-      const latexBlock = [trimmed];
-      let currentInEnv = false;
-      let state = isUnclosedLatex(trimmed, currentInEnv);
-      currentInEnv = state.inEnv;
-      i++;
-
-      while (i < lines.length && isLatexLine(lines[i])) {
-        const nextTrimmed = lines[i].trim();
-        const isContinuation =
-          state.unclosed ||
-          /^[})\],{=+\-/×÷]/.test(nextTrimmed) ||
-          /^\s*\\(right|end)\b/.test(nextTrimmed);
-
-        if (isContinuation) {
-          latexBlock.push(nextTrimmed);
-          state = isUnclosedLatex(nextTrimmed, currentInEnv);
-          currentInEnv = state.inEnv;
-          i++;
-        } else {
-          break;
-        }
-      }
-      flushList();
-      const combinedLatex = convUnicodeMath(
-        latexBlock.join(" ").replace(/\s+/g, " ").trim(),
-      );
-      const spanHtml = mathSpan(combinedLatex, true);
-      html += `<p>${spanHtml}</p>`;
-      continue;
-    }
-
-    // Explicit-LaTeX line fallback → display math
+    // Plain paragraph (or display math token line)
     flushList();
-    const convLine = convUnicodeMath(trimmed);
-    const isFullyWrapped =
-      (trimmed.startsWith("$$") && trimmed.endsWith("$$")) ||
-      (trimmed.startsWith("$") && trimmed.endsWith("$")) ||
-      (trimmed.startsWith("\\(") && trimmed.endsWith("\\)")) ||
-      (trimmed.startsWith("\\[") && trimmed.endsWith("\\]"));
-    const hasInlineDelim =
-      trimmed.includes("$") ||
-      trimmed.includes("\\(") ||
-      trimmed.includes("\\[");
-    const isMixedLine = hasInlineDelim && !isFullyWrapped;
-
-    const hasExplicitLatex =
-      /\\[a-zA-Z]+/.test(trimmed) && mmWordy(trimmed) <= 3 && !isMixedLine;
-    if (
-      !isMixedLine &&
-      (hasExplicitLatex ||
-        (convLine !== trimmed && mmMathScore(convLine) && mmWordy(convLine) <= 4))
-    ) {
-      const spanHtml = mathSpan(convLine.replace(/\s+/g, " ").trim(), true);
-      html += `<p>${spanHtml}</p>`;
-      i++;
-      continue;
-    }
-
-    // Plain paragraph (with lead-in bold label like "Decoder:", "Note:", "Figure 1:")
     const leadInMatch = trimmed.match(
-      /^([A-Z][A-Za-z0-9\s\-/]{1,35}:)\s+(.*)$/,
+      /^([A-Z][A-Za-z0-9\s\-/]{1,35}:)\s+(.*)$/
     );
     if (leadInMatch) {
       const label = escapeHtml(leadInMatch[1]);
@@ -839,5 +915,12 @@ export function parseMarkdownMathToHtml(text) {
     i++;
   }
   flushList();
+
+  // Phase 3: Restore Math Tokens
+  for (const [token, spanHtml] of mathTokens.entries()) {
+    html = html.replaceAll(token, spanHtml);
+  }
+
   return html || "<p></p>";
 }
+

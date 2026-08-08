@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import useAcaStore from '@/contexts/projectStore/projectStore';
 import { setCompileActive } from '@/contexts/projectStore/projectStore';
 import { compileProject, pollUntilDone, fetchCompiledPdf } from '@/services/api';
@@ -10,16 +10,24 @@ import { splitSingleDocToProject } from '@/features/Editor/components/ChapterEdi
  * and the Command Palette.
  */
 export default function useCompile() {
-  const currentProject = useAcaStore(s => s.getCurrentProject());
-  const compileJob     = useAcaStore(s => s.compileJob);
-  const setCompileJob  = useAcaStore(s => s.setCompileJob);
-  const showToast      = useAcaStore(s => s.showToast);
+  const currentProject  = useAcaStore(s => s.getCurrentProject());
+  const compileJob      = useAcaStore(s => s.compileJob);
+  const setCompileJob   = useAcaStore(s => s.setCompileJob);
+  const showToast       = useAcaStore(s => s.showToast);
+  const isCompilingRef  = useRef(false);
 
-  const isCompiling = compileJob?.status === 'pending' || compileJob?.status === 'processing';
+  const isCompiling = compileJob?.status === 'pending' || compileJob?.status === 'processing' || isCompilingRef.current;
   const isDone      = compileJob?.status === 'done';
 
   const compile = useCallback(async () => {
-    if (!currentProject || isCompiling) return;
+    if (!currentProject || isCompilingRef.current || isCompiling) return;
+    isCompilingRef.current = true;
+
+    // Revoke previous Blob URL to prevent memory leaks over multiple compilations
+    const prevJob = useAcaStore.getState().compileJob;
+    if (prevJob?.blobUrl) {
+      try { URL.revokeObjectURL(prevJob.blobUrl); } catch (_) {}
+    }
 
     setCompileJob({ status: 'pending', jobId: null, blobUrl: null, error: null });
     setCompileActive(true);   // pause background project sync while compiling
@@ -76,6 +84,7 @@ export default function useCompile() {
       setCompileJob({ status: 'failed', error: err.message });
       showToast('error', `Compile error: ${err.message}`);
     } finally {
+      isCompilingRef.current = false;
       setCompileActive(false);  // resume background sync after compile finishes
     }
   }, [currentProject, isCompiling, setCompileJob, showToast]);

@@ -22,6 +22,7 @@ import {
   SHAPE_KIND_LABELS,
   OBJECT_TYPE_LABELS,
   matchPagePreset,
+  alignCanvasObject,
 } from "./canvasConstants";
 import { formatBytes } from "./imagePrep";
 
@@ -115,7 +116,7 @@ function PageSettings({ page, onUpdatePage, sceneByteSize }) {
 
 /* ── Design tab: selected-object properties ───────────────────────────────── */
 
-function ObjectProperties({ obj, onUpdate, onReplaceImage }) {
+function ObjectProperties({ obj, onUpdate, onReplaceImage, page }) {
   const key = (prop) => ({ coalesceKey: `${obj.id}:${prop}` });
   const textareaRef = useRef(null);
   const [ratioLocked, setRatioLocked] = useState(true);
@@ -149,18 +150,75 @@ function ObjectProperties({ obj, onUpdate, onReplaceImage }) {
 
         {/* Borders are page-anchored; x/y would be meaningless. */}
         {!(obj.type === "shape" && obj.shapeType === "border") && (
-          <div className="cs-row">
-            <NumberField
-              label="X"
-              value={obj.x || 0}
-              onChange={(v) => onUpdate({ x: v }, key("x"))}
-            />
-            <NumberField
-              label="Y"
-              value={obj.y || 0}
-              onChange={(v) => onUpdate({ y: v }, key("y"))}
-            />
-          </div>
+          <>
+            <div className="cs-row">
+              <NumberField
+                label="X"
+                value={obj.x || 0}
+                onChange={(v) => onUpdate({ x: v }, key("x"))}
+              />
+              <NumberField
+                label="Y"
+                value={obj.y || 0}
+                onChange={(v) => onUpdate({ y: v }, key("y"))}
+              />
+            </div>
+            <div className="cs-field">
+              <label>Align to page</label>
+              <div className="cs-row cs-row--compact">
+                <button
+                  type="button"
+                  className="cs-btn cs-btn--sm"
+                  onClick={() => onUpdate(alignCanvasObject(obj, page, "left"))}
+                  title="Align to left edge of page"
+                >
+                  Left
+                </button>
+                <button
+                  type="button"
+                  className="cs-btn cs-btn--sm"
+                  onClick={() => onUpdate(alignCanvasObject(obj, page, "center-h"))}
+                  title="Center horizontally on page"
+                >
+                  Center H
+                </button>
+                <button
+                  type="button"
+                  className="cs-btn cs-btn--sm"
+                  onClick={() => onUpdate(alignCanvasObject(obj, page, "right"))}
+                  title="Align to right edge of page"
+                >
+                  Right
+                </button>
+              </div>
+              <div className="cs-row cs-row--compact" style={{ marginTop: "4px" }}>
+                <button
+                  type="button"
+                  className="cs-btn cs-btn--sm"
+                  onClick={() => onUpdate(alignCanvasObject(obj, page, "top"))}
+                  title="Align to top edge of page"
+                >
+                  Top
+                </button>
+                <button
+                  type="button"
+                  className="cs-btn cs-btn--sm"
+                  onClick={() => onUpdate(alignCanvasObject(obj, page, "center-v"))}
+                  title="Center vertically on page"
+                >
+                  Center V
+                </button>
+                <button
+                  type="button"
+                  className="cs-btn cs-btn--sm"
+                  onClick={() => onUpdate(alignCanvasObject(obj, page, "bottom"))}
+                  title="Align to bottom edge of page"
+                >
+                  Bottom
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
 
@@ -693,6 +751,7 @@ export default function PropertyInspector({
               obj={selectedObject}
               onUpdate={onUpdateSelected}
               onReplaceImage={onReplaceImage}
+              page={scene.page}
             />
           ) : (
             <PageSettings

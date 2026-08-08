@@ -13,7 +13,7 @@ import {
 import QRCode from "qrcode";
 import { replacePlaceholders } from "@/utils/pdfVectorRenderer";
 import { resolveCanvasFont, DEFAULT_LINE_HEIGHT } from "@/utils/sceneFonts";
-import { SNAP_THRESHOLD, PAGE_MARGIN } from "./canvasConstants";
+import { SNAP_THRESHOLD, PAGE_MARGIN, alignCanvasObject } from "./canvasConstants";
 
 /* ── Image node ───────────────────────────────────────────────────────────
    Registers its node with the shared ref registry so the Transformer can

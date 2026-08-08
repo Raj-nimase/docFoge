@@ -3,73 +3,76 @@
  * Coordinates are in PDF points (72 pt = 1 inch).
  */
 
+export function createTemplateObject(type, overrides = {}) {
+  return {
+    type,
+    opacity: 1,
+    rotation: 0,
+    align: "center",
+    fontFamily: "Inter",
+    ...overrides,
+  };
+}
+
 export const PRESET_TEMPLATES = [
   {
     id: "degree-certificate",
     name: "🎓 Degree Certificate (Portrait A4)",
     page: { width: 595, height: 842, bg: "#ffffff" },
     objects: [
-      {
+      createTemplateObject("shape", {
         id: "border-frame",
-        type: "shape",
         shapeType: "border",
         borderStyle: "double",
         stroke: "#1e3a8a",
         strokeWidth: 2,
         margin: 24,
         x: 0, y: 0, width: 595, height: 842,
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "college-header",
-        type: "text",
         x: 40, y: 60, width: 515, height: 30,
         text: "{{college_name}}",
         fontFamily: "Helvetica", fontSize: 20, fontWeight: "bold",
         fill: "#1e3a8a", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "dept-name",
-        type: "text",
         x: 40, y: 95, width: 515, height: 20,
         text: "DEPARTMENT OF {{department_name}}",
         fontFamily: "Helvetica", fontSize: 13, fontWeight: "bold",
         fill: "#4b5563", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "cert-title",
-        type: "text",
         x: 40, y: 150, width: 515, height: 45,
         text: "CERTIFICATE OF ACHIEVEMENT",
         fontFamily: "Times-Roman", fontSize: 26, fontWeight: "bold",
         fill: "#111827", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "sub-text",
-        type: "text",
         x: 40, y: 215, width: 515, height: 20,
         text: "This is proudly presented to",
         fontFamily: "Helvetica", fontSize: 13, fontWeight: "normal",
         fill: "#6b7280", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "candidate-name",
-        type: "text",
         x: 40, y: 245, width: 515, height: 40,
         text: "{{student_name}}",
         fontFamily: "Times-Roman", fontSize: 28, fontWeight: "bold",
         fill: "#1d4ed8", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "cert-body",
-        type: "text",
         x: 60, y: 305, width: 475, height: 90,
-        text: "For successfully completing the project titled \"{{project_title}}\" with outstanding performance in the academic year {{academic_year}}.\n\nRoll No: {{roll_number}}  |  Grade: {{grade}}",
+        text: 'For successfully completing the project titled "{{project_title}}" with outstanding performance in the academic year {{academic_year}}.\n\nRoll No: {{roll_number}}  |  Grade: {{grade}}',
         fontFamily: "Helvetica", fontSize: 13, fontWeight: "normal",
         fill: "#374151", align: "center", lineHeight: 1.5,
-      },
-      {
+      }),
+      createTemplateObject("table", {
         id: "details-table",
-        type: "table",
         x: 60, y: 410, width: 475, height: 100,
         headers: ["Roll No", "Course", "Marks", "Grade"],
         rows: [
@@ -80,29 +83,26 @@ export const PRESET_TEMPLATES = [
         borderColor: "#000000",
         fontSize: 11,
         cellPadding: 8,
-      },
-      {
+      }),
+      createTemplateObject("qr", {
         id: "qr-code",
-        type: "qr",
         x: 70, y: 700, size: 70,
         text: "https://verify.edu/cert/{{roll_number}}",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "guide-sig",
-        type: "text",
         x: 230, y: 720, width: 140, height: 40,
         text: "_____________________\nProject Guide",
         fontFamily: "Helvetica", fontSize: 11, fontWeight: "bold",
         fill: "#374151", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "hod-sig",
-        type: "text",
         x: 400, y: 720, width: 140, height: 40,
         text: "_____________________\nHead of Department",
         fontFamily: "Helvetica", fontSize: 11, fontWeight: "bold",
         fill: "#374151", align: "center",
-      },
+      }),
     ],
   },
   {
@@ -110,72 +110,63 @@ export const PRESET_TEMPLATES = [
     name: "🪪 Student ID Card (Horizontal)",
     page: { width: 420, height: 260, bg: "#ffffff" },
     objects: [
-      {
+      createTemplateObject("shape", {
         id: "card-bg-header",
-        type: "shape",
         shapeType: "rect",
         x: 0, y: 0, width: 420, height: 55,
         fill: "#1e3a8a", stroke: "", strokeWidth: 0,
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "card-college-name",
-        type: "text",
         x: 10, y: 15, width: 400, height: 25,
         text: "{{college_name}}",
         fontFamily: "Helvetica", fontSize: 16, fontWeight: "bold",
         fill: "#ffffff", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("shape", {
         id: "card-border",
-        type: "shape",
         shapeType: "rect",
         x: 2, y: 2, width: 416, height: 256,
         fill: "", stroke: "#1e3a8a", strokeWidth: 2,
-      },
-      {
+      }),
+      createTemplateObject("shape", {
         id: "photo-box",
-        type: "shape",
         shapeType: "rect",
         x: 20, y: 75, width: 100, height: 120,
         fill: "#f3f4f6", stroke: "#9ca3af", strokeWidth: 1,
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "photo-placeholder-text",
-        type: "text",
         x: 20, y: 125, width: 100, height: 20,
         text: "[ PHOTO ]",
         fontFamily: "Helvetica", fontSize: 10, fontWeight: "bold",
         fill: "#9ca3af", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "student-name-text",
-        type: "text",
         x: 140, y: 75, width: 260, height: 25,
         text: "{{student_name}}",
         fontFamily: "Helvetica", fontSize: 17, fontWeight: "bold",
         fill: "#111827", align: "left",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "student-details-text",
-        type: "text",
         x: 140, y: 110, width: 260, height: 90,
         text: "Roll No  : {{roll_number}}\nBranch   : {{department_name}}\nValid    : 2025 - 2029\nContact  : +91 98765 43210",
         fontFamily: "Helvetica", fontSize: 11, fontWeight: "normal",
         fill: "#374151", align: "left", lineHeight: 1.4,
-      },
-      {
+      }),
+      createTemplateObject("qr", {
         id: "id-qr",
-        type: "qr",
         x: 345, y: 185, size: 55,
         text: "STUDENT_ID:{{roll_number}}",
-      },
-      {
+      }),
+      createTemplateObject("shape", {
         id: "card-footer",
-        type: "shape",
         shapeType: "rect",
         x: 0, y: 245, width: 420, height: 15,
         fill: "#1e3a8a", stroke: "", strokeWidth: 0,
-      },
+      }),
     ],
   },
   {
@@ -183,55 +174,48 @@ export const PRESET_TEMPLATES = [
     name: "🎫 Examination Hall Ticket / Admit Card",
     page: { width: 595, height: 842, bg: "#ffffff" },
     objects: [
-      {
+      createTemplateObject("text", {
         id: "ht-header",
-        type: "text",
         x: 40, y: 40, width: 515, height: 30,
         text: "{{college_name}}",
         fontFamily: "Helvetica", fontSize: 18, fontWeight: "bold",
         fill: "#111827", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "ht-title",
-        type: "text",
         x: 40, y: 75, width: 515, height: 25,
         text: "EXAMINATION ADMIT CARD / HALL TICKET - {{academic_year}}",
         fontFamily: "Helvetica", fontSize: 14, fontWeight: "bold",
         fill: "#2563eb", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("shape", {
         id: "student-info-box",
-        type: "shape",
         shapeType: "rect",
         x: 40, y: 120, width: 380, height: 110,
         fill: "#f8fafc", stroke: "#cbd5e1", strokeWidth: 1,
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "student-info-text",
-        type: "text",
         x: 50, y: 130, width: 360, height: 90,
         text: "Student Name : {{student_name}}\nRoll Number  : {{roll_number}}\nDepartment   : {{department_name}}\nCenter Name  : GECA Exam Center Hall 3",
         fontFamily: "Helvetica", fontSize: 12, fontWeight: "normal",
         fill: "#1e293b", align: "left", lineHeight: 1.5,
-      },
-      {
+      }),
+      createTemplateObject("shape", {
         id: "ht-photo-box",
-        type: "shape",
         shapeType: "rect",
         x: 445, y: 120, width: 110, height: 110,
         fill: "#f1f5f9", stroke: "#94a3b8", strokeWidth: 1,
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "ht-photo-text",
-        type: "text",
         x: 445, y: 165, width: 110, height: 20,
         text: "[ PHOTO ]",
         fontFamily: "Helvetica", fontSize: 10, fontWeight: "bold",
         fill: "#94a3b8", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("table", {
         id: "schedule-table",
-        type: "table",
         x: 40, y: 250, width: 515, height: 150,
         headers: ["Date & Time", "Sub Code", "Subject Name", "Sign"],
         rows: [
@@ -244,21 +228,19 @@ export const PRESET_TEMPLATES = [
         borderColor: "#000000",
         fontSize: 11,
         cellPadding: 8,
-      },
-      {
+      }),
+      createTemplateObject("qr", {
         id: "ht-qr",
-        type: "qr",
         x: 50, y: 730, size: 70,
         text: "ADMIT_CARD:{{roll_number}}",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "ht-controller-sig",
-        type: "text",
         x: 375, y: 750, width: 180, height: 40,
         text: "_____________________\nController of Examinations",
         fontFamily: "Helvetica", fontSize: 11, fontWeight: "bold",
         fill: "#374151", align: "center",
-      },
+      }),
     ],
   },
   {
@@ -266,43 +248,38 @@ export const PRESET_TEMPLATES = [
     name: "📊 Official Student Marksheet / Grade Sheet",
     page: { width: 595, height: 842, bg: "#ffffff" },
     objects: [
-      {
+      createTemplateObject("shape", {
         id: "ms-border",
-        type: "shape",
         shapeType: "border",
         borderStyle: "single",
         stroke: "#0f766e",
         strokeWidth: 2,
         margin: 20,
         x: 0, y: 0, width: 595, height: 842,
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "ms-header",
-        type: "text",
         x: 40, y: 50, width: 515, height: 30,
         text: "{{college_name}}",
         fontFamily: "Helvetica", fontSize: 20, fontWeight: "bold",
         fill: "#0f766e", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "ms-title",
-        type: "text",
         x: 40, y: 85, width: 515, height: 25,
         text: "SEMESTER STATEMENT OF MARKS",
         fontFamily: "Helvetica", fontSize: 14, fontWeight: "bold",
         fill: "#111827", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "ms-student-details",
-        type: "text",
         x: 40, y: 130, width: 515, height: 50,
         text: "Name: {{student_name}}    |    Roll No: {{roll_number}}    |    Branch: {{department_name}}",
         fontFamily: "Helvetica", fontSize: 12, fontWeight: "bold",
         fill: "#374151", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("table", {
         id: "marks-table-main",
-        type: "table",
         x: 40, y: 190, width: 515, height: 220,
         headers: ["Code", "Subject Title", "Credits", "Max", "Obtained", "Grade"],
         rows: [
@@ -316,29 +293,26 @@ export const PRESET_TEMPLATES = [
         borderColor: "#000000",
         fontSize: 11,
         cellPadding: 8,
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "ms-summary",
-        type: "text",
         x: 40, y: 440, width: 515, height: 40,
         text: "TOTAL CREDITS: 17    |    PERCENTAGE: {{percentage}}%    |    CGPA: 9.4    |    RESULT: PASS WITH DISTINCTION",
         fontFamily: "Helvetica", fontSize: 12, fontWeight: "bold",
         fill: "#0f766e", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("qr", {
         id: "ms-qr",
-        type: "qr",
         x: 50, y: 720, size: 70,
         text: "VERIFY_MARKS:{{roll_number}}",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "ms-registrar-sig",
-        type: "text",
         x: 380, y: 740, width: 170, height: 40,
         text: "_____________________\nRegistrar (Evaluation)",
         fontFamily: "Helvetica", fontSize: 11, fontWeight: "bold",
         fill: "#374151", align: "center",
-      },
+      }),
     ],
   },
   {
@@ -346,70 +320,62 @@ export const PRESET_TEMPLATES = [
     name: "📜 Course Completion Certificate (Elegant)",
     page: { width: 595, height: 842, bg: "#ffffff" },
     objects: [
-      {
+      createTemplateObject("shape", {
         id: "cc-border",
-        type: "shape",
         shapeType: "border",
         borderStyle: "double",
         stroke: "#047857",
         strokeWidth: 2,
         margin: 24,
         x: 0, y: 0, width: 595, height: 842,
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "cc-header",
-        type: "text",
         x: 40, y: 70, width: 515, height: 35,
         text: "CERTIFICATE OF COMPLETION",
         fontFamily: "Times-Roman", fontSize: 24, fontWeight: "bold",
         fill: "#047857", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "cc-subhead",
-        type: "text",
         x: 40, y: 120, width: 515, height: 20,
         text: "PROUDLY PRESENTED TO",
         fontFamily: "Helvetica", fontSize: 12, fontWeight: "bold",
         fill: "#6b7280", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "cc-student",
-        type: "text",
         x: 40, y: 160, width: 515, height: 45,
         text: "{{student_name}}",
         fontFamily: "Times-Roman", fontSize: 28, fontWeight: "bold",
         fill: "#111827", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "cc-body",
-        type: "text",
         x: 60, y: 230, width: 475, height: 100,
-        text: "For successfully completing the comprehensive training program on \"{{project_title}}\" conducted by {{college_name}} during the academic session {{academic_year}}.",
+        text: 'For successfully completing the comprehensive training program on "{{project_title}}" conducted by {{college_name}} during the academic session {{academic_year}}.',
         fontFamily: "Helvetica", fontSize: 13, fontWeight: "normal",
         fill: "#374151", align: "center", lineHeight: 1.5,
-      },
-      {
+      }),
+      createTemplateObject("qr", {
         id: "cc-qr",
-        type: "qr",
         x: 60, y: 710, size: 70,
         text: "CERT_VERIFY:{{roll_number}}",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "cc-instructor-sig",
-        type: "text",
         x: 220, y: 730, width: 140, height: 40,
         text: "_____________________\nLead Instructor",
         fontFamily: "Helvetica", fontSize: 11, fontWeight: "bold",
         fill: "#374151", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "cc-director-sig",
-        type: "text",
         x: 395, y: 730, width: 140, height: 40,
         text: "_____________________\nProgram Director",
         fontFamily: "Helvetica", fontSize: 11, fontWeight: "bold",
         fill: "#374151", align: "center",
-      },
+      }),
     ],
   },
   {
@@ -417,70 +383,63 @@ export const PRESET_TEMPLATES = [
     name: "🏆 IEEE Academic Excellence Award",
     page: { width: 595, height: 842, bg: "#ffffff" },
     objects: [
-      {
+      createTemplateObject("shape", {
         id: "ieee-border",
-        type: "shape",
         shapeType: "border",
         borderStyle: "double",
         stroke: "#1d4ed8",
         strokeWidth: 2,
         margin: 20,
         x: 0, y: 0, width: 595, height: 842,
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "ieee-header",
-        type: "text",
         x: 40, y: 60, width: 515, height: 30,
         text: "IEEE STUDENT BRANCH - {{college_name}}",
         fontFamily: "Helvetica", fontSize: 16, fontWeight: "bold",
         fill: "#1d4ed8", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "ieee-title",
-        type: "text",
         x: 40, y: 110, width: 515, height: 40,
         text: "BEST PAPER / PROJECT AWARD",
         fontFamily: "Times-Roman", fontSize: 24, fontWeight: "bold",
         fill: "#1e1b4b", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "ieee-recipient",
-        type: "text",
         x: 40, y: 180, width: 515, height: 35,
         text: "Awarded to {{student_name}}",
         fontFamily: "Helvetica", fontSize: 18, fontWeight: "bold",
         fill: "#2563eb", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "ieee-body",
-        type: "text",
         x: 60, y: 240, width: 475, height: 100,
-        text: "In recognition of outstanding research contribution and excellence in the presentation titled \"{{project_title}}\" presented at the Annual Technical Symposium {{academic_year}}.",
+        text: 'In recognition of outstanding research contribution and excellence in the presentation titled "{{project_title}}" presented at the Annual Technical Symposium {{academic_year}}.',
         fontFamily: "Helvetica", fontSize: 13, fontWeight: "normal",
         fill: "#374151", align: "center", lineHeight: 1.5,
-      },
-      {
+      }),
+      createTemplateObject("qr", {
         id: "ieee-qr",
-        type: "qr",
         x: 60, y: 700, size: 70,
         text: "IEEE_AWARD:{{roll_number}}",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "ieee-chair-sig",
-        type: "text",
         x: 230, y: 720, width: 140, height: 40,
         text: "_____________________\nSession Chair",
         fontFamily: "Helvetica", fontSize: 11, fontWeight: "bold",
         fill: "#374151", align: "center",
-      },
-      {
+      }),
+      createTemplateObject("text", {
         id: "ieee-counselor-sig",
-        type: "text",
         x: 390, y: 720, width: 140, height: 40,
         text: "_____________________\nBranch Counselor",
         fontFamily: "Helvetica", fontSize: 11, fontWeight: "bold",
         fill: "#374151", align: "center",
-      },
+      }),
     ],
   },
 ];
+

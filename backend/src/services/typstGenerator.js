@@ -373,7 +373,9 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0) {
       if (node.content) {
         node.content.forEach(li => {
           const content = convertTipTapToTypst(li.content, imagePrefix, headingShift).trim();
-          output += `- ${content}\n`;
+          const lines = content.split('\n');
+          const formatted = lines.map((line, idx) => (idx === 0 ? `- ${line}` : line.trim() ? `  ${line}` : '')).join('\n');
+          output += `${formatted}\n`;
         });
       }
       output += '\n';
@@ -381,7 +383,9 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0) {
       if (node.content) {
         node.content.forEach(li => {
           const content = convertTipTapToTypst(li.content, imagePrefix, headingShift).trim();
-          output += `+ ${content}\n`;
+          const lines = content.split('\n');
+          const formatted = lines.map((line, idx) => (idx === 0 ? `+ ${line}` : line.trim() ? `  ${line}` : '')).join('\n');
+          output += `${formatted}\n`;
         });
       }
       output += '\n';
@@ -390,7 +394,9 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0) {
         node.content.forEach(item => {
           const checked = item.attrs?.checked ? 'x' : ' ';
           const content = convertTipTapToTypst(item.content, imagePrefix, headingShift).trim();
-          output += `- [${checked}] ${content}\n`;
+          const lines = content.split('\n');
+          const formatted = lines.map((line, idx) => (idx === 0 ? `- [${checked}] ${line}` : line.trim() ? `  ${line}` : '')).join('\n');
+          output += `${formatted}\n`;
         });
       }
       output += '\n';
@@ -531,6 +537,7 @@ function generateProjectTypst(project, imagePrefix = 'img') {
     pageSize = 'a4',
     fontSize = '12pt',
     lineSpacing = '1.5',
+    fontFamily = 'Times New Roman',
     marginTop = '2.5cm',
     marginBottom = '2.5cm',
     marginLeft = '3.5cm',
@@ -586,21 +593,21 @@ function generateProjectTypst(project, imagePrefix = 'img') {
   let pagePaper = normalizePageSize(pageSize);
   let pageMargin = `(top: ${marginTop}, bottom: ${marginBottom}, left: ${marginLeft}, right: ${marginRight})`;
   let pageColumns = 1;
-  let fontName = '';
+  let fontName = fontFamily || 'Times New Roman';
 
   if (templateId === 'ieee-paper') {
     pagePaper = 'us-letter';
     pageMargin = `(x: 0.68in, top: 0.75in, bottom: 1in)`;
     pageColumns = 2;
-    fontName = 'New Computer Modern';
+    if (!project.metadata?.fontFamily) fontName = 'New Computer Modern';
   } else if (templateId === 'diploma-project-report') {
     pagePaper = 'a4';
     pageMargin = `(top: 2.2cm, bottom: 2.2cm, left: 3.5cm, right: 1.25cm)`;
-    fontName = 'Times New Roman';
+    if (!project.metadata?.fontFamily) fontName = 'Times New Roman';
   } else if (templateId === 'thesis') {
     pagePaper = 'a4';
     pageMargin = `(top: 2.5cm, bottom: 2.5cm, left: 3.5cm, right: 2.5cm)`;
-    fontName = 'New Computer Modern';
+    if (!project.metadata?.fontFamily) fontName = 'New Computer Modern';
   } else if (templateId === 'assignment') {
     pagePaper = 'a4';
     pageMargin = `(top: 2cm, bottom: 2cm, left: 2cm, right: 2cm)`;
@@ -706,13 +713,13 @@ function generateProjectTypst(project, imagePrefix = 'img') {
     if it.numbering != none {
       let num = counter(heading).display()
       align(center)[
-        #text(font: "Times New Roman", size: 14pt, weight: "bold")[CHAPTER #num] \
+        #text(font: "${fontName}", size: 14pt, weight: "bold")[CHAPTER #num] \
         #v(0.4em)
-        #text(font: "Times New Roman", size: 14pt, weight: "bold")[#upper(it.body)]
+        #text(font: "${fontName}", size: 14pt, weight: "bold")[#upper(it.body)]
       ]
     } else {
       align(center)[
-        #text(font: "Times New Roman", size: 14pt, weight: "bold")[#upper(it.body)]
+        #text(font: "${fontName}", size: 14pt, weight: "bold")[#upper(it.body)]
       ]
     }
   }
@@ -722,9 +729,9 @@ function generateProjectTypst(project, imagePrefix = 'img') {
   {
     if it.numbering != none {
       let num = counter(heading).display()
-      text(font: "Times New Roman", size: 12pt, weight: "bold")[#num #h(0.6em) #upper(it.body)]
+      text(font: "${fontName}", size: 12pt, weight: "bold")[#num #h(0.6em) #upper(it.body)]
     } else {
-      text(font: "Times New Roman", size: 12pt, weight: "bold")[#upper(it.body)]
+      text(font: "${fontName}", size: 12pt, weight: "bold")[#upper(it.body)]
     }
   }
 )
@@ -733,9 +740,9 @@ function generateProjectTypst(project, imagePrefix = 'img') {
   {
     if it.numbering != none {
       let num = counter(heading).display()
-      text(font: "Times New Roman", size: 12pt, weight: "bold")[#num #h(0.6em) #it.body]
+      text(font: "${fontName}", size: 12pt, weight: "bold")[#num #h(0.6em) #it.body]
     } else {
-      text(font: "Times New Roman", size: 12pt, weight: "bold")[#it.body]
+      text(font: "${fontName}", size: 12pt, weight: "bold")[#it.body]
     }
   }
 )
@@ -744,9 +751,9 @@ function generateProjectTypst(project, imagePrefix = 'img') {
   {
     if it.numbering != none {
       let num = counter(heading).display()
-      text(font: "Times New Roman", size: 12pt, weight: "bold")[#num #h(0.6em) #it.body]
+      text(font: "${fontName}", size: 12pt, weight: "bold")[#num #h(0.6em) #it.body]
     } else {
-      text(font: "Times New Roman", size: 12pt, weight: "bold")[#it.body]
+      text(font: "${fontName}", size: 12pt, weight: "bold")[#it.body]
     }
   }
 )

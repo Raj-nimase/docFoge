@@ -44,18 +44,29 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Skip backend API calls or health checks
-  if (url.pathname.startsWith('/api') || url.pathname.includes('/health')) {
+  // Skip backend API calls, health checks, Vite HMR, and dev tools
+  if (
+    url.pathname.startsWith('/api') ||
+    url.pathname.includes('/health') ||
+    url.pathname.startsWith('/@') ||
+    url.pathname.includes('hot-update')
+  ) {
     return;
   }
 
   // Navigation requests: Network-First strategy (fallback to index.html from cache)
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request).catch(() => {
+      fetch(request).catch(async () => {
         console.log('[Service Worker] Serving index.html from cache for navigation:', request.url);
-        return caches.match('/index.html').then((response) => {
-          return response || caches.match('/');
+        const cachedResponse = (await caches.match('/index.html')) || (await caches.match('/'));
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+        return new Response('Offline', {
+          status: 503,
+          statusText: 'Service Unavailable',
+          headers: { 'Content-Type': 'text/plain' }
         });
       })
     );
@@ -77,16 +88,21 @@ self.addEventListener('fetch', (event) => {
         return cachedResponse;
       }
 
-      // Not in cache: fetch from network (returns a valid Response or propagates network error)
-      return fetch(request).then((networkResponse) => {
-        if (networkResponse && networkResponse.status === 200) {
-          const responseToCache = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, responseToCache);
-          });
-        }
-        return networkResponse;
-      });
+      // Not in cache: fetch from network with graceful error handling
+      return fetch(request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(request, responseToCache);
+            });
+          }
+          return networkResponse;
+        })
+        .catch((err) => {
+          console.warn('[Service Worker] Network fetch failed for:', request.url, err.message || err);
+          return Response.error();
+        });
     })
   );
 });

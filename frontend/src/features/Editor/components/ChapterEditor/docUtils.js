@@ -12,6 +12,34 @@ function stripHeadingPrefix(text) {
 }
 
 /**
+ * Splits doc nodes into sections separated by headings of the given level.
+ */
+export function splitDocByHeadings(doc, headingLevel = 1) {
+  const content = doc?.content;
+  if (!Array.isArray(content)) return [];
+
+  const sections = [];
+  let currentSection = { heading: null, nodes: [] };
+
+  for (const node of content) {
+    if (node?.type === "heading" && node?.attrs?.level === headingLevel) {
+      if (currentSection.heading || currentSection.nodes.length > 0) {
+        sections.push(currentSection);
+      }
+      currentSection = { heading: node, nodes: [node] };
+    } else {
+      currentSection.nodes.push(node);
+    }
+  }
+
+  if (currentSection.heading || currentSection.nodes.length > 0) {
+    sections.push(currentSection);
+  }
+
+  return sections;
+}
+
+/**
  * Merges frontMatter and chapters from a project into a single Tiptap doc structure.
  */
 export function mergeChaptersToSingleDoc(frontMatter = [], chapters = []) {
@@ -28,7 +56,7 @@ export function mergeChaptersToSingleDoc(frontMatter = [], chapters = []) {
       content: [{ type: "text", text: (fm.label || fm.title || "Section").toUpperCase() }],
     });
 
-    if (fm.content && fm.content.content && Array.isArray(fm.content.content)) {
+    if (Array.isArray(fm.content?.content)) {
       mergedContent.push(...fm.content.content);
     } else {
       mergedContent.push({
@@ -51,12 +79,12 @@ export function mergeChaptersToSingleDoc(frontMatter = [], chapters = []) {
       content: [{ type: "text", text: `CHAPTER ${chNum}: ${cleanTitle}` }],
     });
 
-    if (ch.content && ch.content.content && Array.isArray(ch.content.content)) {
+    if (Array.isArray(ch.content?.content)) {
       const nodes = ch.content.content;
       for (let i = 0; i < nodes.length; i++) {
         const node = nodes[i];
         if (i === 0 && node.type === "heading") {
-          const nodeText = (node.content ? node.content.map((c) => c.text || "").join("") : "").trim();
+          const nodeText = (node.content?.map((c) => c?.text || "").join("") || "").trim();
           const cleanNodeText = stripHeadingPrefix(nodeText).toUpperCase();
           const normCleanTitle = cleanTitle.toUpperCase();
           const normRawTitle = rawTitle.toUpperCase();
@@ -94,11 +122,11 @@ export function mergeChaptersToSingleDoc(frontMatter = [], chapters = []) {
 }
 
 function isContentEmpty(contentArray) {
-  if (!contentArray || contentArray.length === 0) return true;
+  if (!contentArray?.length) return true;
   return contentArray.every((node) => {
     if (node.type === "paragraph") {
-      if (!node.content || node.content.length === 0) return true;
-      const text = node.content.map((c) => c.text || "").join("").trim();
+      if (!node.content?.length) return true;
+      const text = node.content.map((c) => c?.text || "").join("").trim();
       return text === "";
     }
     return false;
@@ -106,7 +134,7 @@ function isContentEmpty(contentArray) {
 }
 
 function findMatchingChapter(cleanTitle, existingChapters, usedIds) {
-  if (!cleanTitle || !existingChapters || existingChapters.length === 0) return null;
+  if (!cleanTitle || !existingChapters?.length) return null;
   const normClean = cleanTitle.toLowerCase();
 
   // 1. Exact match on clean title
@@ -134,7 +162,7 @@ function findMatchingChapter(cleanTitle, existingChapters, usedIds) {
  * Splits a single unified Tiptap doc tree back into frontMatter and chapters arrays for storage & LaTeX generation.
  */
 export function splitSingleDocToProject(singleDoc, existingFrontMatter = [], existingChapters = []) {
-  if (!singleDoc || !singleDoc.content || !Array.isArray(singleDoc.content)) {
+  if (!Array.isArray(singleDoc?.content)) {
     return { frontMatter: existingFrontMatter, chapters: existingChapters };
   }
 
@@ -150,98 +178,108 @@ export function splitSingleDocToProject(singleDoc, existingFrontMatter = [], exi
   let currentTarget = null;
   let chIndex = 0;
 
-  for (const node of singleDoc.content) {
-    const text = (node.content ? node.content.map(c => c.text || '').join('') : '').trim();
-    const normText = text.toLowerCase();
+  const sections = splitDocByHeadings(singleDoc, 1);
 
-    // Check if node matches any non-auto frontMatter item (e.g. Abstract or Acknowledgement)
-    const isPotentialFm = (node.type === "heading") || (node.type === "paragraph" && (normText === "abstract" || normText === "acknowledgement" || normText.startsWith("abstract:") || normText.startsWith("acknowledgement:")));
-    
-    const matchedFm = isPotentialFm ? updatedFm.find((fm) => {
-      if (fm.auto || fm.id === "certificate" || fm.label?.toLowerCase() === "certificate") return false;
-      const label = (fm.label || fm.title || "").toLowerCase();
-      return label && (normText === label || normText.startsWith(label) || normText.includes(label));
-    }) : null;
+  for (const section of sections) {
+    for (const node of section.nodes) {
+      const text = (node.content?.map((c) => c?.text || "").join("") || "").trim();
+      const normText = text.toLowerCase();
 
-    if (matchedFm) {
-      currentTarget = { type: "fm", obj: matchedFm };
-    } else if (node.type === "heading" && node.attrs?.level === 1) {
-      const cleanTitle = stripHeadingPrefix(text.replace(/^CHAPTER\s+\d+[:\s\-]*/i, ""));
+      // Check if node matches any non-auto frontMatter item (e.g. Abstract or Acknowledgement)
+      const isPotentialFm =
+        node.type === "heading" ||
+        (node.type === "paragraph" &&
+          (normText === "abstract" ||
+            normText === "acknowledgement" ||
+            normText.startsWith("abstract:") ||
+            normText.startsWith("acknowledgement:")));
 
-      // If current target is an empty chapter, update its title instead of creating a duplicate empty chapter
-      if (
-        currentTarget &&
-        currentTarget.type === "ch" &&
-        isContentEmpty(currentTarget.obj.content.content)
-      ) {
-        if (cleanTitle) {
-          currentTarget.obj.title = cleanTitle;
-        }
-        currentTarget.obj.content.content = [];
-      } else {
-        // Chapter heading for a new chapter
-        chIndex++;
+      const matchedFm = isPotentialFm
+        ? updatedFm.find((fm) => {
+            if (fm.auto || fm.id === "certificate" || fm.label?.toLowerCase() === "certificate") return false;
+            const label = (fm.label || fm.title || "").toLowerCase();
+            return label && (normText === label || normText.startsWith(label) || normText.includes(label));
+          })
+        : null;
 
-        // Match existing chapter by title or position
-        let matchedCh = findMatchingChapter(cleanTitle, existingChapters, usedChapterIds);
-        if (!matchedCh && existingChapters[chIndex - 1] && !usedChapterIds.has(existingChapters[chIndex - 1].id)) {
-          matchedCh = existingChapters[chIndex - 1];
-        }
+      if (matchedFm) {
+        currentTarget = { type: "fm", obj: matchedFm };
+      } else if (node.type === "heading" && node.attrs?.level === 1) {
+        const cleanTitle = stripHeadingPrefix(text.replace(/^CHAPTER\s+\d+[:\s\-]*/i, ""));
 
-        const targetId = matchedCh ? matchedCh.id : `ch_${Date.now()}_${chIndex}`;
-        usedChapterIds.add(targetId);
-
-        const newCh = {
-          id: targetId,
-          title: cleanTitle || matchedCh?.title || `Chapter ${chIndex}`,
-          content: {
-            type: "doc",
-            content: [],
-          },
-        };
-        newChapters.push(newCh);
-        currentTarget = { type: "ch", obj: newCh };
-      }
-    } else {
-      if (currentTarget) {
-        // Also handle plain text paragraph starting with "CHAPTER X: Title" in an empty chapter
+        // If current target is an empty chapter, update its title instead of creating a duplicate empty chapter
         if (
-          currentTarget.type === "ch" &&
-          isContentEmpty(currentTarget.obj.content.content) &&
-          node.type === "paragraph" &&
-          node.content &&
-          Array.isArray(node.content)
+          currentTarget?.type === "ch" &&
+          isContentEmpty(currentTarget.obj.content?.content)
         ) {
-          const paraText = node.content.map((c) => c.text || "").join("").trim();
-          if (/^CHAPTER\s+\d+[:\s\-]*/i.test(paraText)) {
-            const cleanTitle = stripHeadingPrefix(paraText.replace(/^CHAPTER\s+\d+[:\s\-]*/i, ""));
-            if (cleanTitle) {
-              currentTarget.obj.title = cleanTitle;
-            }
-            continue; // Skip adding redundant title paragraph
+          if (cleanTitle) {
+            currentTarget.obj.title = cleanTitle;
           }
-        }
+          currentTarget.obj.content.content = [];
+        } else {
+          // Chapter heading for a new chapter
+          chIndex++;
 
-        if (currentTarget.type === "fm") {
-          currentTarget.obj.content.content.push(node);
-        } else if (currentTarget.type === "ch") {
-          currentTarget.obj.content.content.push(node);
+          // Match existing chapter by title or position
+          let matchedCh = findMatchingChapter(cleanTitle, existingChapters, usedChapterIds);
+          if (!matchedCh && existingChapters?.[chIndex - 1] && !usedChapterIds.has(existingChapters[chIndex - 1].id)) {
+            matchedCh = existingChapters[chIndex - 1];
+          }
+
+          const targetId = matchedCh ? matchedCh.id : `ch_${Date.now()}_${chIndex}`;
+          usedChapterIds.add(targetId);
+
+          const newCh = {
+            id: targetId,
+            title: cleanTitle || matchedCh?.title || `Chapter ${chIndex}`,
+            content: {
+              type: "doc",
+              content: [],
+            },
+          };
+          newChapters.push(newCh);
+          currentTarget = { type: "ch", obj: newCh };
         }
       } else {
-        // Fallback before any H1
-        if (existingChapters.length > 0) {
-          if (newChapters.length === 0) {
-            chIndex++;
-            const existingCh = existingChapters[0];
-            const newCh = {
-              id: existingCh ? existingCh.id : `ch_${Date.now()}_1`,
-              title: existingCh ? existingCh.title : "Introduction",
-              content: { type: "doc", content: [] },
-            };
-            newChapters.push(newCh);
-            currentTarget = { type: "ch", obj: newCh };
+        if (currentTarget) {
+          // Also handle plain text paragraph starting with "CHAPTER X: Title" in an empty chapter
+          if (
+            currentTarget.type === "ch" &&
+            isContentEmpty(currentTarget.obj.content?.content) &&
+            node.type === "paragraph" &&
+            Array.isArray(node.content)
+          ) {
+            const paraText = node.content.map((c) => c?.text || "").join("").trim();
+            if (/^CHAPTER\s+\d+[:\s\-]*/i.test(paraText)) {
+              const cleanTitle = stripHeadingPrefix(paraText.replace(/^CHAPTER\s+\d+[:\s\-]*/i, ""));
+              if (cleanTitle) {
+                currentTarget.obj.title = cleanTitle;
+              }
+              continue; // Skip adding redundant title paragraph
+            }
           }
-          currentTarget.obj.content.content.push(node);
+
+          if (currentTarget.type === "fm") {
+            currentTarget.obj.content.content.push(node);
+          } else if (currentTarget.type === "ch") {
+            currentTarget.obj.content.content.push(node);
+          }
+        } else {
+          // Fallback before any H1
+          if (existingChapters.length > 0) {
+            if (newChapters.length === 0) {
+              chIndex++;
+              const existingCh = existingChapters[0];
+              const newCh = {
+                id: existingCh ? existingCh.id : `ch_${Date.now()}_1`,
+                title: existingCh ? existingCh.title : "Introduction",
+                content: { type: "doc", content: [] },
+              };
+              newChapters.push(newCh);
+              currentTarget = { type: "ch", obj: newCh };
+            }
+            currentTarget.obj.content.content.push(node);
+          }
         }
       }
     }
@@ -267,4 +305,5 @@ export function splitSingleDocToChapters(singleDoc, existingChapters = []) {
   const result = splitSingleDocToProject(singleDoc, [], existingChapters);
   return result.chapters;
 }
+
 

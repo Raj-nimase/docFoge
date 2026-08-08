@@ -1625,6 +1625,140 @@ body {
   margin: 0 4px;
 }
 
+/* ── TOOLBAR FONT SELECTOR DROPDOWN ── */
+.toolbar-font-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.toolbar-btn--font {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  height: 38px;
+  width: 175px;
+  min-width: 175px;
+  max-width: 175px;
+  flex-shrink: 0;
+  justify-content: space-between;
+  border-radius: var(--radius-sm, 6px);
+  background: #ffffff;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  user-select: none;
+  transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.toolbar-btn--font:hover {
+  background: #f8fafc;
+  border-color: var(--accent);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+}
+
+.toolbar-btn--font:active {
+  transform: scale(0.97);
+  background: #f1f5f9;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.toolbar-btn--font:focus-visible,
+.toolbar-btn--font[aria-expanded="true"] {
+  border-color: var(--accent);
+  background: #f8fafc;
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.1);
+  outline: none;
+}
+
+.toolbar-font-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.toolbar-font-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 99999;
+  min-width: 270px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.16), 0 8px 10px -6px rgba(0, 0, 0, 0.08);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  backdrop-filter: blur(16px);
+  animation: fontMenuFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fontMenuFadeIn {
+  from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.toolbar-font-header {
+  padding: 4px 8px 6px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  margin-bottom: 2px;
+}
+
+.toolbar-font-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: all 0.12s ease;
+}
+
+.toolbar-font-option:hover {
+  background: rgba(15, 23, 42, 0.04);
+  border-color: rgba(15, 23, 42, 0.08);
+}
+
+.toolbar-font-option--active {
+  background: rgba(15, 23, 42, 0.07);
+  border-color: rgba(15, 23, 42, 0.15);
+}
+
+.toolbar-font-option-title {
+  font-size: 0.92rem;
+  color: var(--text);
+  line-height: 1.25;
+}
+
+.toolbar-font-option-desc {
+  font-size: 0.65rem;
+  color: var(--text-faint);
+  font-family: var(--font-sans);
+  margin-top: 2px;
+}
+
 /* ── EDITOR RESPONSIVE: reclaim horizontal room on smaller widths ──
    (Panel positions are unchanged — sidebar | editor | preview stays side by
    side; we only trim padding so the writing paper isn't crushed.) */

@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "codebase-memory": {
+      "command": "C:\\Users\\User\\.local\\bin\\codebase-memory-mcp.exe",
+      "args": [
+        "stdio"
+      ]
+    }
+  }
+}

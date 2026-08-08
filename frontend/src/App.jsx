@@ -79,7 +79,10 @@ export default function App() {
       // bootstrap where the bootstrap effect already loads projects.
       const isLoginTransition = prev !== null && prev !== "loading" && prev !== "authenticated";
       if (isLoginTransition) {
-        loadProjectsForUser(true);
+        const projectsAlreadyLoaded = useAcaStore.getState().projectsLoaded;
+        if (!projectsAlreadyLoaded) {
+          loadProjectsForUser(true);
+        }
       }
       // ensure we're on the app after sign in (return to the guarded page if we came from one)
       if (window.location.pathname === "/auth") {

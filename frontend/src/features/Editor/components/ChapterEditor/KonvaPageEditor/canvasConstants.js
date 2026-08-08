@@ -89,6 +89,41 @@ export function describeObject(obj) {
   return OBJECT_TYPE_LABELS[obj.type] || "Object";
 }
 
+/**
+ * Calculate canvas object position patch for alignment against page boundaries.
+ *
+ * Supported types: 'center-h', 'center-v', 'left', 'right', 'top', 'bottom'.
+ *
+ * @param {Object} obj - Canvas object with position/dimensions
+ * @param {Object} page - Page dimensions { width, height }
+ * @param {string} type - Alignment type
+ * @returns {Object} Patch object { x } or { y } or {}
+ */
+export function alignCanvasObject(obj, page = { width: 595, height: 842 }, type) {
+  if (!obj) return {};
+  const pageWidth = page?.width ?? 595;
+  const pageHeight = page?.height ?? 842;
+  const width = obj.width || (obj.type === "qr" ? (obj.size || 80) : 0);
+  const height = obj.height || (obj.type === "qr" ? (obj.size || 80) : 0);
+
+  switch (type) {
+    case "left":
+      return { x: 0 };
+    case "right":
+      return { x: Math.round(pageWidth - width) };
+    case "center-h":
+      return { x: Math.round((pageWidth - width) / 2) };
+    case "top":
+      return { y: 0 };
+    case "bottom":
+      return { y: Math.round(pageHeight - height) };
+    case "center-v":
+      return { y: Math.round((pageHeight - height) / 2) };
+    default:
+      return {};
+  }
+}
+
 let cascadeIndex = 0;
 
 function nextId(type) {
@@ -117,7 +152,7 @@ export function createObject(type, opts = {}) {
       return {
         id: nextId("text"),
         type: "text",
-        ...cascade({ x: Math.round((page.width - width) / 2), y: 120 }),
+        ...cascade({ x: alignCanvasObject({ width }, page, "center-h").x, y: 120 }),
         width,
         text: "Double-click to edit",
         fontFamily: "Helvetica",
@@ -134,7 +169,7 @@ export function createObject(type, opts = {}) {
       return {
         id: nextId("img"),
         type: "image",
-        ...cascade({ x: Math.round(page.width / 2 - 60), y: 150 }),
+        ...cascade({ x: alignCanvasObject({ width: 120 }, page, "center-h").x, y: 150 }),
         width: 120,
         height: 120,
         src,
@@ -157,7 +192,7 @@ export function createObject(type, opts = {}) {
       return {
         id: nextId("table"),
         type: "table",
-        ...cascade({ x: Math.round((page.width - width) / 2), y: 300 }),
+        ...cascade({ x: alignCanvasObject({ width }, page, "center-h").x, y: 300 }),
         width,
         headers: ["Subject", "Credits", "Grade"],
         rows: [
@@ -193,7 +228,7 @@ export function createObject(type, opts = {}) {
           id: nextId("line"),
           type: "shape",
           shapeType: "line",
-          ...cascade({ x: Math.round((page.width - width) / 2), y: 200 }),
+          ...cascade({ x: alignCanvasObject({ width }, page, "center-h").x, y: 200 }),
           width,
           height: 0,
           fill: "",
@@ -205,7 +240,7 @@ export function createObject(type, opts = {}) {
         id: nextId("shape"),
         type: "shape",
         shapeType,
-        ...cascade({ x: Math.round(page.width / 2 - 75), y: 180 }),
+        ...cascade({ x: alignCanvasObject({ width: 150 }, page, "center-h").x, y: 180 }),
         width: 150,
         height: 100,
         fill: "#e0f2fe",
