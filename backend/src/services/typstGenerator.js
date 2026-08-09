@@ -626,7 +626,7 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
         const figCode = `#figure(\n${fullTableCode},\n  ${captionArg}\n)`;
 
         if (alignMode === 'left' || alignMode === 'right') {
-          output += `#align(${alignMode})[\n  #show figure: set align(${alignMode})\n  ${figCode}\n]\n\n`;
+          output += `#align(${alignMode})[\n  #box[\n    ${figCode}\n  ]\n]\n\n`;
         } else {
           output += `${figCode}\n\n`;
         }
