@@ -677,8 +677,8 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
         const alignMode = node.attrs?.align || 'center';
         const widthVal = node.attrs?.width || '80%';
         const fitVal = node.attrs?.fit || 'contain';
-        const placementMode = node.attrs?.placement || 'auto';
-        const placementArg = placementMode !== 'none' ? `, placement: ${placementMode}` : '';
+        const placementMode = node.attrs?.placement || 'none';
+        const placementArg = (placementMode && placementMode !== 'none') ? `, placement: ${placementMode}` : '';
         const rawImageCaption = (node.attrs?.title || node.attrs?.alt || '').trim();
         const captionArg = rawImageCaption ? `caption: [${escapeTypst(rawImageCaption)}]` : `caption: []`;
 

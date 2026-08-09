@@ -133,6 +133,7 @@ const ImageView = (props) => {
             backgroundColor: "#f8fafc",
           }}
         >
+
           {isLoading && !hasError && (
             <div
               style={{

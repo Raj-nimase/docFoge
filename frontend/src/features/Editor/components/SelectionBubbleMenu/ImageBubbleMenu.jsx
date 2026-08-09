@@ -57,6 +57,7 @@ export default function ImageBubbleMenu({ editor }) {
   const currentAlign = isImage ? getImageAttr('align', 'center') : 'center';
   const currentWidth = isImage ? getImageAttr('width', '80%') : '80%';
   const currentFit = isImage ? getImageAttr('fit', 'contain') : 'contain';
+  const currentPlacement = isImage ? getImageAttr('placement', 'none') : 'none';
 
   return (
     <>
@@ -197,6 +198,23 @@ export default function ImageBubbleMenu({ editor }) {
             <option value="contain">Contain</option>
             <option value="cover">Cover</option>
             <option value="stretch">Stretch</option>
+          </select>
+        </div>
+
+        <div className="bubble-menu-divider" />
+
+        <div className="bubble-menu-section">
+          <span className="bubble-menu-label">PDF Float</span>
+          <select
+            className="bubble-menu-select"
+            value={currentPlacement}
+            onChange={(e) => updateImageAttr({ placement: e.target.value })}
+            title="PDF Floating position"
+          >
+            <option value="none">Inline</option>
+            <option value="auto">Auto Float (Zero Gaps)</option>
+            <option value="top">Top of Page</option>
+            <option value="bottom">Bottom of Page</option>
           </select>
         </div>
 

@@ -1,12 +1,11 @@
 import { useState, useEffect } from "react";
 import { NodeViewWrapper } from "@tiptap/react";
-import { ImageOff, RefreshCw, Plus, Trash2, LayoutGrid, Upload, ArrowUpDown } from "lucide-react";
+import { ImageOff, RefreshCw, Trash2, Upload } from "lucide-react";
 
 const ImageGroupView = (props) => {
   const { node, updateAttributes, selected, editor, getPos } = props;
   const caption = node.attrs.title || "";
   const columns = parseInt(node.attrs.columns || 3, 10);
-  const placement = node.attrs.placement || "auto";
   const images = Array.isArray(node.attrs.images) ? node.attrs.images : [];
 
   const focusAfterGroup = () => {
@@ -100,121 +99,6 @@ const ImageGroupView = (props) => {
             padding: "12px",
           }}
         >
-          {/* Header Controls Bar */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "8px",
-              marginBottom: "12px",
-              paddingBottom: "8px",
-              borderBottom: "1px dashed #cbd5e1",
-              fontSize: "11px",
-              color: "#64748b",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: 600, color: "#334155" }}>
-              <LayoutGrid size={14} style={{ color: "#059669" }} />
-              <span>Subfigure Grid ({images.length} images)</span>
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              {/* Row Layout Pill */}
-              <div
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "4px",
-                  padding: "2px 6px",
-                  backgroundColor: "#ffffff",
-                  border: "1px solid #cbd5e1",
-                  borderRadius: "4px",
-                  fontSize: "11px",
-                }}
-              >
-                <span>Row:</span>
-                <select
-                  value={gridColumnsCount}
-                  onChange={(e) => updateAttributes({ columns: parseInt(e.target.value, 10) })}
-                  onClick={(e) => e.stopPropagation()}
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    color: "#334155",
-                    outline: "none",
-                    cursor: "pointer",
-                  }}
-                >
-                  <option value={2}>2 Max</option>
-                  <option value={3}>3 Max</option>
-                  <option value={4}>4 Max</option>
-                </select>
-              </div>
-
-              {/* PDF Float Pill */}
-              <div
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "4px",
-                  padding: "2px 6px",
-                  backgroundColor: "#ffffff",
-                  border: "1px solid #cbd5e1",
-                  borderRadius: "4px",
-                  fontSize: "11px",
-                }}
-              >
-                <ArrowUpDown size={11} style={{ color: "#059669" }} />
-                <span>Float:</span>
-                <select
-                  value={placement}
-                  onChange={(e) => updateAttributes({ placement: e.target.value })}
-                  onClick={(e) => e.stopPropagation()}
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    color: "#334155",
-                    outline: "none",
-                    cursor: "pointer",
-                  }}
-                  title="Paper Floating: Auto rearranges surrounding text into empty space"
-                >
-                  <option value="auto">Auto Float</option>
-                  <option value="top">Top</option>
-                  <option value="bottom">Bottom</option>
-                  <option value="none">Inline</option>
-                </select>
-              </div>
-
-              {/* Add Image Button */}
-              <button
-                type="button"
-                onClick={handleAddImage}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "4px",
-                  padding: "3px 8px",
-                  fontSize: "11px",
-                  fontWeight: 500,
-                  backgroundColor: "#059669",
-                  color: "#ffffff",
-                  borderRadius: "4px",
-                  border: "none",
-                  cursor: "pointer",
-                }}
-              >
-                <Plus size={12} />
-                Add Image
-              </button>
-            </div>
-          </div>
-
           {/* Subfigure Cards Grid */}
           <div
             style={{

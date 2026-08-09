@@ -569,6 +569,11 @@ function FrontMatterSectionEditor({ section }) {
               parseHTML: element => element.getAttribute('data-fit') || 'contain',
               renderHTML: attributes => ({ 'data-fit': attributes.fit || 'contain' })
             },
+            placement: {
+              default: "none",
+              parseHTML: element => element.getAttribute('data-placement') || 'none',
+              renderHTML: attributes => ({ 'data-placement': attributes.placement || 'none' })
+            },
           };
         },
         addNodeView() {
@@ -949,6 +954,11 @@ function MultiChapterEditor() {
               default: "contain",
               parseHTML: element => element.getAttribute('data-fit') || 'contain',
               renderHTML: attributes => ({ 'data-fit': attributes.fit || 'contain' })
+            },
+            placement: {
+              default: "none",
+              parseHTML: element => element.getAttribute('data-placement') || 'none',
+              renderHTML: attributes => ({ 'data-placement': attributes.placement || 'none' })
             },
           };
         },
