@@ -621,11 +621,9 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
         }
 
         state.tblCount = (state.tblCount || 0) + 1;
-        const chNum = state.chNum || 1;
-        const defaultTableCaption = chNum > 0 ? `Table ${chNum}.${state.tblCount}` : `Table ${state.tblCount}`;
         const rawTableCaption = (node.attrs?.caption || node.attrs?.title || '').trim();
-        const tableCaption = escapeTypst(rawTableCaption || defaultTableCaption);
-        const figCode = `#figure(\n${fullTableCode},\n  caption: [${tableCaption}]\n)`;
+        const captionArg = rawTableCaption ? `caption: [${escapeTypst(rawTableCaption)}]` : `caption: []`;
+        const figCode = `#figure(\n  align(${alignMode})[${fullTableCode}],\n  ${captionArg}\n)`;
 
         output += `#align(${alignMode})[\n${figCode}\n]\n\n`;
       }
@@ -649,11 +647,9 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
       const filename = extractImageData(node.attrs?.src, imagePrefix);
       if (filename) {
         state.figCount = (state.figCount || 0) + 1;
-        const chNum = state.chNum || 1;
-        const defaultImageCaption = chNum > 0 ? `Figure ${chNum}.${state.figCount}` : `Figure ${state.figCount}`;
         const rawImageCaption = (node.attrs?.title || node.attrs?.alt || '').trim();
-        const caption = escapeTypst(rawImageCaption || defaultImageCaption);
-        output += `#figure(image("${filename}", width: 80%), caption: [${caption}])\n\n`;
+        const captionArg = rawImageCaption ? `caption: [${escapeTypst(rawImageCaption)}]` : `caption: []`;
+        output += `#figure(image("${filename}", width: 80%), ${captionArg})\n\n`;
       }
     } else if (node.type === 'text') {
       let t = processTextNodeWithMath(node.text || '');
