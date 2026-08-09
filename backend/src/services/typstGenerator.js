@@ -874,8 +874,25 @@ function generateProjectTypst(project, imagePrefix = 'img') {
   const leadingVal = (0.65 * spacingNum).toFixed(3);
   typst += `#set par(leading: ${leadingVal}em, spacing: 1.2em, justify: true)\n`;
   typst += `#show figure: set block(breakable: true)\n`;
+  typst += `#show figure.caption: it => {\n`;
+  typst += `  if it.body == [] [\n`;
+  typst += `    #it.supplement #context counter(figure.where(kind: it.kind)).display(it.numbering)\n`;
+  typst += `  ] else [\n`;
+  typst += `    #it\n`;
+  typst += `  ]\n`;
+  typst += `}\n\n`;
+
   if (enableChapterNumbers) {
-    typst += `#set figure(numbering: "1.1")\n\n`;
+    typst += `#show heading.where(level: 1): it => {\n`;
+    typst += `  counter(figure.where(kind: table)).update(0)\n`;
+    typst += `  counter(figure.where(kind: image)).update(0)\n`;
+    typst += `  it\n`;
+    typst += `}\n\n`;
+    typst += `#set figure(numbering: (..num) => {\n`;
+    typst += `  let ch = counter(heading).get().at(0, default: 1)\n`;
+    typst += `  let n = num.pos().at(0, default: 1)\n`;
+    typst += `  [#ch.#n]\n`;
+    typst += `})\n\n`;
   } else {
     typst += `#set figure(numbering: "1")\n\n`;
   }
