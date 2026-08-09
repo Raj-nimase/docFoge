@@ -398,9 +398,28 @@ function FrontMatterSectionEditor({ section }) {
           return {
             ...this.parent?.(),
             caption: { default: null },
-            tableStyle: { default: "modern" },
-            align: { default: "center" },
-            inset: { default: "normal" },
+            tableStyle: {
+              default: "modern",
+              parseHTML: element => element.getAttribute('data-style') || 'modern',
+              renderHTML: attributes => attributes.tableStyle ? { 'data-style': attributes.tableStyle } : {}
+            },
+            align: {
+              default: "center",
+              parseHTML: element => element.getAttribute('data-align') || element.getAttribute('align') || 'center',
+              renderHTML: attributes => {
+                const a = attributes.align || 'center';
+                const margin = a === 'left' ? '1rem auto 1.5rem 0' : a === 'right' ? '1rem 0 1.5rem auto' : '1rem auto 1.5rem auto';
+                return {
+                  'data-align': a,
+                  style: `margin: ${margin};`
+                };
+              }
+            },
+            inset: {
+              default: "normal",
+              parseHTML: element => element.getAttribute('data-inset') || 'normal',
+              renderHTML: attributes => attributes.inset ? { 'data-inset': attributes.inset } : {}
+            },
             borderColor: { default: null },
             borderWidth: { default: null },
             headerFill: { default: null },
@@ -729,9 +748,28 @@ function MultiChapterEditor() {
           return {
             ...this.parent?.(),
             caption: { default: null },
-            tableStyle: { default: "modern" },
-            align: { default: "center" },
-            inset: { default: "normal" },
+            tableStyle: {
+              default: "modern",
+              parseHTML: element => element.getAttribute('data-style') || 'modern',
+              renderHTML: attributes => attributes.tableStyle ? { 'data-style': attributes.tableStyle } : {}
+            },
+            align: {
+              default: "center",
+              parseHTML: element => element.getAttribute('data-align') || element.getAttribute('align') || 'center',
+              renderHTML: attributes => {
+                const a = attributes.align || 'center';
+                const margin = a === 'left' ? '1rem auto 1.5rem 0' : a === 'right' ? '1rem 0 1.5rem auto' : '1rem auto 1.5rem auto';
+                return {
+                  'data-align': a,
+                  style: `margin: ${margin};`
+                };
+              }
+            },
+            inset: {
+              default: "normal",
+              parseHTML: element => element.getAttribute('data-inset') || 'normal',
+              renderHTML: attributes => attributes.inset ? { 'data-inset': attributes.inset } : {}
+            },
             borderColor: { default: null },
             borderWidth: { default: null },
             headerFill: { default: null },

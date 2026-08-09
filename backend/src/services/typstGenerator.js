@@ -627,11 +627,7 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
         const tableCaption = escapeTypst(rawTableCaption || defaultTableCaption);
         const figCode = `#figure(\n${fullTableCode},\n  caption: [${tableCaption}]\n)`;
 
-        if (alignMode === 'left' || alignMode === 'right') {
-          output += `#align(${alignMode})[\n${figCode}\n]\n\n`;
-        } else {
-          output += `${figCode}\n\n`;
-        }
+        output += `#align(${alignMode})[\n${figCode}\n]\n\n`;
       }
     } else if (node.type === 'horizontalRule') {
       output += `#line(length: 100%)\n\n`;
