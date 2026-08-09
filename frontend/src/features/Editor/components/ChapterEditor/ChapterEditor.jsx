@@ -32,6 +32,7 @@ import Image from "@tiptap/extension-image";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import useAcaStore from "@/contexts/projectStore/projectStore";
 import SelectionBubbleMenu from "@/features/Editor/components/SelectionBubbleMenu/SelectionBubbleMenu";
+import TableBubbleMenu from "@/features/Editor/components/SelectionBubbleMenu/TableBubbleMenu";
 import SlashCommandMenu from "@/features/Editor/components/SlashCommandMenu/SlashCommandMenu";
 import { mergeChaptersToSingleDoc, splitSingleDocToChapters, splitSingleDocToProject } from "./docUtils";
 import useScrollSyncStore from "@/features/Editor/scrollSync/scrollSyncStore";
@@ -481,6 +482,7 @@ function FrontMatterSectionEditor({ section }) {
       <div className="chapter-editor-scroll">
         <div className="chapter-paper">
           {editor && <SelectionBubbleMenu editor={editor} />}
+          {editor && <TableBubbleMenu editor={editor} />}
           <EditorContent editor={editor} className="tiptap-editor" />
         </div>
       </div>
@@ -1129,6 +1131,7 @@ function MultiChapterEditor() {
           }}
         >
           {editor && <SelectionBubbleMenu editor={editor} />}
+          {editor && <TableBubbleMenu editor={editor} />}
           {editor && <SlashCommandMenu editor={editor} />}
           <EditorContent editor={editor} className="tiptap-editor" />
         </div>
