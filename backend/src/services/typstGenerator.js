@@ -351,7 +351,7 @@ function processTextNodeWithMath(text) {
 /**
  * Core TipTap to Typst converter function
  */
-function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { lastOrderedEnd: 0, lastWasContinuation: false }, isTopLevel = true) {
+function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { lastOrderedEnd: 0, lastWasContinuation: false, chNum: 0, figCount: 0, tblCount: 0 }, isTopLevel = true) {
   if (!nodes || !Array.isArray(nodes)) return '';
 
   let output = '';
@@ -376,6 +376,12 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
       if (level < 1) level = 1;
       if (level > 6) level = 6;
       
+      if (level === 1 && !node.attrs?.isFrontMatter) {
+        state.chNum = (state.chNum || 0) + 1;
+        state.figCount = 0;
+        state.tblCount = 0;
+      }
+
       output += `${'='.repeat(level)} ${headingContent}\n\n`;
     } else if (node.type === 'bulletList') {
       if (isTopLevel) {
@@ -448,24 +454,185 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
       const content = convertTipTapToTypst(node.content, imagePrefix, headingShift, state, false).trim();
       output += `#rect(width: 100%, inset: 10pt, radius: 4pt, fill: rgb("#f0f4f8"), stroke: 0.5pt + rgb("#cbd5e1"))[${content}]\n\n`;
     } else if (node.type === 'table') {
-      let cols = 1;
-      let tableContent = '';
-      if (node.content && node.content[0] && node.content[0].content) {
-        cols = node.content[0].content.length;
-      }
-      const colDefs = Array(cols).fill('1fr').join(', ');
-      
-      node.content?.forEach(row => {
-        row.content?.forEach(cell => {
-          const cellContent = convertTipTapToTypst(cell.content, imagePrefix, headingShift).trim().replace(/\n{2,}/g, '\n');
-          if (cell.type === 'tableHeader') {
-            tableContent += `  [*${cellContent}*],\n`;
-          } else {
-            tableContent += `  [${cellContent}],\n`;
+      const rows = node.content || [];
+      if (rows.length > 0) {
+        let numCols = 1;
+        rows.forEach(row => {
+          if (row.content && row.content.length > numCols) {
+            numCols = row.content.length;
           }
         });
-      });
-      output += `#table(columns: (${colDefs}),\n${tableContent})\n\n`;
+
+        const colStats = Array.from({ length: numCols }, () => ({
+          maxLen: 0,
+          sumLen: 0,
+          count: 0,
+          maxWordLen: 0,
+          hasParagraph: false
+        }));
+
+        const explicitColWidths = Array(numCols).fill(null);
+
+        rows.forEach(row => {
+          row.content?.forEach((cell, cIdx) => {
+            if (cIdx >= numCols) return;
+            const text = (cell.content?.map(n => n.text || '').join('') || '').trim();
+            const len = text.length;
+            colStats[cIdx].maxLen = Math.max(colStats[cIdx].maxLen, len);
+            colStats[cIdx].sumLen += len;
+            colStats[cIdx].count += 1;
+            
+            if (text.includes('\n') || len > 50) {
+              colStats[cIdx].hasParagraph = true;
+            }
+
+            const words = text.split(/\s+/);
+            words.forEach(w => {
+              colStats[cIdx].maxWordLen = Math.max(colStats[cIdx].maxWordLen, w.length);
+            });
+
+            if (Array.isArray(cell.attrs?.colwidth) && cell.attrs.colwidth[0]) {
+              explicitColWidths[cIdx] = cell.attrs.colwidth[0];
+            }
+          });
+        });
+
+        const colDefsArr = [];
+        const hasAnyExplicit = explicitColWidths.some(w => w && w > 0);
+
+        if (hasAnyExplicit) {
+          explicitColWidths.forEach(w => {
+            if (w && w > 0) {
+              colDefsArr.push(`${w}fr`);
+            } else {
+              colDefsArr.push('1fr');
+            }
+          });
+        } else {
+          const longColIndices = [];
+          colStats.forEach((stat, idx) => {
+            if (stat.maxLen > 25 || stat.hasParagraph) {
+              longColIndices.push(idx);
+            }
+          });
+
+          if (longColIndices.length === 0) {
+            for (let i = 0; i < numCols; i++) colDefsArr.push('auto');
+          } else if (longColIndices.length === numCols) {
+            colStats.forEach(stat => {
+              if (stat.maxLen > 100) colDefsArr.push('2fr');
+              else colDefsArr.push('1fr');
+            });
+          } else {
+            colStats.forEach(stat => {
+              if (stat.maxLen > 25 || stat.hasParagraph) {
+                colDefsArr.push('1fr');
+              } else {
+                colDefsArr.push('auto');
+              }
+            });
+          }
+        }
+
+        const colDefs = colDefsArr.join(', ');
+
+        let headerRowIndexCount = 0;
+        for (const row of rows) {
+          const isHeaderRow = row.content && row.content.length > 0 && row.content.every(cell => cell.type === 'tableHeader');
+          if (isHeaderRow) {
+            headerRowIndexCount++;
+          } else {
+            break;
+          }
+        }
+
+        let tableBodyContent = '';
+        let headerContent = '';
+
+        rows.forEach((row, rIdx) => {
+          const isHeader = rIdx < headerRowIndexCount;
+          let rowStr = '';
+
+          row.content?.forEach(cell => {
+            const cellText = convertTipTapToTypst(cell.content, imagePrefix, headingShift, state, false).trim().replace(/\n{2,}/g, '\n');
+            const colspan = cell.attrs?.colspan || 1;
+            const rowspan = cell.attrs?.rowspan || 1;
+
+            let formattedCell = isHeader ? `[*${cellText}*]` : `[${cellText}]`;
+
+            if (colspan > 1 || rowspan > 1) {
+              const attrs = [];
+              if (colspan > 1) attrs.push(`colspan: ${colspan}`);
+              if (rowspan > 1) attrs.push(`rowspan: ${rowspan}`);
+              formattedCell = `table.cell(${attrs.join(', ')})${formattedCell}`;
+            }
+
+            rowStr += `  ${formattedCell},\n`;
+          });
+
+          if (isHeader) {
+            headerContent += rowStr;
+          } else {
+            tableBodyContent += rowStr;
+          }
+        });
+
+        const tableStyle = node.attrs?.tableStyle || 'modern';
+        const alignMode = node.attrs?.align || 'center';
+        const insetMode = node.attrs?.inset || 'normal';
+
+        let insetStr = '(x: 8pt, y: 6pt)';
+        if (insetMode === 'compact') insetStr = '(x: 5pt, y: 4pt)';
+        else if (insetMode === 'spacious') insetStr = '(x: 12pt, y: 8pt)';
+
+        let strokeCode = 'stroke: 0.5pt + rgb("#cbd5e1")';
+        let fillCode = 'fill: (x, y) => if y == 0 { rgb("#f1f5f9") } else { none }';
+
+        if (tableStyle === 'booktabs') {
+          strokeCode = 'stroke: none';
+          fillCode = 'fill: none';
+        } else if (tableStyle === 'zebra') {
+          strokeCode = 'stroke: 0.5pt + rgb("#cbd5e1")';
+          fillCode = 'fill: (x, y) => if y == 0 { rgb("#e2e8f0") } else if calc.even(y) { rgb("#f8fafc") } else { none }';
+        } else if (tableStyle === 'borderless') {
+          strokeCode = 'stroke: none';
+          fillCode = 'fill: (x, y) => if y == 0 { rgb("#f1f5f9") } else { none }';
+        } else if (tableStyle === 'custom') {
+          const bColor = node.attrs?.borderColor || '#cbd5e1';
+          const bWidth = node.attrs?.borderWidth || '0.5pt';
+          const hFill = node.attrs?.headerFill || '#f1f5f9';
+          strokeCode = bWidth === 'none' ? 'stroke: none' : `stroke: ${bWidth} + rgb("${bColor}")`;
+          fillCode = `fill: (x, y) => if y == 0 { rgb("${hFill}") } else { none }`;
+        }
+
+        let fullTableCode = '';
+        if (tableStyle === 'booktabs') {
+          if (headerContent) {
+            fullTableCode = `table(\n  columns: (${colDefs}),\n  align: (col, row) => if row == 0 { center + horizon } else { left + top },\n  stroke: none,\n  inset: ${insetStr},\n  table.hline(stroke: 1.5pt),\n  table.header(\n    repeat: true,\n${headerContent}  ),\n  table.hline(stroke: 0.8pt),\n${tableBodyContent}  table.hline(stroke: 1.5pt)\n)`;
+          } else {
+            fullTableCode = `table(\n  columns: (${colDefs}),\n  align: (col, row) => if row == 0 { center + horizon } else { left + top },\n  stroke: none,\n  inset: ${insetStr},\n  table.hline(stroke: 1.5pt),\n${tableBodyContent}  table.hline(stroke: 1.5pt)\n)`;
+          }
+        } else {
+          if (headerContent) {
+            fullTableCode = `table(\n  columns: (${colDefs}),\n  align: (col, row) => if row == 0 { center + horizon } else { left + top },\n  ${fillCode},\n  ${strokeCode},\n  inset: ${insetStr},\n  table.header(\n    repeat: true,\n${headerContent}  ),\n${tableBodyContent})`;
+          } else {
+            fullTableCode = `table(\n  columns: (${colDefs}),\n  align: (col, row) => if row == 0 { center + horizon } else { left + top },\n  ${fillCode},\n  ${strokeCode},\n  inset: ${insetStr},\n${tableBodyContent})`;
+          }
+        }
+
+        state.tblCount = (state.tblCount || 0) + 1;
+        const chNum = state.chNum || 1;
+        const defaultTableCaption = chNum > 0 ? `Table ${chNum}.${state.tblCount}` : `Table ${state.tblCount}`;
+        const rawTableCaption = (node.attrs?.caption || node.attrs?.title || '').trim();
+        const tableCaption = escapeTypst(rawTableCaption || defaultTableCaption);
+        const figCode = `#figure(\n${fullTableCode},\n  caption: [${tableCaption}]\n)`;
+
+        if (alignMode === 'left' || alignMode === 'right') {
+          output += `#align(${alignMode})[\n${figCode}\n]\n\n`;
+        } else {
+          output += `${figCode}\n\n`;
+        }
+      }
     } else if (node.type === 'horizontalRule') {
       output += `#line(length: 100%)\n\n`;
     } else if (node.type === 'hardBreak') {
@@ -480,17 +647,17 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
         output += `$${typstMath}$`;
       }
     } else if (node.type === 'footnote') {
-      const fnContent = convertTipTapToTypst(node.content, imagePrefix, headingShift).trim();
+      const fnContent = convertTipTapToTypst(node.content, imagePrefix, headingShift, state, false).trim();
       output += `#footnote[${fnContent}]`;
     } else if (node.type === 'image') {
       const filename = extractImageData(node.attrs?.src, imagePrefix);
       if (filename) {
-        const caption = escapeTypst(node.attrs?.title || node.attrs?.alt || '');
-        if (caption) {
-          output += `#figure(image("${filename}", width: 80%), caption: [${caption}])\n\n`;
-        } else {
-          output += `#align(center)[#image("${filename}", width: 80%)]\n\n`;
-        }
+        state.figCount = (state.figCount || 0) + 1;
+        const chNum = state.chNum || 1;
+        const defaultImageCaption = chNum > 0 ? `Figure ${chNum}.${state.figCount}` : `Figure ${state.figCount}`;
+        const rawImageCaption = (node.attrs?.title || node.attrs?.alt || '').trim();
+        const caption = escapeTypst(rawImageCaption || defaultImageCaption);
+        output += `#figure(image("${filename}", width: 80%), caption: [${caption}])\n\n`;
       }
     } else if (node.type === 'text') {
       let t = processTextNodeWithMath(node.text || '');
@@ -710,6 +877,7 @@ function generateProjectTypst(project, imagePrefix = 'img') {
   if (templateId === 'diploma-project-report') spacingNum = 2.0;
   const leadingVal = (0.65 * spacingNum).toFixed(3);
   typst += `#set par(leading: ${leadingVal}em, spacing: 1.2em, justify: true)\n`;
+  typst += `#show figure: set block(breakable: true)\n\n`;
 
   // Heading Styles & Numbering per Template
   if (templateId === 'ieee-paper') {
@@ -1100,7 +1268,14 @@ function generateProjectTypst(project, imagePrefix = 'img') {
       
       // Emit level 1 heading with clean title — the #show rule auto-formats as "CHAPTER N: TITLE"
       typst += `#heading(level: 1)[${escapeTypst(cleanTitle)}]\n\n`;
-      typst += convertTipTapToTypst(contentNodes, imagePrefix, shift);
+      const chapterState = {
+        lastOrderedEnd: 0,
+        lastWasContinuation: false,
+        chNum: index + 1,
+        figCount: 0,
+        tblCount: 0,
+      };
+      typst += convertTipTapToTypst(contentNodes, imagePrefix, shift, chapterState);
       if (index < project.chapters.length - 1) {
         typst += `\n#pagebreak()\n\n`;
       }
