@@ -873,7 +873,12 @@ function generateProjectTypst(project, imagePrefix = 'img') {
   if (templateId === 'diploma-project-report') spacingNum = 2.0;
   const leadingVal = (0.65 * spacingNum).toFixed(3);
   typst += `#set par(leading: ${leadingVal}em, spacing: 1.2em, justify: true)\n`;
-  typst += `#show figure: set block(breakable: true)\n\n`;
+  typst += `#show figure: set block(breakable: true)\n`;
+  if (enableChapterNumbers) {
+    typst += `#set figure(numbering: "1.1")\n\n`;
+  } else {
+    typst += `#set figure(numbering: "1")\n\n`;
+  }
 
   // Heading Styles & Numbering per Template
   if (templateId === 'ieee-paper') {
