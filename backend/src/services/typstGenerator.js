@@ -206,17 +206,36 @@ function extractImageData(src, prefix) {
   if (!src) return null;
   
   imageCounter++;
-  const ext = src.startsWith('data:image/jpeg') ? 'jpg' : 'png';
+  
+  let ext = 'png';
+  if (src.startsWith('data:image/')) {
+    const mimeMatch = src.match(/^data:image\/([a-zA-Z0-9\+\-]+);/);
+    if (mimeMatch) {
+      const mime = mimeMatch[1].toLowerCase();
+      if (mime === 'jpeg' || mime === 'jpg') ext = 'jpg';
+      else if (mime === 'webp') ext = 'webp';
+      else if (mime === 'svg+xml' || mime === 'svg') ext = 'svg';
+      else if (mime === 'gif') ext = 'gif';
+      else if (mime === 'png') ext = 'png';
+    }
+  } else if (typeof src === 'string' && src.includes('.')) {
+    const urlExt = src.split('.').pop().split('?')[0].toLowerCase();
+    if (['jpg', 'jpeg', 'png', 'webp', 'svg', 'gif'].includes(urlExt)) {
+      ext = urlExt === 'jpeg' ? 'jpg' : urlExt;
+    }
+  }
+
   const filename = `${prefix}_img_${imageCounter}.${ext}`;
   
   if (src.startsWith('data:image')) {
-    const base64Data = src.split(',')[1];
+    const commaIdx = src.indexOf(',');
+    const base64Data = commaIdx !== -1 ? src.slice(commaIdx + 1) : src;
     extractedImages.push({
       filename,
       base64: base64Data
     });
     return filename;
-  } else if (src.startsWith('http')) {
+  } else if (src.startsWith('http://') || src.startsWith('https://')) {
     extractedImages.push({
       filename,
       url: src
@@ -363,7 +382,11 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
         state.lastOrderedEnd = 0;
         state.lastWasContinuation = false;
       }
-      output += `${content}\n\n`;
+      if (!content.trim()) {
+        output += `#v(1.2em)\n\n`;
+      } else {
+        output += `${content}\n\n`;
+      }
     } else if (node.type === 'heading') {
       if (isTopLevel) {
         state.lastOrderedEnd = 0;
@@ -651,9 +674,59 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
       const filename = extractImageData(node.attrs?.src, imagePrefix);
       if (filename) {
         state.figCount = (state.figCount || 0) + 1;
+        const alignMode = node.attrs?.align || 'center';
+        const widthVal = node.attrs?.width || '80%';
+        const fitVal = node.attrs?.fit || 'contain';
+        const placementMode = node.attrs?.placement || 'auto';
+        const placementArg = placementMode !== 'none' ? `, placement: ${placementMode}` : '';
         const rawImageCaption = (node.attrs?.title || node.attrs?.alt || '').trim();
         const captionArg = rawImageCaption ? `caption: [${escapeTypst(rawImageCaption)}]` : `caption: []`;
-        output += `#figure(image("${filename}", width: 80%), ${captionArg})\n\n`;
+
+        let fitTypst = '';
+        if (fitVal === 'cover') fitTypst = ', fit: "cover"';
+        else if (fitVal === 'contain') fitTypst = ', fit: "contain"';
+        else if (fitVal === 'stretch') fitTypst = ', fit: "stretch"';
+
+        const figCode = `#figure(\n  image("${filename}", width: ${widthVal}${fitTypst}),\n  ${captionArg}${placementArg}\n)`;
+
+        if (alignMode === 'left' || alignMode === 'right') {
+          output += `#align(${alignMode})[\n  #box[\n    ${figCode}\n  ]\n]\n\n`;
+        } else {
+          output += `${figCode}\n\n`;
+        }
+      }
+    } else if (node.type === 'imageGroup') {
+      const imgs = Array.isArray(node.attrs?.images) ? node.attrs.images : [];
+      const cols = Math.min(Math.max(1, parseInt(node.attrs?.columns || 3, 10)), 4);
+      const colFrs = Array(cols).fill('1fr').join(', ');
+      const placementMode = node.attrs?.placement || 'none';
+      const placementArg = (placementMode && placementMode !== 'none') ? `, placement: ${placementMode}` : '';
+      const validImages = [];
+
+      imgs.forEach((imgObj, idx) => {
+        const fn = extractImageData(imgObj.src, imagePrefix);
+        if (fn) {
+          validImages.push({
+            filename: fn,
+            sublabel: `(${String.fromCharCode(97 + idx)})`,
+            title: (imgObj.title || '').trim(),
+          });
+        }
+      });
+
+      if (validImages.length > 0) {
+        state.figCount = (state.figCount || 0) + 1;
+        const mainCaption = (node.attrs?.title || '').trim();
+        const captionArg = mainCaption ? `caption: [${escapeTypst(mainCaption)}]` : `caption: []`;
+        const boxHeight = cols === 2 ? '130pt' : cols === 4 ? '85pt' : '105pt';
+
+        const gridItems = validImages.map((img) => {
+          const captionText = img.title ? `${img.sublabel} ${escapeTypst(img.title)}` : `${img.sublabel}`;
+          return `  [#align(center)[\n    #box(height: ${boxHeight})[#image("${img.filename}", width: 100%, height: 100%, fit: "contain")] \\\n    #v(3pt)\n    #text(size: 8pt, weight: "medium", fill: rgb("#334155"))[${captionText}]\n  ]]`;
+        }).join(',\n');
+
+        const figCode = `#figure(\n  block(breakable: false)[\n    #grid(\n      columns: (${colFrs}),\n      gutter: 10pt,\n${gridItems}\n    )\n  ],\n  ${captionArg}${placementArg}\n)\n\n`;
+        output += figCode;
       }
     } else if (node.type === 'text') {
       let t = processTextNodeWithMath(node.text || '');

@@ -33,13 +33,69 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import useAcaStore from "@/contexts/projectStore/projectStore";
 import SelectionBubbleMenu from "@/features/Editor/components/SelectionBubbleMenu/SelectionBubbleMenu";
 import TableBubbleMenu from "@/features/Editor/components/SelectionBubbleMenu/TableBubbleMenu";
+import ImageBubbleMenu from "@/features/Editor/components/SelectionBubbleMenu/ImageBubbleMenu";
 import SlashCommandMenu from "@/features/Editor/components/SlashCommandMenu/SlashCommandMenu";
 import { mergeChaptersToSingleDoc, splitSingleDocToChapters, splitSingleDocToProject } from "./docUtils";
 import useScrollSyncStore from "@/features/Editor/scrollSync/scrollSyncStore";
 import CertificateCanvasEditor from "./CertificateCanvasEditor";
-import MathView from "./nodes/MathView";
-import ImageView from "./nodes/ImageView";
-import TableView from "./nodes/TableView";
+import { MathView, ImageView, ImageGroupView, TableView } from "./nodes";
+
+const ImageGroupExtension = Node.create({
+  name: "imageGroup",
+  group: "block",
+  inline: false,
+  selectable: true,
+  draggable: true,
+  atom: true,
+
+  addAttributes() {
+    return {
+      title: { default: "" },
+      columns: { default: 3 },
+      placement: { default: "none" },
+      images: { default: [] },
+    };
+  },
+
+  parseHTML() {
+    return [
+      {
+        tag: "div[data-type='image-group']",
+        getAttrs: (element) => {
+          let imgs = [];
+          try {
+            imgs = JSON.parse(element.getAttribute("data-images") || "[]");
+          } catch {
+            imgs = [];
+          }
+          return {
+            title: element.getAttribute("data-title") || "",
+            columns: parseInt(element.getAttribute("data-columns") || "3", 10),
+            placement: element.getAttribute("data-placement") || "auto",
+            images: imgs,
+          };
+        },
+      },
+    ];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return [
+      "div",
+      {
+        "data-type": "image-group",
+        "data-title": HTMLAttributes.title || "",
+        "data-columns": HTMLAttributes.columns || 3,
+        "data-placement": HTMLAttributes.placement || "auto",
+        "data-images": JSON.stringify(HTMLAttributes.images || []),
+      },
+    ];
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(ImageGroupView);
+  },
+});
 
 const MathExtension = Node.create({
   name: "math",
@@ -132,6 +188,38 @@ const MathPasteHandler = Extension.create({
             const result = handleRichPaste(view, event, editor);
             return result;
           },
+        },
+      }),
+    ];
+  },
+});
+
+const TrailingNode = Extension.create({
+  name: "trailingNode",
+
+  addOptions() {
+    return {
+      node: "paragraph",
+      notAfter: ["paragraph"],
+    };
+  },
+
+  addProseMirrorPlugins() {
+    const plugin = new PluginKey(this.name);
+
+    return [
+      new Plugin({
+        key: plugin,
+        appendTransaction: (_, __, state) => {
+          const { doc, tr, schema } = state;
+          const lastChild = doc.lastChild;
+          if (lastChild && lastChild.type.name !== "paragraph") {
+            const pType = schema.nodes[this.options.node];
+            if (pType) {
+              return tr.insert(doc.content.size, pType.create());
+            }
+          }
+          return null;
         },
       }),
     ];
@@ -383,6 +471,7 @@ function FrontMatterSectionEditor({ section }) {
 
   const editor = useEditor({
     extensions: [
+      TrailingNode,
       StarterKit.configure({
         heading: { levels: [1, 2, 3, 4] },
         codeBlock: true,
@@ -398,7 +487,11 @@ function FrontMatterSectionEditor({ section }) {
         addAttributes() {
           return {
             ...this.parent?.(),
-            caption: { default: null },
+            caption: {
+              default: null,
+              parseHTML: element => element.getAttribute('data-caption') || element.getAttribute('caption'),
+              renderHTML: attributes => attributes.caption ? { 'data-caption': attributes.caption } : {}
+            },
             tableStyle: {
               default: "modern",
               parseHTML: element => element.getAttribute('data-style') || 'modern',
@@ -452,6 +545,7 @@ function FrontMatterSectionEditor({ section }) {
       MathExtension,
       MathPasteHandler,
       HeadingCleaner,
+      ImageGroupExtension,
       Image.configure({
         inline: false,
         allowBase64: true,
@@ -460,6 +554,21 @@ function FrontMatterSectionEditor({ section }) {
           return {
             ...this.parent?.(),
             title: { default: null },
+            align: {
+              default: "center",
+              parseHTML: element => element.getAttribute('data-align') || element.getAttribute('align') || 'center',
+              renderHTML: attributes => ({ 'data-align': attributes.align || 'center' })
+            },
+            width: {
+              default: "80%",
+              parseHTML: element => element.getAttribute('data-width') || element.style.width || '80%',
+              renderHTML: attributes => ({ 'data-width': attributes.width || '80%' })
+            },
+            fit: {
+              default: "contain",
+              parseHTML: element => element.getAttribute('data-fit') || 'contain',
+              renderHTML: attributes => ({ 'data-fit': attributes.fit || 'contain' })
+            },
           };
         },
         addNodeView() {
@@ -479,6 +588,10 @@ function FrontMatterSectionEditor({ section }) {
 
   useEffect(() => {
     if (!editor) return;
+    useAcaStore.getState().setEditorInstance(editor);
+    const handleFocus = () => {
+      useAcaStore.getState().setEditorInstance(editor);
+    };
     const handleBlur = () => {
       if (onUpdateTimer.current) {
         clearTimeout(onUpdateTimer.current);
@@ -486,8 +599,10 @@ function FrontMatterSectionEditor({ section }) {
         updateSectionContent(section.id, editor.getJSON());
       }
     };
+    editor.on("focus", handleFocus);
     editor.on("blur", handleBlur);
     return () => {
+      editor.off("focus", handleFocus);
       editor.off("blur", handleBlur);
       if (onUpdateTimer.current) {
         clearTimeout(onUpdateTimer.current);
@@ -719,6 +834,7 @@ function MultiChapterEditor() {
 
   const editor = useEditor({
     extensions: [
+      TrailingNode,
       StarterKit.configure({
         heading: false,
         codeBlock: true,
@@ -751,7 +867,11 @@ function MultiChapterEditor() {
         addAttributes() {
           return {
             ...this.parent?.(),
-            caption: { default: null },
+            caption: {
+              default: null,
+              parseHTML: element => element.getAttribute('data-caption') || element.getAttribute('caption'),
+              renderHTML: attributes => attributes.caption ? { 'data-caption': attributes.caption } : {}
+            },
             tableStyle: {
               default: "modern",
               parseHTML: element => element.getAttribute('data-style') || 'modern',
@@ -805,6 +925,7 @@ function MultiChapterEditor() {
       MathExtension,
       MathPasteHandler,
       HeadingCleaner,
+      ImageGroupExtension,
       DragOutsideSelectionFix,
       Image.configure({
         inline: false,
@@ -814,6 +935,21 @@ function MultiChapterEditor() {
           return {
             ...this.parent?.(),
             title: { default: null },
+            align: {
+              default: "center",
+              parseHTML: element => element.getAttribute('data-align') || element.getAttribute('align') || 'center',
+              renderHTML: attributes => ({ 'data-align': attributes.align || 'center' })
+            },
+            width: {
+              default: "80%",
+              parseHTML: element => element.getAttribute('data-width') || element.style.width || '80%',
+              renderHTML: attributes => ({ 'data-width': attributes.width || '80%' })
+            },
+            fit: {
+              default: "contain",
+              parseHTML: element => element.getAttribute('data-fit') || 'contain',
+              renderHTML: attributes => ({ 'data-fit': attributes.fit || 'contain' })
+            },
           };
         },
         addNodeView() {
@@ -826,59 +962,103 @@ function MultiChapterEditor() {
       transformPastedHTML: (html) => transformMathHtml(html),
       handleDrop: (view, event, slice, moved) => {
         if (!moved && event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files.length > 0) {
-          const file = event.dataTransfer.files[0];
-          if (file && file.type.startsWith("image/")) {
+          const files = Array.from(event.dataTransfer.files).filter(f => f && f.type && f.type.startsWith("image/"));
+          if (files.length > 0) {
             event.preventDefault();
             const showToast = useAcaStore.getState().showToast;
-            showToast("info", "Uploading dropped image...");
-            import("@/services/api").then(({ uploadImage }) => {
-              uploadImage(file)
-                .then((url) => {
-                  const { schema } = view.state;
-                  const node = schema.nodes.image?.create({ src: url });
-                  if (node) {
-                    const coordinates = view.posAtCoords({ left: event.clientX, top: event.clientY });
-                    const tr = view.state.tr.insert(coordinates ? coordinates.pos : view.state.selection.to, node);
-                    view.dispatch(tr);
+
+            if (files.length === 1) {
+              showToast("info", "Uploading dropped image...");
+              import("@/services/api").then(({ uploadImage }) => {
+                uploadImage(files[0])
+                  .then((url) => {
+                    if (editorRef.current && !editorRef.current.isDestroyed) {
+                      editorRef.current.chain().focus().setImage({ src: url }).run();
+                    }
                     showToast("success", "Image uploaded ✓");
-                  }
-                })
-                .catch((err) => {
-                  showToast("error", "Image upload failed: " + err.message);
-                });
-            });
+                  })
+                  .catch((err) => showToast("error", "Image upload failed: " + err.message));
+              });
+            } else {
+              showToast("info", `Uploading ${files.length} dropped images as grid...`);
+              import("@/services/api").then(({ uploadImage }) => {
+                Promise.all(files.map(f => uploadImage(f)))
+                  .then((urls) => {
+                    const imgObjects = urls.map((url, idx) => ({
+                      id: `img_${Date.now()}_${idx}`,
+                      src: url,
+                      title: "",
+                    }));
+                    if (editorRef.current && !editorRef.current.isDestroyed) {
+                      editorRef.current.chain().focus().insertContent({
+                        type: "imageGroup",
+                        attrs: {
+                          title: "Figure: Multi-image subfigure grid",
+                          columns: 3,
+                          placement: "none",
+                          images: imgObjects,
+                        },
+                      }).run();
+                    }
+                    showToast("success", `${files.length} images added to grid ✓`);
+                  })
+                  .catch((err) => showToast("error", "Grid upload failed: " + err.message));
+              });
+            }
             return true;
           }
         }
         return false;
       },
       handlePaste: (view, event) => {
-        isPasteEventRef.current = true;
         const items = Array.from(event.clipboardData?.items || []);
-        const imageItem = items.find((item) => item.type.startsWith("image/"));
-        if (imageItem) {
-          const file = imageItem.getAsFile();
-          if (file) {
-            event.preventDefault();
-            const showToast = useAcaStore.getState().showToast;
+        const imageItems = items.filter((item) => item.type.startsWith("image/"));
+        if (imageItems.length > 0) {
+          event.preventDefault();
+          const files = imageItems.map(item => item.getAsFile()).filter(Boolean);
+          const showToast = useAcaStore.getState().showToast;
+
+          if (files.length === 1) {
             showToast("info", "Uploading pasted image...");
             import("@/services/api").then(({ uploadImage }) => {
-              uploadImage(file)
+              uploadImage(files[0])
                 .then((url) => {
-                  const { schema } = view.state;
-                  const node = schema.nodes.image?.create({ src: url });
-                  if (node) {
-                    const tr = view.state.tr.replaceSelectionWith(node);
-                    view.dispatch(tr);
-                    showToast("success", "Image uploaded ✓");
+                  if (editorRef.current && !editorRef.current.isDestroyed) {
+                    editorRef.current.chain().focus().setImage({ src: url }).run();
                   }
+                  showToast("success", "Image uploaded ✓");
                 })
-                .catch((err) => {
-                  showToast("error", "Image upload failed: " + err.message);
-                });
+                .catch((err) => showToast("error", "Image upload failed: " + err.message));
             });
-            return true;
+          } else if (files.length > 1) {
+            showToast("info", `Uploading ${files.length} pasted images as grid...`);
+            import("@/services/api").then(({ uploadImage }) => {
+              Promise.all(files.map(f => uploadImage(f)))
+                .then((urls) => {
+                  const imgObjects = urls.map((url, idx) => ({
+                    id: `img_${Date.now()}_${idx}`,
+                    src: url,
+                    title: "",
+                  }));
+                  if (editorRef.current && !editorRef.current.isDestroyed) {
+                    editorRef.current.chain().focus().insertContent({
+                      type: "imageGroup",
+                      attrs: {
+                        title: "Figure: Multi-image subfigure grid",
+                        columns: 3,
+                        placement: "none",
+                        images: imgObjects,
+                      },
+                    }).run();
+                  }
+                  showToast("success", `${files.length} images added to grid ✓`);
+                })
+                .catch((err) => showToast("error", "Grid upload failed: " + err.message));
+            });
           }
+          return true;
+        } else {
+          isPasteEventRef.current = true;
         }
         return false;
       },
@@ -1168,9 +1348,10 @@ function MultiChapterEditor() {
               : undefined,
           }}
         >
-          {editor && <SelectionBubbleMenu editor={editor} />}
-          {editor && <TableBubbleMenu editor={editor} />}
-          {editor && <SlashCommandMenu editor={editor} />}
+          {editor && !editor.isDestroyed && <SelectionBubbleMenu editor={editor} />}
+          {editor && !editor.isDestroyed && <TableBubbleMenu editor={editor} />}
+          {editor && !editor.isDestroyed && <ImageBubbleMenu editor={editor} />}
+          {editor && !editor.isDestroyed && <SlashCommandMenu editor={editor} />}
           <EditorContent editor={editor} className="tiptap-editor" />
         </div>
       </div>

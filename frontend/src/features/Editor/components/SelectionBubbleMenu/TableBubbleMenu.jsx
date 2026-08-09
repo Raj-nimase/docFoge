@@ -15,13 +15,14 @@ import {
 } from 'lucide-react';
 
 export default function TableBubbleMenu({ editor }) {
-  if (!editor) return null;
+  if (!editor || editor.isDestroyed) return null;
 
   const getTableAttr = (name, fallback) => {
     return editor.getAttributes('table')[name] || fallback;
   };
 
   const updateTableAttr = (attrs) => {
+    if (!editor || editor.isDestroyed) return;
     editor.chain().focus().updateAttributes('table', attrs).run();
   };
 
@@ -38,7 +39,7 @@ export default function TableBubbleMenu({ editor }) {
         offset: [0, 10],
         maxWidth: 'none',
       }}
-      shouldShow={({ editor: ed }) => ed.isActive('table')}
+      shouldShow={({ editor: ed }) => !!(ed && !ed.isDestroyed && ed.isActive('table'))}
       className="editor-bubble-menu table-bubble-menu"
     >
       <div className="bubble-menu-section">
@@ -127,8 +128,6 @@ export default function TableBubbleMenu({ editor }) {
           </button>
         </div>
       </div>
-
-
 
       <div className="bubble-menu-divider" />
 

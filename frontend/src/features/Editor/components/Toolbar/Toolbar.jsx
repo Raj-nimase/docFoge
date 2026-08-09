@@ -15,6 +15,7 @@ import {
   Table2,
   TableProperties,
   ImagePlus,
+  LayoutGrid,
   Eraser,
   Rows3,
   Columns3,
@@ -462,33 +463,113 @@ export default function ToolbarGroups({ editor }) {
         <button
           type="button"
           className="toolbar-btn toolbar-btn--icon"
-          title="Insert image from file"
+          title="Insert single image or select multiple for a subfigure grid"
           onClick={() => {
             const input = document.createElement('input');
             input.type = 'file';
-            input.accept = 'image/png, image/jpeg, image/jpg';
+            input.multiple = true;
+            input.accept = 'image/png, image/jpeg, image/jpg, image/webp, image/svg+xml, image/gif';
             input.onchange = (e) => {
-              const file = e.target.files[0];
-              if (!file) return;
+              const files = Array.from(e.target.files || []);
+              if (!files.length) return;
               const showToast = useAcaStore.getState().showToast;
-              showToast('info', 'Uploading image...');
-              import('@/services/api').then(({ uploadImage }) => {
-                uploadImage(file)
-                  .then((url) => {
-                    editor.chain().focus().setImage({ src: url }).run();
-                    showToast('success', 'Image uploaded ✓');
-                  })
-                  .catch((err) => {
-                    console.error('Image upload failed:', err);
-                    showToast('error', 'Image upload failed: ' + err.message);
-                  });
-              });
+              const targetEditor = useAcaStore.getState().editorInstance || editor;
+              if (!targetEditor || targetEditor.isDestroyed) return;
+
+              if (files.length === 1) {
+                showToast('info', 'Uploading image...');
+                import('@/services/api').then(({ uploadImage }) => {
+                  uploadImage(files[0])
+                    .then((url) => {
+                      targetEditor.chain().focus().setImage({ src: url }).run();
+                      showToast('success', 'Image uploaded ✓');
+                    })
+                    .catch((err) => {
+                      console.error('Image upload failed:', err);
+                      showToast('error', 'Image upload failed: ' + err.message);
+                    });
+                });
+              } else {
+                showToast('info', `Uploading ${files.length} images as grid...`);
+                import('@/services/api').then(({ uploadImage }) => {
+                  Promise.all(files.map((f) => uploadImage(f)))
+                    .then((urls) => {
+                      const imgObjects = urls.map((url, idx) => ({
+                        id: `img_${Date.now()}_${idx}`,
+                        src: url,
+                        title: '',
+                      }));
+                      targetEditor.chain().focus().insertContent({
+                        type: 'imageGroup',
+                        attrs: {
+                          title: 'Figure: Multi-image subfigure grid',
+                          columns: 3,
+                          placement: 'none',
+                          images: imgObjects,
+                        },
+                      }).run();
+                      showToast('success', `${files.length} images added to grid ✓`);
+                    })
+                    .catch((err) => {
+                      console.error('Grid upload failed:', err);
+                      showToast('error', 'Grid upload failed: ' + err.message);
+                    });
+                });
+              }
             };
             input.click();
           }}
         >
           <ImagePlus size={15} />
           <span className="toolbar-btn-label">Image</span>
+        </button>
+
+        <button
+          type="button"
+          className="toolbar-btn toolbar-btn--icon"
+          title="Insert side-by-side multi-image subfigure grid"
+          onClick={() => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.multiple = true;
+            input.accept = 'image/png, image/jpeg, image/jpg, image/webp, image/svg+xml, image/gif';
+            input.onchange = (e) => {
+              const files = Array.from(e.target.files || []);
+              if (!files.length) return;
+              const showToast = useAcaStore.getState().showToast;
+              const targetEditor = useAcaStore.getState().editorInstance || editor;
+              if (!targetEditor || targetEditor.isDestroyed) return;
+
+              showToast('info', `Uploading ${files.length} images for grid layout...`);
+              import('@/services/api').then(({ uploadImage }) => {
+                Promise.all(files.map((f) => uploadImage(f)))
+                  .then((urls) => {
+                    const imgObjects = urls.map((url, idx) => ({
+                      id: `img_${Date.now()}_${idx}`,
+                      src: url,
+                      title: '',
+                    }));
+                    targetEditor.chain().focus().insertContent({
+                      type: 'imageGroup',
+                      attrs: {
+                        title: 'Figure: Multi-image subfigure grid',
+                        columns: 3,
+                        images: imgObjects,
+                      },
+                    }).run();
+                    showToast('success', `${files.length} images added to grid ✓`);
+                  })
+                  .catch((err) => {
+                    console.error('Grid upload failed:', err);
+                    showToast('error', 'Grid upload failed: ' + err.message);
+                  });
+              });
+            };
+            input.click();
+          }}
+        >
+          <LayoutGrid size={15} />
+          <span className="toolbar-btn-label">Grid</span>
         </button>
         <button
           type="button"

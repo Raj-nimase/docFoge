@@ -9,6 +9,7 @@ import {
   ListOrdered,
   Code2,
   Quote,
+  LayoutGrid,
 } from 'lucide-react';
 import { setHeading } from '@/features/Editor/utils/editorFormatActions';
 
@@ -75,6 +76,41 @@ const SLASH_ITEMS = [
     desc: 'Insert callout blockquote',
     icon: Quote,
     action: (editor) => editor.chain().focus().toggleBlockquote().run(),
+  },
+  {
+    id: 'imageGrid',
+    title: 'Multi-Image Grid',
+    desc: 'Insert side-by-side subfigures (auto 2-4 per row)',
+    icon: LayoutGrid,
+    action: (editor) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.multiple = true;
+      input.accept = 'image/png, image/jpeg, image/jpg, image/webp, image/svg+xml, image/gif';
+      input.onchange = (e) => {
+        const files = Array.from(e.target.files || []);
+        if (!files.length) return;
+        import('@/services/api').then(({ uploadImage }) => {
+          Promise.all(files.map((f) => uploadImage(f))).then((urls) => {
+            const imgObjects = urls.map((url, idx) => ({
+              id: `img_${Date.now()}_${idx}`,
+              src: url,
+              title: '',
+            }));
+            editor.chain().focus().insertContent({
+              type: 'imageGroup',
+              attrs: {
+                title: 'Figure: Multi-image subfigure grid',
+                columns: 3,
+                placement: 'none',
+                images: imgObjects,
+              },
+            }).run();
+          });
+        });
+      };
+      input.click();
+    },
   },
 ];
 

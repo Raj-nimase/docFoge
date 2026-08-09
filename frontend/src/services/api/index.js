@@ -331,22 +331,36 @@ export async function fetchProject(clientId) {
  * @returns {Promise<string>} Cloudinary secure URL
  */
 export async function uploadImage(file, projectId = '') {
-  const compressedFile = await compressImageForUpload(file);
-  const token = getStoredToken();
-  const form  = new FormData();
-  form.append('file', compressedFile);
+  try {
+    const compressedFile = await compressImageForUpload(file);
+    const token = getStoredToken();
+    const form  = new FormData();
+    form.append('file', compressedFile);
 
-  const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
-  const res = await fetch(`${BASE}/images/upload${query}`, {
-    method: 'POST',
-    // NOTE: Do NOT set Content-Type — the browser sets multipart/form-data + boundary automatically
-    headers: { Authorization: `Bearer ${token}` },
-    body: form,
-  });
+    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
+    const res = await fetch(`${BASE}/images/upload${query}`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data.success) throw new Error(data.error || 'Image upload failed');
-  return data.url;
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.success && data.url) {
+      return data.url;
+    }
+    throw new Error(data.error || 'Image upload returned error');
+  } catch (err) {
+    console.warn('[uploadImage] Backend image upload failed/unavailable, falling back to local Data URL:', err.message);
+    return new Promise((resolve, reject) => {
+      if (!file || !(file instanceof Blob)) {
+        return reject(new Error('Invalid image file'));
+      }
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('Failed to read image file locally'));
+      reader.readAsDataURL(file);
+    });
+  }
 }
 
 /**

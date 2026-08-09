@@ -266,20 +266,18 @@ export function splitSingleDocToProject(singleDoc, existingFrontMatter = [], exi
           }
         } else {
           // Fallback before any H1
-          if (existingChapters.length > 0) {
-            if (newChapters.length === 0) {
-              chIndex++;
-              const existingCh = existingChapters[0];
-              const newCh = {
-                id: existingCh ? existingCh.id : `ch_${Date.now()}_1`,
-                title: existingCh ? existingCh.title : "Introduction",
-                content: { type: "doc", content: [] },
-              };
-              newChapters.push(newCh);
-              currentTarget = { type: "ch", obj: newCh };
-            }
-            currentTarget.obj.content.content.push(node);
+          if (newChapters.length === 0) {
+            chIndex++;
+            const existingCh = existingChapters[0];
+            const newCh = {
+              id: existingCh ? existingCh.id : `ch_${Date.now()}_1`,
+              title: existingCh ? existingCh.title : "Introduction",
+              content: { type: "doc", content: [] },
+            };
+            newChapters.push(newCh);
+            currentTarget = { type: "ch", obj: newCh };
           }
+          currentTarget.obj.content.content.push(node);
         }
       }
     }

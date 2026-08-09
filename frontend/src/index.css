@@ -2144,6 +2144,16 @@ body {
   word-break: break-word;
 }
 
+.tiptap-editor .ProseMirror table[data-caption]::after {
+  content: "Table: " attr(data-caption);
+  display: block;
+  text-align: center;
+  font-size: 10pt;
+  font-style: italic;
+  color: #475569;
+  margin-top: 0.5rem;
+}
+
 .tiptap-editor .ProseMirror td, .tiptap-editor .ProseMirror th {
   border: 1px solid #cbd5e1;
   padding: 6px 10px;

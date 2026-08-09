@@ -34,7 +34,7 @@ function BubbleBtn({ onClick, active, title, children, variant }) {
 }
 
 export default function SelectionBubbleMenu({ editor }) {
-  if (!editor) return null;
+  if (!editor || editor.isDestroyed) return null;
 
   const activeLevel = getActiveHeadingLevel(editor);
 
@@ -48,9 +48,10 @@ export default function SelectionBubbleMenu({ editor }) {
         maxWidth: 'none',
       }}
       shouldShow={({ editor: ed }) => {
+        if (!ed || ed.isDestroyed) return false;
         const { empty } = ed.state.selection;
         if (empty) return false;
-        if (ed.isActive('image') || ed.isActive('math') || ed.isActive('table')) return false;
+        if (ed.isActive('image') || ed.isActive('imageGroup') || ed.isActive('math') || ed.isActive('table')) return false;
         return true;
       }}
       className="editor-bubble-menu"
