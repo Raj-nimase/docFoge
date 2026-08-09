@@ -1979,6 +1979,7 @@ body {
   word-break: break-word;
   max-width: 100%;
   white-space: pre-wrap;
+  counter-reset: doc-ch-num 0;
 }
 
 .tiptap-editor .ProseMirror h1 {
@@ -1989,6 +1990,12 @@ body {
   margin: 1.6em 0 .5em;
   line-height: 1.3;
   word-break: break-word;
+  counter-increment: doc-ch-num;
+  counter-reset: doc-sec-num 0 doc-subsec-num 0;
+}
+
+.tiptap-editor .ProseMirror h1[data-frontmatter="true"] {
+  counter-increment: none;
 }
 
 .tiptap-editor .ProseMirror h2 {
@@ -1998,6 +2005,14 @@ body {
   margin: 1.4em 0 .4em;
   line-height: 1.4;
   word-break: break-word;
+  counter-increment: doc-sec-num;
+  counter-reset: doc-subsec-num 0;
+}
+
+.tiptap-editor .ProseMirror h2::before {
+  content: counter(doc-ch-num) "." counter(doc-sec-num) " ";
+  font-weight: 700;
+  margin-right: 0.4em;
 }
 
 .tiptap-editor .ProseMirror h3 {
@@ -2006,6 +2021,13 @@ body {
   margin: 1.2em 0 .3em;
   line-height: 1.4;
   word-break: break-word;
+  counter-increment: doc-subsec-num;
+}
+
+.tiptap-editor .ProseMirror h3::before {
+  content: counter(doc-ch-num) "." counter(doc-sec-num) "." counter(doc-subsec-num) " ";
+  font-weight: 700;
+  margin-right: 0.4em;
 }
 
 .tiptap-editor .ProseMirror p {
@@ -2429,6 +2451,27 @@ body {
 .pdf-toolbar-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+/* "Link scroll" toggle — wider than the square zoom buttons (has a text label) */
+.pdf-link-btn {
+  width: auto;
+  padding: 0 10px;
+  gap: 5px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.pdf-link-btn--on {
+  background: var(--accent, #2d6a4f);
+  color: #fff;
+  border-color: var(--accent, #2d6a4f);
+}
+
+.pdf-link-btn--on:hover:not(:disabled) {
+  background: var(--accent, #2d6a4f);
+  color: #fff;
+  filter: brightness(1.08);
 }
 
 .pdf-toolbar-zoom-label {

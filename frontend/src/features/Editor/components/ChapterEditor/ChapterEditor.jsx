@@ -21,6 +21,7 @@ import {
   transformMathHtml,
 } from "@/hooks/useMathPaste/useMathPaste";
 import StarterKit from "@tiptap/starter-kit";
+import Heading from "@tiptap/extension-heading";
 import Underline from "@tiptap/extension-underline";
 import Placeholder from "@tiptap/extension-placeholder";
 import Table from "@tiptap/extension-table";
@@ -33,6 +34,7 @@ import useAcaStore from "@/contexts/projectStore/projectStore";
 import SelectionBubbleMenu from "@/features/Editor/components/SelectionBubbleMenu/SelectionBubbleMenu";
 import SlashCommandMenu from "@/features/Editor/components/SlashCommandMenu/SlashCommandMenu";
 import { mergeChaptersToSingleDoc, splitSingleDocToChapters, splitSingleDocToProject } from "./docUtils";
+import useScrollSyncStore from "@/features/Editor/scrollSync/scrollSyncStore";
 import CertificateCanvasEditor from "./CertificateCanvasEditor";
 import MathView from "./nodes/MathView";
 import ImageView from "./nodes/ImageView";
@@ -190,6 +192,45 @@ const HeadingCleaner = Extension.create({
                 changedRanges.push({ from: newStart, to: newEnd });
               });
             });
+          }
+
+          // Check for chapter H1 headings and top-level H3+ headings occurring before any H2 heading
+          let hasH2InChapter = false;
+          const levelModifications = [];
+
+          newState.doc.forEach((node, pos) => {
+            if (node.type.name === "heading") {
+              const currentLevel = node.attrs?.level || 1;
+              const text = (node.content?.firstChild?.text || "").trim();
+              const lowerText = text.toLowerCase();
+              const isFmHeading = ["abstract", "acknowledgement", "acknowledgments", "table of contents", "contents", "title page", "certificate"].some(
+                (fm) => lowerText === fm || lowerText.startsWith(`${fm}:`)
+              );
+              const isChapterHeading = currentLevel === 1 && !isFmHeading;
+
+              if (currentLevel === 1) {
+                if (isFmHeading) {
+                  if (!node.attrs?.isFrontMatter) {
+                    levelModifications.push({ pos, attrs: { ...node.attrs, isFrontMatter: true, isChapter: false } });
+                  }
+                } else {
+                  if (!node.attrs?.isChapter) {
+                    levelModifications.push({ pos, attrs: { ...node.attrs, isChapter: true, isFrontMatter: false } });
+                  }
+                  hasH2InChapter = false;
+                }
+              } else if (currentLevel === 2) {
+                hasH2InChapter = true;
+              }
+            }
+          });
+
+          if (levelModifications.length > 0) {
+            let tr = newState.tr;
+            for (const mod of levelModifications) {
+              tr.setNodeMarkup(mod.pos, null, mod.attrs);
+            }
+            return tr;
           }
 
           if (changedRanges.length === 0) return null;
@@ -618,10 +659,27 @@ function MultiChapterEditor() {
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        heading: { levels: [1, 2, 3, 4] },
+        heading: false,
         codeBlock: true,
         blockquote: true,
         history: true,
+      }),
+      Heading.configure({ levels: [1, 2, 3, 4] }).extend({
+        addAttributes() {
+          return {
+            ...this.parent?.(),
+            isChapter: {
+              default: false,
+              parseHTML: (element) => element.getAttribute("data-chapter") === "true",
+              renderHTML: (attributes) => (attributes.isChapter ? { "data-chapter": "true" } : {}),
+            },
+            isFrontMatter: {
+              default: false,
+              parseHTML: (element) => element.getAttribute("data-frontmatter") === "true",
+              renderHTML: (attributes) => (attributes.isFrontMatter ? { "data-frontmatter": "true" } : {}),
+            },
+          };
+        },
       }),
       Underline,
       Placeholder.configure({
@@ -778,6 +836,20 @@ function MultiChapterEditor() {
       if (useAcaStore.getState().editorInstance === editor) {
         useAcaStore.getState().setEditorInstance(null);
       }
+    };
+  }, [editor]);
+
+  // Register this pane's scroll container + editor DOM with the scroll-sync store
+  // so the useScrollSync controller (mounted in EditorPage) can mirror scrolling
+  // between the editor and the PDF preview.
+  useEffect(() => {
+    const sync = useScrollSyncStore.getState();
+    sync.setEditorScroller(scrollContainerRef.current || null);
+    sync.setEditorDom(editor?.view?.dom || null);
+    return () => {
+      const s = useScrollSyncStore.getState();
+      if (s.editorScroller === scrollContainerRef.current) s.setEditorScroller(null);
+      if (s.editorDom === editor?.view?.dom) s.setEditorDom(null);
     };
   }, [editor]);
 

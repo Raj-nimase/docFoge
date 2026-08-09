@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
+import useScrollSyncStore from '@/features/Editor/scrollSync/scrollSyncStore';
+import { collectEditorAnchors } from '@/features/Editor/scrollSync/anchors';
+import { extractPdfAnchors } from '@/features/Editor/scrollSync/extractPdfAnchors';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.mjs',
@@ -22,12 +25,23 @@ export default function PdfViewer({ blobUrl, stale = false }) {
   const stageRef      = useRef(null);
   const pdfDocRef     = useRef(null);
   const canvasRefs    = useRef([]);       // one ref per page canvas
+  const pageWrapRefs  = useRef([]);       // one ref per page wrapper (for anchor offsets)
   const renderTaskRef = useRef([]);       // in-flight render tasks, indexed by page
 
   const [totalPages, setTotalPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [zoom, setZoom]             = useState(DEFAULT_ZOOM);
   const [loadError, setLoadError]   = useState(null);
+  const [pagesRendered, setPagesRendered] = useState(0); // bumps once render loop finishes
+
+  // ── Scroll-sync wiring ────────────────────────────────────────────────────
+  const syncEnabled  = useScrollSyncStore(s => s.syncEnabled);
+  const toggleSync   = useScrollSyncStore(s => s.toggleSync);
+  const editorDom    = useScrollSyncStore(s => s.editorDom);
+  const setPdfScroller = useScrollSyncStore(s => s.setPdfScroller);
+  const setPdfAnchors  = useScrollSyncStore(s => s.setPdfAnchors);
+  const zoomRef        = useRef(zoom);
+  zoomRef.current = zoom;
 
   // ── Load document whenever blobUrl changes ───────────────────────────────
   useEffect(() => {
@@ -38,6 +52,7 @@ export default function PdfViewer({ blobUrl, stale = false }) {
     setTotalPages(0);
     setCurrentPage(1);
     canvasRefs.current = [];
+    pageWrapRefs.current = [];
     renderTaskRef.current = [];
 
     // Cancel any previous document
@@ -108,6 +123,7 @@ export default function PdfViewer({ blobUrl, stale = false }) {
           // skip bad pages silently
         }
       }
+      if (!cancelled) setPagesRendered(p => p + 1); // signal anchors can be extracted
     })();
 
     return () => {
@@ -116,6 +132,41 @@ export default function PdfViewer({ blobUrl, stale = false }) {
       renderTaskRef.current = [];
     };
   }, [zoom, totalPages]);
+
+  // ── Scroll-sync: register the PDF scroller ───────────────────────────────
+  useEffect(() => {
+    setPdfScroller(stageRef.current);
+    return () => {
+      if (useScrollSyncStore.getState().pdfScroller === stageRef.current) {
+        setPdfScroller(null);
+      }
+    };
+  }, [setPdfScroller]);
+
+  // ── Scroll-sync: (re)build PDF heading anchors after each render (which also
+  //    fires on zoom), or once the editor DOM registers. Sync-enabled only. ───
+  useEffect(() => {
+    if (!syncEnabled || totalPages === 0 || pagesRendered === 0) return;
+    if (!pdfDocRef.current || !stageRef.current || !editorDom) return;
+
+    let cancelled = false;
+    (async () => {
+      const { editorScroller } = useScrollSyncStore.getState();
+      const editorKeys = new Set(
+        collectEditorAnchors(editorScroller, editorDom).map(a => a.key)
+      );
+      const anchors = await extractPdfAnchors(
+        pdfDocRef.current,
+        stageRef.current,
+        pageWrapRefs.current,
+        zoomRef.current,
+        editorKeys,
+      );
+      if (!cancelled) setPdfAnchors(anchors);
+    })();
+
+    return () => { cancelled = true; };
+  }, [syncEnabled, totalPages, pagesRendered, editorDom, setPdfAnchors]);
 
   // ── Scroll spy — update current page indicator ──────────────────────────
   useEffect(() => {
@@ -198,6 +249,14 @@ export default function PdfViewer({ blobUrl, stale = false }) {
         </div>
 
         <div className="pdf-toolbar-group">
+          <button
+            className={`pdf-toolbar-btn pdf-link-btn ${syncEnabled ? 'pdf-link-btn--on' : ''}`}
+            onClick={toggleSync}
+            title={syncEnabled ? 'Scroll linked to editor — click to unlink' : 'Link scroll to editor'}
+            aria-pressed={syncEnabled}
+          >
+            <span aria-hidden="true">🔗</span> Link
+          </button>
           <button className="pdf-toolbar-btn" onClick={zoomOut}  disabled={zoom <= MIN_ZOOM} title="Zoom out (Ctrl −)">−</button>
           <button className="pdf-toolbar-zoom-label" onClick={zoomReset} title="Reset zoom (Ctrl 0)">
             {Math.round(zoom * 100)}%
@@ -209,7 +268,11 @@ export default function PdfViewer({ blobUrl, stale = false }) {
       {/* ── Scrollable stage — all pages stacked vertically ── */}
       <div className="pdf-stage" ref={stageRef}>
         {Array.from({ length: totalPages }, (_, i) => (
-          <div key={i} className="pdf-page-wrap">
+          <div
+            key={i}
+            className="pdf-page-wrap"
+            ref={el => { pageWrapRefs.current[i] = el; }}
+          >
             <canvas
               className="pdf-canvas"
               ref={el => { canvasRefs.current[i] = el; }}

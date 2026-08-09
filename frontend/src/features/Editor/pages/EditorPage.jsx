@@ -5,11 +5,16 @@ import LeftPanel from '@/features/Editor/components/LeftPanel/LeftPanel';
 import EditorPanel from '@/features/Editor/components/EditorPanel/EditorPanel';
 import PreviewPanel from '@/features/Editor/components/PreviewPanel/PreviewPanel';
 import useEditorTour from '@/hooks/useEditorTour/useEditorTour';
+import useScrollSync from '@/features/Editor/hooks/useScrollSync';
 import useAcaStore from '@/contexts/projectStore/projectStore';
 
 export default function Editor({ onGoToDashboard, onLogout }) {
   const { runTour } = useEditorTour({ autoStart: true });
   const [leftCollapsed, setLeftCollapsed] = useState(false);
+
+  // Editor ↔ PDF scroll sync controller (inert until both panes register &
+  // sync is enabled; naturally idle when the PreviewPanel is not mounted).
+  useScrollSync();
 
   // Detect PWA standalone mode
   const [isStandalone] = useState(() => 
