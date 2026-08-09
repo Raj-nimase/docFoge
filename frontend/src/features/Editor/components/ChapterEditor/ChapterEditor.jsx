@@ -194,33 +194,51 @@ const HeadingCleaner = Extension.create({
             });
           }
 
-          // Check for chapter H1 headings and top-level H3+ headings occurring before any H2 heading
-          let hasH2InChapter = false;
+          // Check for chapter H1 headings vs front matter H1 headings
+          let hasEncounteredChapter = false;
           const levelModifications = [];
+          const currentProj = useAcaStore.getState().getCurrentProject();
+          const hasFmConfigured = (currentProj?.frontMatter || []).some((fm) => !fm.auto);
+          const fmLabels = (currentProj?.frontMatter || []).map((fm) => (fm.label || fm.title || "").toLowerCase()).filter(Boolean);
+
+          const fmKeywords = [
+            "abstract", "acknowledgement", "acknowledgments", "declaration", "synopsis",
+            "table of contents", "contents", "title page", "certificate", "dedication",
+            "abbreviations", "notation", "list of figures", "list of tables", "list of symbols",
+            "foreword", "preface"
+          ];
 
           newState.doc.forEach((node, pos) => {
             if (node.type.name === "heading") {
               const currentLevel = node.attrs?.level || 1;
               const text = (node.content?.firstChild?.text || "").trim();
               const lowerText = text.toLowerCase();
-              const isFmHeading = ["abstract", "acknowledgement", "acknowledgments", "table of contents", "contents", "title page", "certificate"].some(
-                (fm) => lowerText === fm || lowerText.startsWith(`${fm}:`)
-              );
-              const isChapterHeading = currentLevel === 1 && !isFmHeading;
 
               if (currentLevel === 1) {
-                if (isFmHeading) {
-                  if (!node.attrs?.isFrontMatter) {
+                const startsWithChapter = /^CHAPTER\b/i.test(text);
+                const matchesProjectFm = fmLabels.some((lbl) => lowerText === lbl || lowerText.startsWith(`${lbl}:`) || lowerText.startsWith(`${lbl} /`));
+                const matchesFmKeyword = fmKeywords.some((fm) => lowerText === fm || lowerText.startsWith(`${fm}:`) || lowerText.startsWith(`${fm} /`));
+
+                let isFm = false;
+                if (startsWithChapter) {
+                  isFm = false;
+                  hasEncounteredChapter = true;
+                } else if (matchesProjectFm || matchesFmKeyword || (hasFmConfigured && !hasEncounteredChapter)) {
+                  isFm = true;
+                } else {
+                  isFm = false;
+                  hasEncounteredChapter = true;
+                }
+
+                if (isFm) {
+                  if (!node.attrs?.isFrontMatter || node.attrs?.isChapter) {
                     levelModifications.push({ pos, attrs: { ...node.attrs, isFrontMatter: true, isChapter: false } });
                   }
                 } else {
-                  if (!node.attrs?.isChapter) {
+                  if (!node.attrs?.isChapter || node.attrs?.isFrontMatter) {
                     levelModifications.push({ pos, attrs: { ...node.attrs, isChapter: true, isFrontMatter: false } });
                   }
-                  hasH2InChapter = false;
                 }
-              } else if (currentLevel === 2) {
-                hasH2InChapter = true;
               }
             }
           });
@@ -380,6 +398,12 @@ function FrontMatterSectionEditor({ section }) {
           return {
             ...this.parent?.(),
             caption: { default: null },
+            tableStyle: { default: "modern" },
+            align: { default: "center" },
+            inset: { default: "normal" },
+            borderColor: { default: null },
+            borderWidth: { default: null },
+            headerFill: { default: null },
           };
         },
         addNodeView() {
@@ -387,8 +411,24 @@ function FrontMatterSectionEditor({ section }) {
         },
       }),
       TableRow,
-      TableHeader,
-      TableCell,
+      TableHeader.extend({
+        addAttributes() {
+          return {
+            ...this.parent?.(),
+            fill: { default: null },
+            align: { default: null },
+          };
+        },
+      }),
+      TableCell.extend({
+        addAttributes() {
+          return {
+            ...this.parent?.(),
+            fill: { default: null },
+            align: { default: null },
+          };
+        },
+      }),
       MathExtension,
       MathPasteHandler,
       HeadingCleaner,
@@ -691,6 +731,12 @@ function MultiChapterEditor() {
           return {
             ...this.parent?.(),
             caption: { default: null },
+            tableStyle: { default: "modern" },
+            align: { default: "center" },
+            inset: { default: "normal" },
+            borderColor: { default: null },
+            borderWidth: { default: null },
+            headerFill: { default: null },
           };
         },
         addNodeView() {
@@ -698,8 +744,24 @@ function MultiChapterEditor() {
         },
       }),
       TableRow,
-      TableHeader,
-      TableCell,
+      TableHeader.extend({
+        addAttributes() {
+          return {
+            ...this.parent?.(),
+            fill: { default: null },
+            align: { default: null },
+          };
+        },
+      }),
+      TableCell.extend({
+        addAttributes() {
+          return {
+            ...this.parent?.(),
+            fill: { default: null },
+            align: { default: null },
+          };
+        },
+      }),
       MathExtension,
       MathPasteHandler,
       HeadingCleaner,
