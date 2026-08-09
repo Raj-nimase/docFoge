@@ -128,20 +128,7 @@ export default function TableBubbleMenu({ editor }) {
         </div>
       </div>
 
-      <div className="bubble-menu-divider" />
 
-      <div className="bubble-menu-section">
-        <span className="bubble-menu-label">Caption</span>
-        <input
-          type="text"
-          className="bubble-menu-select"
-          style={{ width: '130px' }}
-          placeholder="Table caption..."
-          value={getTableAttr('caption', '') || ''}
-          onChange={(e) => updateTableAttr({ caption: e.target.value })}
-          onClick={(e) => e.stopPropagation()}
-        />
-      </div>
 
       <div className="bubble-menu-divider" />
 

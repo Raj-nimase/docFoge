@@ -7,11 +7,22 @@ const TableView = (props) => {
   const align = node.attrs.align || "center";
   const inset = node.attrs.inset || "normal";
 
+  const alignItemStyle =
+    align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center";
+
   return (
     <NodeViewWrapper
       className={`table-view-wrapper ${selected ? "selected" : ""} table-style-${tableStyle} table-align-${align} table-inset-${inset}`}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: alignItemStyle,
+        margin: "1.5rem 0",
+      }}
     >
-      <NodeViewContent className="table-content-area" />
+      <table className="tiptap-table">
+        <NodeViewContent as="tbody" />
+      </table>
       <div className="table-caption-input-wrap">
         <input
           className="table-caption-input"
