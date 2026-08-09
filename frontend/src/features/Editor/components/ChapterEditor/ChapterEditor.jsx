@@ -39,7 +39,6 @@ import useScrollSyncStore from "@/features/Editor/scrollSync/scrollSyncStore";
 import CertificateCanvasEditor from "./CertificateCanvasEditor";
 import MathView from "./nodes/MathView";
 import ImageView from "./nodes/ImageView";
-import TableView from "./nodes/TableView";
 
 const MathExtension = Node.create({
   name: "math",
@@ -407,9 +406,6 @@ function FrontMatterSectionEditor({ section }) {
             headerFill: { default: null },
           };
         },
-        addNodeView() {
-          return ReactNodeViewRenderer(TableView);
-        },
       }),
       TableRow,
       TableHeader.extend({
@@ -740,9 +736,6 @@ function MultiChapterEditor() {
             borderWidth: { default: null },
             headerFill: { default: null },
           };
-        },
-        addNodeView() {
-          return ReactNodeViewRenderer(TableView);
         },
       }),
       TableRow,
