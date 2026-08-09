@@ -11,7 +11,7 @@ const ImageView = (props) => {
         <div className="image-caption-input-wrap">
           <input
             className="image-caption-input"
-            placeholder="Click to set figure name..."
+            placeholder="Set figure caption (e.g. Figure 1.1)..."
             value={caption}
             onChange={(e) => updateAttributes({ title: e.target.value })}
             onClick={(e) => e.stopPropagation()}

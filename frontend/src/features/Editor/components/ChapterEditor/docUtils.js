@@ -52,7 +52,7 @@ export function mergeChaptersToSingleDoc(frontMatter = [], chapters = []) {
     // Add H1 Heading for Front Matter Section
     mergedContent.push({
       type: "heading",
-      attrs: { level: 1 },
+      attrs: { level: 1, isFrontMatter: true, isChapter: false },
       content: [{ type: "text", text: (fm.label || fm.title || "Section").toUpperCase() }],
     });
 
@@ -75,7 +75,7 @@ export function mergeChaptersToSingleDoc(frontMatter = [], chapters = []) {
     // Add Level 1 Heading for Chapter Title
     mergedContent.push({
       type: "heading",
-      attrs: { level: 1 },
+      attrs: { level: 1, isChapter: true, isFrontMatter: false },
       content: [{ type: "text", text: `CHAPTER ${chNum}: ${cleanTitle}` }],
     });
 
