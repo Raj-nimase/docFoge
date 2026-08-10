@@ -704,7 +704,7 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
           const wrapAlign = placementMode === 'wrap-left' ? 'left' : 'right';
           if (wrapContentText.trim()) {
             const figCodeInWrap = `figure(\n  image("${filename}", width: 100%${fitTypst}),\n  ${captionArg}\n)`;
-            output += `#wrap-content(\n  box(width: ${widthVal}, ${figCodeInWrap}),\n  [\n${wrapContentText.trim()}\n  ],\n  align: ${wrapAlign},\n  column-gutter: 1.5em\n)\n\n`;
+            output += `#wrap-content(\n  box(width: ${widthVal}, block(width: 100%, ${figCodeInWrap})),\n  [\n${wrapContentText.trim()}\n  ],\n  align: ${wrapAlign},\n  column-gutter: 1.5em\n)\n\n`;
             k = nextIdx - 1;
           } else {
             const figCodeFallback = `#figure(\n  image("${filename}", width: ${widthVal}${fitTypst}),\n  ${captionArg}\n)`;
