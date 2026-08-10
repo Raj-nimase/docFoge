@@ -4,6 +4,7 @@ import { ImageOff, RefreshCw, Upload } from "lucide-react";
 
 const ImageView = (props) => {
   const { node, updateAttributes, selected, editor, getPos } = props;
+  const placement = node.attrs.placement || "none";
   const caption = node.attrs.title || "";
   const align = node.attrs.align || "center";
   const width = node.attrs.width || "80%";
@@ -24,7 +25,7 @@ const ImageView = (props) => {
     let active = true;
     setIsLoading(true);
     setHasError(false);
-
+    
     const img = new Image();
     img.onload = () => {
       if (active) {
@@ -51,6 +52,34 @@ const ImageView = (props) => {
 
   const objectFitStyle =
     fit === "cover" ? "cover" : fit === "stretch" ? "fill" : "contain";
+
+  let wrapperStyle = {
+    width: "100%",
+    margin: "1.5rem 0",
+  };
+  if (placement === "wrap-left") {
+    wrapperStyle = {
+      display: "block",
+      float: "left",
+      width: width,
+      margin: "0.5rem 1.5rem 0.5rem 0",
+    };
+  } else if (placement === "wrap-right") {
+    wrapperStyle = {
+      display: "block",
+      float: "right",
+      width: width,
+      margin: "0.5rem 0 0.5rem 1.5rem",
+    };
+  } else {
+    wrapperStyle = {
+      display: "flex",
+      flexDirection: "column",
+      alignItems: alignItemStyle,
+      width: "100%",
+      margin: "1.5rem 0",
+    };
+  }
 
   const focusAfterImage = () => {
     if (editor && typeof getPos === "function") {
@@ -99,13 +128,7 @@ const ImageView = (props) => {
   return (
     <NodeViewWrapper
       className={`image-view-wrapper image-align-${align}`}
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: alignItemStyle,
-        width: "100%",
-        margin: "1.5rem 0",
-      }}
+      style={wrapperStyle}
     >
       <div
         className="image-align-container"
@@ -113,7 +136,7 @@ const ImageView = (props) => {
           display: "inline-flex",
           flexDirection: "column",
           alignItems: "center",
-          width: width,
+          width: (placement === "wrap-left" || placement === "wrap-right") ? "100%" : width,
           maxWidth: "100%",
         }}
       >
