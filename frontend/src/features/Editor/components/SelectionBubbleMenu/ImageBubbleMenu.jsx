@@ -215,6 +215,8 @@ export default function ImageBubbleMenu({ editor }) {
             <option value="auto">Auto Float (Zero Gaps)</option>
             <option value="top">Top of Page</option>
             <option value="bottom">Bottom of Page</option>
+            <option value="wrap-left">Wrap Left</option>
+            <option value="wrap-right">Wrap Right</option>
           </select>
         </div>
 
