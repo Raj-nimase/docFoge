@@ -703,7 +703,8 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
           }
           const wrapAlign = placementMode === 'wrap-left' ? 'left' : 'right';
           if (wrapContentText.trim()) {
-            output += `#wrap-content(\n  ${figCode.trim()},\n  [\n${wrapContentText.trim()}\n  ],\n  align: ${wrapAlign},\n  column-gutter: 1.5em\n)\n\n`;
+            const figCodeInWrap = figCode.trim().replace(/^#/, '');
+            output += `#wrap-content(\n  ${figCodeInWrap},\n  [\n${wrapContentText.trim()}\n  ],\n  align: ${wrapAlign},\n  column-gutter: 1.5em\n)\n\n`;
             k = nextIdx - 1;
           } else {
             output += `${figCode}\n\n`;
@@ -913,7 +914,7 @@ function generateProjectTypst(project, imagePrefix = 'img') {
     }
   }
   if (needsWrapIt) {
-    typst += `#import "@preview/wrap-it:0.1.0": wrap-content\n`;
+    typst += `#import "@preview/wrap-it:0.1.1": wrap-content\n`;
   }
 
   // 1. Preamble & Document Setup

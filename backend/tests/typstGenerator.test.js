@@ -27,7 +27,7 @@ test('typstGenerator - does not import wrap-it when no wrapped images are presen
   };
 
   const result = generateProjectTypst(project, 'test');
-  assert.equal(result.typst.includes('#import "@preview/wrap-it:0.1.0": wrap-content'), false);
+  assert.equal(result.typst.includes('#import "@preview/wrap-it:0.1.1": wrap-content'), false);
 });
 
 test('typstGenerator - imports wrap-it when wrap-left image is present', () => {
@@ -55,7 +55,7 @@ test('typstGenerator - imports wrap-it when wrap-left image is present', () => {
   };
 
   const result = generateProjectTypst(project, 'test');
-  assert.equal(result.typst.includes('#import "@preview/wrap-it:0.1.0": wrap-content'), true);
+  assert.equal(result.typst.includes('#import "@preview/wrap-it:0.1.1": wrap-content'), true);
 });
 
 test('typstGenerator - convertTipTapToTypst wraps image with following paragraphs (wrap-left)', () => {
