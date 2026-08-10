@@ -375,7 +375,8 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
 
   let output = '';
 
-  for (const node of nodes) {
+  for (let k = 0; k < nodes.length; k++) {
+    const node = nodes[k];
     if (node.type === 'paragraph') {
       const content = convertTipTapToTypst(node.content, imagePrefix, headingShift, state, false);
       if (isTopLevel && content.trim()) {
@@ -678,7 +679,7 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
         const widthVal = node.attrs?.width || '80%';
         const fitVal = node.attrs?.fit || 'contain';
         const placementMode = node.attrs?.placement || 'none';
-        const placementArg = (placementMode && placementMode !== 'none') ? `, placement: ${placementMode}` : '';
+        const placementArg = (placementMode && placementMode !== 'none' && placementMode !== 'wrap-left' && placementMode !== 'wrap-right') ? `, placement: ${placementMode}` : '';
         const rawImageCaption = (node.attrs?.title || node.attrs?.alt || '').trim();
         const captionArg = rawImageCaption ? `caption: [${escapeTypst(rawImageCaption)}]` : `caption: []`;
 
@@ -689,7 +690,25 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
 
         const figCode = `#figure(\n  image("${filename}", width: ${widthVal}${fitTypst}),\n  ${captionArg}${placementArg}\n)`;
 
-        if (alignMode === 'left' || alignMode === 'right') {
+        if (placementMode === 'wrap-left' || placementMode === 'wrap-right') {
+          let wrapContentText = '';
+          let nextIdx = k + 1;
+          while (nextIdx < nodes.length && nodes[nextIdx].type === 'paragraph') {
+            const nextParaNode = nodes[nextIdx];
+            const content = convertTipTapToTypst([nextParaNode], imagePrefix, headingShift, state, false).trim();
+            if (content) {
+              wrapContentText += content + '\n\n';
+            }
+            nextIdx++;
+          }
+          const wrapAlign = placementMode === 'wrap-left' ? 'left' : 'right';
+          if (wrapContentText.trim()) {
+            output += `#wrap-content(\n  ${figCode.trim()},\n  [\n${wrapContentText.trim()}\n  ],\n  align: ${wrapAlign},\n  column-gutter: 1.5em\n)\n\n`;
+            k = nextIdx - 1;
+          } else {
+            output += `${figCode}\n\n`;
+          }
+        } else if (alignMode === 'left' || alignMode === 'right') {
           output += `#align(${alignMode})[\n  #box[\n    ${figCode}\n  ]\n]\n\n`;
         } else {
           output += `${figCode}\n\n`;
@@ -861,6 +880,40 @@ function generateProjectTypst(project, imagePrefix = 'img') {
       .join(', ');
   } else if (typeof authors === 'string' && authors.trim()) {
     authorList = escapeTypst(authors.trim());
+  }
+
+  // Check if we need wrap-it package
+  let needsWrapIt = false;
+  const hasWrappedImages = (nodes) => {
+    if (!nodes || !Array.isArray(nodes)) return false;
+    for (const n of nodes) {
+      if (n.type === 'image' && (n.attrs?.placement === 'wrap-left' || n.attrs?.placement === 'wrap-right')) {
+        return true;
+      }
+      if (n.content && hasWrappedImages(n.content)) return true;
+    }
+    return false;
+  };
+  if (Array.isArray(project.chapters)) {
+    for (const ch of project.chapters) {
+      let contentNodes = [];
+      if (ch.content && ch.content.content && Array.isArray(ch.content.content)) contentNodes = ch.content.content;
+      else if (ch.content && ch.content.body && Array.isArray(ch.content.body)) contentNodes = ch.content.body;
+      else if (Array.isArray(ch.content)) contentNodes = ch.content;
+      if (hasWrappedImages(contentNodes)) needsWrapIt = true;
+    }
+  }
+  if (Array.isArray(project.frontMatter)) {
+    for (const fm of project.frontMatter) {
+      let contentNodes = [];
+      if (fm.content && fm.content.content && Array.isArray(fm.content.content)) contentNodes = fm.content.content;
+      else if (fm.content && fm.content.body && Array.isArray(fm.content.body)) contentNodes = fm.content.body;
+      else if (Array.isArray(fm.content)) contentNodes = fm.content;
+      if (hasWrappedImages(contentNodes)) needsWrapIt = true;
+    }
+  }
+  if (needsWrapIt) {
+    typst += `#import "@preview/wrap-it:0.1.0": wrap-content\n`;
   }
 
   // 1. Preamble & Document Setup
