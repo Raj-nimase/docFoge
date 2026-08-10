@@ -119,9 +119,9 @@ test('typstGenerator - convertTipTapToTypst wraps image with following paragraph
   assert.equal(typstOutput.includes('Right wrapped paragraph.'), true);
 });
 
-test('typstGenerator - convertTipTapToTypst falls back to standard figure if no paragraphs follow wrapped image', () => {
+test('typstGenerator - convertTipTapToTypst falls back to aligned figure if no paragraphs follow wrapped image', () => {
   const state = { figCount: 0 };
-  const nodes = [
+  const nodesLeft = [
     {
       type: 'image',
       attrs: {
@@ -132,8 +132,24 @@ test('typstGenerator - convertTipTapToTypst falls back to standard figure if no 
     }
   ];
 
-  const typstOutput = convertTipTapToTypst(nodes, 'test_img', 0, state);
+  const typstOutputLeft = convertTipTapToTypst(nodesLeft, 'test_img', 0, state);
+  assert.equal(typstOutputLeft.includes('#wrap-content('), false);
+  assert.equal(typstOutputLeft.includes('#figure('), true);
+  assert.equal(typstOutputLeft.includes('#align(left)'), true);
 
-  assert.equal(typstOutput.includes('#wrap-content('), false);
-  assert.equal(typstOutput.includes('#figure('), true);
+  const nodesRight = [
+    {
+      type: 'image',
+      attrs: {
+        src: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        width: '40%',
+        placement: 'wrap-right'
+      }
+    }
+  ];
+
+  const typstOutputRight = convertTipTapToTypst(nodesRight, 'test_img', 0, state);
+  assert.equal(typstOutputRight.includes('#wrap-content('), false);
+  assert.equal(typstOutputRight.includes('#figure('), true);
+  assert.equal(typstOutputRight.includes('#align(right)'), true);
 });

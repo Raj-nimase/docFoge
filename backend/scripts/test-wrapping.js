@@ -41,7 +41,8 @@ async function main() {
                   type: 'text',
                   text: 'This is a sample paragraph that should wrap around the left-aligned image. ' +
                         'The Typst generator wraps this paragraph using the @preview/wrap-it package. ' +
-                        'We are verifying that the generated Typst syntax is valid and compiles cleanly.'
+                        'We are verifying that the generated Typst syntax is valid and compiles cleanly. ' +
+                        `[Run ID: ${Date.now()}]`
                 }
               ]
             }

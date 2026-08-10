@@ -707,7 +707,7 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
             output += `#wrap-content(\n  ${figCodeInWrap},\n  [\n${wrapContentText.trim()}\n  ],\n  align: ${wrapAlign},\n  column-gutter: 1.5em\n)\n\n`;
             k = nextIdx - 1;
           } else {
-            output += `${figCode}\n\n`;
+            output += `#align(${wrapAlign})[\n  #box[\n    ${figCode}\n  ]\n]\n\n`;
           }
         } else if (alignMode === 'left' || alignMode === 'right') {
           output += `#align(${alignMode})[\n  #box[\n    ${figCode}\n  ]\n]\n\n`;
