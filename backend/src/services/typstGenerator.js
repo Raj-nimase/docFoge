@@ -1,6 +1,8 @@
 
 const crypto = require('crypto');
 
+const MEANDER_PACKAGE = '@preview/meander:0.4.4';
+
 let imageCounter = 0;
 let extractedImages = [];
 
@@ -49,6 +51,22 @@ function stripAllPrefixes(text) {
     .replace(/^[A-Z]\.\s+/, '')
     .replace(/^[ivxIVX]+\.\s+/, '')
     .trim();
+}
+
+/** Build a Meander reflow block for wrap-left / wrap-right figure layout. */
+function buildMeanderWrapBlock(placedAnchor, wrapWidth, figCodeInWrap, wrapContentText) {
+  return `#pagebreak(weak: true)
+#meander.reflow({
+  import meander: *
+  opt.placement.spacing(both: 0.65em)
+  placed(${placedAnchor}, box(width: ${wrapWidth}, block(breakable: false, width: 100%, ${figCodeInWrap})))
+  container(margin: 1.5em)
+  content[
+${wrapContentText.trim()}
+  ]
+})
+#v(0.8em)
+`;
 }
 
 const TYPST_MATH_KEYWORDS = new Set([
@@ -368,10 +386,79 @@ function processTextNodeWithMath(text) {
 }
 
 /**
- * Core TipTap to Typst converter function
+ * Strips redundant 'Figure:' or 'Figure 2.1:' prefixes from user-provided caption text
+ */
+function cleanCaptionText(text) {
+  if (!text) return '';
+  return String(text).replace(/^(?:Figure|Fig|Table|Tbl)\s*(?:\d+(?:\.\d+)?)?\s*:\s*/i, '').trim();
+}
+
+/**
+ * Pre-passes TipTap AST to map Figure X.Y and Table X.Y to unique global labels fig-N and tbl-N
+ */
+function buildRefMaps(nodes) {
+  const figMap = {};
+  const tblMap = {};
+  if (!nodes || !Array.isArray(nodes)) return { figMap, tblMap };
+
+  let globalFig = 1;
+  let globalTbl = 1;
+  let chNum = 0;
+  let chFig = 1;
+  let chTbl = 1;
+
+  const traverse = (list) => {
+    if (!Array.isArray(list)) return;
+    list.forEach((node) => {
+      if (node.type === 'heading' && (node.attrs?.isChapter || node.attrs?.level === 1) && !node.attrs?.isFrontMatter) {
+        const headingText = (node.content || []).map((c) => c.text || '').join('').trim();
+        const m = headingText.match(/(?:Chapter\s*|Ch\.?\s*|^)(\d+)/i);
+        if (m && m[1]) {
+          chNum = parseInt(m[1], 10);
+        } else {
+          chNum++;
+        }
+        chFig = 1;
+        chTbl = 1;
+      } else if (node.type === 'table') {
+        const effectiveCh = chNum > 0 ? chNum : 1;
+        const keyFull = `table ${effectiveCh}.${chTbl}`;
+        tblMap[keyFull] = `tbl-${globalTbl}`;
+        tblMap[`table ${globalTbl}`] = `tbl-${globalTbl}`;
+        tblMap[`tbl-${globalTbl}`] = `tbl-${globalTbl}`;
+        globalTbl++;
+        chTbl++;
+      } else if (node.type === 'image' || node.type === 'imageGroup') {
+        const effectiveCh = chNum > 0 ? chNum : 1;
+        const keyFull = `figure ${effectiveCh}.${chFig}`;
+        figMap[keyFull] = `fig-${globalFig}`;
+        figMap[`figure ${globalFig}`] = `fig-${globalFig}`;
+        figMap[`fig-${globalFig}`] = `fig-${globalFig}`;
+        globalFig++;
+        chFig++;
+      }
+
+      if (node.content) {
+        traverse(node.content);
+      }
+    });
+  };
+
+  traverse(nodes);
+  return { figMap, tblMap };
+}
+
+/**
+ * Converts TipTap JSON node array to Typst document body markup
  */
 function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { lastOrderedEnd: 0, lastWasContinuation: false, chNum: 0, figCount: 0, tblCount: 0 }, isTopLevel = true) {
   if (!nodes || !Array.isArray(nodes)) return '';
+
+  if (isTopLevel && !state.figMap) {
+    const { figMap, tblMap } = buildRefMaps(nodes);
+    state.figMap = figMap;
+    state.tblMap = tblMap;
+  }
 
   let output = '';
 
@@ -402,8 +489,9 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
       
       if (level === 1 && !node.attrs?.isFrontMatter) {
         state.chNum = (state.chNum || 0) + 1;
-        state.figCount = 0;
-        state.tblCount = 0;
+        if (state.chNum > 1 && state.templateId !== 'ieee-paper') {
+          output += `#pagebreak()\n\n`;
+        }
       }
 
       output += `${'='.repeat(level)} ${headingContent}\n\n`;
@@ -647,10 +735,10 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
         state.tblCount = (state.tblCount || 0) + 1;
         const rawTableCaption = (node.attrs?.caption || node.attrs?.title || '').trim();
         const captionArg = rawTableCaption ? `caption: [${escapeTypst(rawTableCaption)}]` : `caption: []`;
-        const figCode = `#figure(\n${fullTableCode},\n  ${captionArg}\n)`;
+        const figCode = `#figure(\n${fullTableCode},\n  ${captionArg}\n) <tbl-${state.tblCount}>`;
 
         if (alignMode === 'left' || alignMode === 'right') {
-          output += `#align(${alignMode})[\n  #box[\n    ${figCode}\n  ]\n]\n\n`;
+          output += `#block(above: 1.5em, below: 1.5em, width: 100%)[#align(${alignMode})[\n  #box[\n    ${figCode}\n  ]\n]]\n\n`;
         } else {
           output += `${figCode}\n\n`;
         }
@@ -671,6 +759,13 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
     } else if (node.type === 'footnote') {
       const fnContent = convertTipTapToTypst(node.content, imagePrefix, headingShift, state, false).trim();
       output += `#footnote[${fnContent}]`;
+    } else if (node.type === 'reference') {
+      const refCode = (node.attrs?.refCode || node.attrs?.targetId || '').trim();
+      if (refCode) {
+        output += `@${refCode}`;
+      } else {
+        output += `${escapeTypst(node.attrs?.label || '')}`;
+      }
     } else if (node.type === 'image') {
       const filename = extractImageData(node.attrs?.src, imagePrefix);
       if (filename) {
@@ -680,15 +775,17 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
         const fitVal = node.attrs?.fit || 'contain';
         const placementMode = node.attrs?.placement || 'none';
         const placementArg = (placementMode && placementMode !== 'none' && placementMode !== 'wrap-left' && placementMode !== 'wrap-right') ? `, placement: ${placementMode}` : '';
-        const rawImageCaption = (node.attrs?.title || node.attrs?.alt || '').trim();
+        const rawImageCaption = cleanCaptionText(node.attrs?.title || node.attrs?.alt || '');
         const captionArg = rawImageCaption ? `caption: [${escapeTypst(rawImageCaption)}]` : `caption: []`;
 
         let fitTypst = '';
         if (fitVal === 'cover') fitTypst = ', fit: "cover"';
-        else if (fitVal === 'contain') fitTypst = ', fit: "contain"';
         else if (fitVal === 'stretch') fitTypst = ', fit: "stretch"';
+        // We omit fit: "contain" in Typst because height is auto (not specified here),
+        // and setting fit: "contain" with auto height prevents Typst from scaling the image
+        // to fill the specified width, causing it to shrink to its natural size.
 
-        const figCode = `#figure(\n  image("${filename}", width: ${widthVal}${fitTypst}),\n  ${captionArg}${placementArg}\n)`;
+        const figCode = `#figure(\n  image("${filename}", width: ${widthVal}${fitTypst}),\n  ${captionArg}${placementArg}\n) <fig-${state.figCount}>`;
 
         if (placementMode === 'wrap-left' || placementMode === 'wrap-right') {
           let wrapContentText = '';
@@ -702,16 +799,17 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
             nextIdx++;
           }
           const wrapAlign = placementMode === 'wrap-left' ? 'left' : 'right';
+          const placedAnchor = placementMode === 'wrap-left' ? 'top + left' : 'top + right';
           if (wrapContentText.trim()) {
-            const figCodeInWrap = `figure(\n  image("${filename}", width: 100%${fitTypst}),\n  ${captionArg}\n)`;
-            output += `#wrap-content(\n  box(width: ${widthVal}, block(width: 100%, ${figCodeInWrap})),\n  [\n${wrapContentText.trim()}\n  ],\n  align: ${wrapAlign},\n  column-gutter: 1.5em\n)\n\n`;
+            const figCodeInWrap = `figure(\n  image("${filename}", width: 100%${fitTypst}),\n  ${captionArg}\n) <fig-${state.figCount}>`;
+            output += buildMeanderWrapBlock(placedAnchor, widthVal, figCodeInWrap, wrapContentText);
             k = nextIdx - 1;
           } else {
-            const figCodeFallback = `#figure(\n  image("${filename}", width: ${widthVal}${fitTypst}),\n  ${captionArg}\n)`;
-            output += `#align(${wrapAlign})[\n  #box[\n    ${figCodeFallback}\n  ]\n]\n\n`;
+            const figCodeFallback = `#figure(\n  image("${filename}", width: ${widthVal}${fitTypst}),\n  ${captionArg}\n) <fig-${state.figCount}>`;
+            output += `#block(above: 1.5em, below: 1.5em, width: 100%)[#align(${wrapAlign})[\n  #box[\n    ${figCodeFallback}\n  ]\n]]\n\n`;
           }
         } else if (alignMode === 'left' || alignMode === 'right') {
-          output += `#align(${alignMode})[\n  #box[\n    ${figCode}\n  ]\n]\n\n`;
+          output += `#block(above: 1.5em, below: 1.5em, width: 100%)[#align(${alignMode})[\n  #box[\n    ${figCode}\n  ]\n]]\n\n`;
         } else {
           output += `${figCode}\n\n`;
         }
@@ -737,7 +835,7 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
 
       if (validImages.length > 0) {
         state.figCount = (state.figCount || 0) + 1;
-        const mainCaption = (node.attrs?.title || '').trim();
+        const mainCaption = cleanCaptionText(node.attrs?.title || '');
         const captionArg = mainCaption ? `caption: [${escapeTypst(mainCaption)}]` : `caption: []`;
         const boxHeight = cols === 2 ? '130pt' : cols === 4 ? '85pt' : '105pt';
 
@@ -746,11 +844,41 @@ function convertTipTapToTypst(nodes, imagePrefix, headingShift = 0, state = { la
           return `  [#align(center)[\n    #box(height: ${boxHeight})[#image("${img.filename}", width: 100%, height: 100%, fit: "contain")] \\\n    #v(3pt)\n    #text(size: 8pt, weight: "medium", fill: rgb("#334155"))[${captionText}]\n  ]]`;
         }).join(',\n');
 
-        const figCode = `#figure(\n  block(breakable: false)[\n    #grid(\n      columns: (${colFrs}),\n      gutter: 10pt,\n${gridItems}\n    )\n  ],\n  ${captionArg}${placementArg}\n)\n\n`;
+        const figCode = `#figure(\n  block(breakable: false)[\n    #grid(\n      columns: (${colFrs}),\n      gutter: 10pt,\n${gridItems}\n    )\n  ],\n  ${captionArg}${placementArg},\n  kind: image\n) <fig-${state.figCount}>\n\n`;
         output += figCode;
       }
+    } else if (node.type === 'reference') {
+      const refCode = node.attrs?.refCode || (node.attrs?.targetType === 'table' ? 'tbl-1' : 'fig-1');
+      output += `@${refCode}`;
     } else if (node.type === 'text') {
       let t = processTextNodeWithMath(node.text || '');
+
+      t = t.replace(/\\\[\\@Figure\s*(\d+(?:\.\d+)?)[^\]]*\\\]/gi, (match, num) => {
+        const key = `figure ${num}`.toLowerCase();
+        if (state.figMap && state.figMap[key]) {
+          return `@${state.figMap[key]}`;
+        }
+        const fallbackKey = Object.keys(state.figMap || {}).find(k => k.endsWith(num) || k.includes(num));
+        if (fallbackKey && state.figMap[fallbackKey]) {
+          return `@${state.figMap[fallbackKey]}`;
+        }
+        const safeNum = num.replace(/\D/g, '') || '1';
+        return `@fig-${safeNum}`;
+      });
+      t = t.replace(/\\\[\\@Table\s*(\d+(?:\.\d+)?)[^\]]*\\\]/gi, (match, num) => {
+        const key = `table ${num}`.toLowerCase();
+        if (state.tblMap && state.tblMap[key]) {
+          return `@${state.tblMap[key]}`;
+        }
+        const fallbackKey = Object.keys(state.tblMap || {}).find(k => k.endsWith(num) || k.includes(num));
+        if (fallbackKey && state.tblMap[fallbackKey]) {
+          return `@${state.tblMap[fallbackKey]}`;
+        }
+        const safeNum = num.replace(/\D/g, '') || '1';
+        return `@tbl-${safeNum}`;
+      });
+      t = t.replace(/\\\[\\@fig-(\d+)\\\]/gi, '@fig-$1');
+      t = t.replace(/\\\[\\@tbl-(\d+)\\\]/gi, '@tbl-$1');
       
       if (node.marks) {
         const hasCode = node.marks.find(m => m.type === 'code');
@@ -825,6 +953,72 @@ function normalizePageSize(size) {
 }
 
 /**
+ * Constructs a single, non-duplicated unified TipTap AST array from project chapters.
+ * Handles both single-combined document mode and multi-chapter mode seamlessly.
+ */
+function buildUnifiedDocNodes(project) {
+  if (!project || !Array.isArray(project.chapters) || project.chapters.length === 0) {
+    return [];
+  }
+
+  const getNodes = (ch) => {
+    if (ch?.content && ch.content.content && Array.isArray(ch.content.content)) {
+      return ch.content.content;
+    }
+    if (Array.isArray(ch?.content)) {
+      return ch.content;
+    }
+    return [];
+  };
+
+  const ch0Nodes = getNodes(project.chapters[0]);
+
+  // Check if first chapter nodes array already contains chapter headings for subsequent chapters
+  const isCombinedDoc =
+    project.chapters.length > 1 &&
+    ch0Nodes.some((n) => {
+      if (n.type === 'heading' && (n.attrs?.isChapter || n.attrs?.level === 1) && !n.attrs?.isFrontMatter) {
+        const headingText = (n.content || []).map((c) => c.text || '').join('').toLowerCase();
+        return project.chapters.slice(1).some((ch) => {
+          const cleanTitle = stripAllPrefixes(ch.title || '').toLowerCase();
+          return cleanTitle && headingText.includes(cleanTitle);
+        });
+      }
+      return false;
+    });
+
+  if (isCombinedDoc) {
+    return ch0Nodes;
+  }
+
+  const unified = [];
+  project.chapters.forEach((ch, idx) => {
+    const cleanTitle = stripAllPrefixes(ch.title || `Chapter ${idx + 1}`);
+    const cNodes = getNodes(ch);
+
+    let hasTitleHeading = false;
+    if (cNodes.length > 0 && cNodes[0].type === 'heading') {
+      const firstText = stripAllPrefixes((cNodes[0].content || []).map((n) => n.text || '').join('')).toLowerCase();
+      if (firstText === cleanTitle.toLowerCase()) {
+        hasTitleHeading = true;
+      }
+    }
+
+    if (!hasTitleHeading) {
+      unified.push({
+        type: 'heading',
+        attrs: { level: 1, isChapter: true },
+        content: [{ type: 'text', text: cleanTitle }],
+      });
+    }
+
+    unified.push(...cNodes);
+  });
+
+  return unified;
+}
+
+/**
  * Generates full Typst source from project metadata and content
  */
 function generateProjectTypst(project, imagePrefix = 'img') {
@@ -884,8 +1078,8 @@ function generateProjectTypst(project, imagePrefix = 'img') {
     authorList = escapeTypst(authors.trim());
   }
 
-  // Check if we need wrap-it package
-  let needsWrapIt = false;
+  // Meander reflow for wrap-left / wrap-right figure layouts
+  let needsMeander = false;
   const hasWrappedImages = (nodes) => {
     if (!nodes || !Array.isArray(nodes)) return false;
     for (const n of nodes) {
@@ -902,7 +1096,7 @@ function generateProjectTypst(project, imagePrefix = 'img') {
       if (ch.content && ch.content.content && Array.isArray(ch.content.content)) contentNodes = ch.content.content;
       else if (ch.content && ch.content.body && Array.isArray(ch.content.body)) contentNodes = ch.content.body;
       else if (Array.isArray(ch.content)) contentNodes = ch.content;
-      if (hasWrappedImages(contentNodes)) needsWrapIt = true;
+      if (hasWrappedImages(contentNodes)) needsMeander = true;
     }
   }
   if (Array.isArray(project.frontMatter)) {
@@ -911,11 +1105,11 @@ function generateProjectTypst(project, imagePrefix = 'img') {
       if (fm.content && fm.content.content && Array.isArray(fm.content.content)) contentNodes = fm.content.content;
       else if (fm.content && fm.content.body && Array.isArray(fm.content.body)) contentNodes = fm.content.body;
       else if (Array.isArray(fm.content)) contentNodes = fm.content;
-      if (hasWrappedImages(contentNodes)) needsWrapIt = true;
+      if (hasWrappedImages(contentNodes)) needsMeander = true;
     }
   }
-  if (needsWrapIt) {
-    typst += `#import "@preview/wrap-it:0.1.1": wrap-content\n`;
+  if (needsMeander) {
+    typst += `#import "${MEANDER_PACKAGE}"\n`;
   }
 
   // 1. Preamble & Document Setup
@@ -996,12 +1190,16 @@ function generateProjectTypst(project, imagePrefix = 'img') {
     typst += `#set text(size: ${effFontSize})\n`;
   }
 
-  // Double spacing for diploma-project-report (leading ~1.3em), else use user setting
+  // Line spacing: default 1.5 for diploma and all non-IEEE templates; IEEE defaults to 1.05; user override respected.
   let spacingNum = parseFloat(lineSpacing) || 1.5;
-  if (templateId === 'diploma-project-report') spacingNum = 2.0;
+  if (templateId === 'ieee-paper' && !project.metadata?.lineSpacing) {
+    spacingNum = 1.05;
+  }
   const leadingVal = (0.65 * spacingNum).toFixed(3);
   typst += `#set par(leading: ${leadingVal}em, spacing: 1.2em, justify: true)\n`;
-  typst += `#show figure: set block(breakable: true)\n`;
+  typst += `#show figure: set block(above: 1.5em, below: 1.5em, breakable: true)\n`;
+  typst += `#show figure.where(kind: table): set figure.caption(position: top)\n`;
+  typst += `#set figure(gap: 0.8em)\n`;
   typst += `#show figure.caption: it => {\n`;
   typst += `  if it.body == [] [\n`;
   typst += `    #it.supplement #context counter(figure.where(kind: it.kind)).display(it.numbering)\n`;
@@ -1011,11 +1209,6 @@ function generateProjectTypst(project, imagePrefix = 'img') {
   typst += `}\n\n`;
 
   if (enableChapterNumbers) {
-    typst += `#show heading.where(level: 1): it => {\n`;
-    typst += `  counter(figure.where(kind: table)).update(0)\n`;
-    typst += `  counter(figure.where(kind: image)).update(0)\n`;
-    typst += `  it\n`;
-    typst += `}\n\n`;
     typst += `#set figure(numbering: (..num) => {\n`;
     typst += `  let ch = counter(heading).get().at(0, default: 1)\n`;
     typst += `  let n = num.pos().at(0, default: 1)\n`;
@@ -1025,14 +1218,18 @@ function generateProjectTypst(project, imagePrefix = 'img') {
     typst += `#set figure(numbering: "1")\n\n`;
   }
 
+  const figResetCode = enableChapterNumbers ? `#counter(figure.where(kind: table)).update(0)\n  #counter(figure.where(kind: image)).update(0)\n  ` : '';
+
   // Heading Styles & Numbering per Template
   if (templateId === 'ieee-paper') {
     typst += `#set heading(numbering: "I.A.1.")\n\n`;
     typst += `
-#show heading.where(level: 1): it => block(
-  above: 1.5em, below: 0.8em,
-  align(center, text(size: 10pt, weight: "bold", smallcaps(it.body)))
-)
+#show heading.where(level: 1): it => [
+  ${figResetCode}#block(
+    above: 1.5em, below: 0.8em,
+    align(center, text(size: 10pt, weight: "bold", smallcaps(it.body)))
+  )
+]
 #show heading.where(level: 2): it => block(
   above: 1.2em, below: 0.6em,
   text(size: 10pt, style: "italic", it.body)
@@ -1047,40 +1244,44 @@ function generateProjectTypst(project, imagePrefix = 'img') {
       typst += `#set heading(numbering: "1.")\n`;
     }
     typst += `
-#show heading.where(level: 1): it => block(
-  above: 1.4em, below: 0.8em,
-  text(size: 16pt, weight: "bold", upper(it.body))
-)
+#show heading.where(level: 1): it => [
+  ${figResetCode}#block(
+    above: 1.4em, below: 0.8em,
+    text(size: 16pt, weight: "bold", upper(it.body))
+  )
+]
 #show heading.where(level: 2): it => block(
   above: 1.2em, below: 0.6em,
   text(size: 13pt, weight: "bold", it.body)
 )
 \n`;
   } else if (templateId === 'diploma-project-report') {
-    // MSBTE / Academic Report Layout (Chapter=14pt, Section/Subsection=12pt)
+    // MSBTE / Academic Report Layout (Chapter=14pt, Section=13pt, Subsection=12pt)
     if (enableChapterNumbers) {
       typst += `#set heading(numbering: "1.1")\n`;
     }
     typst += `
-#show heading.where(level: 1): it => block(
-  above: 2.8em, below: 1.8em, width: 100%,
-  {
-    if it.numbering != none {
-      let num = counter(heading).display()
-      align(center)[
-        #text(font: "${fontName}", size: 14pt, weight: "bold")[CHAPTER #num] \
-        #v(0.4em)
-        #text(font: "${fontName}", size: 14pt, weight: "bold")[#upper(it.body)]
-      ]
-    } else {
-      align(center)[
-        #text(font: "${fontName}", size: 14pt, weight: "bold")[#upper(it.body)]
-      ]
+#show heading.where(level: 1): it => [
+  ${figResetCode}#block(
+    above: 2.8em, below: 1.8em, width: 100%,
+    {
+      if it.numbering != none {
+        let num = counter(heading).display()
+        align(center)[
+          #text(font: "${fontName}", size: 14pt, weight: "bold")[CHAPTER #num] \
+          #v(0.4em)
+          #text(font: "${fontName}", size: 14pt, weight: "bold")[#upper(it.body)]
+        ]
+      } else {
+        align(center)[
+          #text(font: "${fontName}", size: 14pt, weight: "bold")[#upper(it.body)]
+        ]
+      }
     }
-  }
-)
+  )
+]
 #show heading.where(level: 2): it => block(
-  above: 1.8em, below: 0.8em,
+  above: 2.0em, below: 1.0em,
   {
     if it.numbering != none {
       let num = counter(heading).display()
@@ -1091,7 +1292,7 @@ function generateProjectTypst(project, imagePrefix = 'img') {
   }
 )
 #show heading.where(level: 3): it => block(
-  above: 1.4em, below: 0.6em,
+  above: 1.5em, below: 0.8em,
   {
     if it.numbering != none {
       let num = counter(heading).display()
@@ -1102,7 +1303,7 @@ function generateProjectTypst(project, imagePrefix = 'img') {
   }
 )
 #show heading.where(level: 4): it => block(
-  above: 1.2em, below: 0.5em,
+  above: 1.2em, below: 0.6em,
   {
     if it.numbering != none {
       let num = counter(heading).display()
@@ -1118,19 +1319,21 @@ function generateProjectTypst(project, imagePrefix = 'img') {
       typst += `#set heading(numbering: "1.1")\n`;
     }
     typst += `
-#show heading.where(level: 1): it => block(
-  above: 2.8em, below: 1.8em,
-  {
-    if it.numbering != none {
-      let num = counter(heading).display()
-      text(size: 20pt, weight: "bold")[CHAPTER #num: #upper(it.body)]
-    } else {
-      text(size: 20pt, weight: "bold", it.body)
+#show heading.where(level: 1): it => [
+  ${figResetCode}#block(
+    above: 2.8em, below: 1.8em,
+    {
+      if it.numbering != none {
+        let num = counter(heading).display()
+        text(size: 20pt, weight: "bold")[CHAPTER #num: #upper(it.body)]
+      } else {
+        text(size: 20pt, weight: "bold", it.body)
+      }
     }
-  }
-)
+  )
+]
 #show heading.where(level: 2): it => block(
-  above: 1.8em, below: 0.8em,
+  above: 2.0em, below: 1.0em,
   {
     if it.numbering != none {
       let num = counter(heading).display()
@@ -1141,7 +1344,7 @@ function generateProjectTypst(project, imagePrefix = 'img') {
   }
 )
 #show heading.where(level: 3): it => block(
-  above: 1.4em, below: 0.6em,
+  above: 1.5em, below: 0.8em,
   {
     if it.numbering != none {
       let num = counter(heading).display()
@@ -1152,7 +1355,7 @@ function generateProjectTypst(project, imagePrefix = 'img') {
   }
 )
 #show heading.where(level: 4): it => block(
-  above: 1.2em, below: 0.5em,
+  above: 1.2em, below: 0.6em,
   {
     if it.numbering != none {
       let num = counter(heading).display()
@@ -1380,52 +1583,22 @@ function generateProjectTypst(project, imagePrefix = 'img') {
   typst += `)\n\n`;
 
   if (Array.isArray(project.chapters) && project.chapters.length > 0) {
-    project.chapters.forEach((chapter, index) => {
-      const cleanTitle = stripAllPrefixes(chapter.title || 'Chapter');
+    const unifiedNodes = buildUnifiedDocNodes(project);
 
-      // Extract content nodes from TipTap JSON (object with .content array)
-      let contentNodes = [];
-      if (chapter.content && chapter.content.content && Array.isArray(chapter.content.content)) {
-        contentNodes = chapter.content.content;
-      } else if (Array.isArray(chapter.content)) {
-        contentNodes = chapter.content;
-      }
-      if (contentNodes.length > 0 && contentNodes[0].type === 'heading') {
-        const firstHeadingText = stripAllPrefixes(contentNodes[0].content?.map(n => n.text).join('') || '');
-        if (firstHeadingText.toLowerCase() === cleanTitle.toLowerCase()) {
-          contentNodes = contentNodes.slice(1);
-        }
-      }
-      
-      // Determine minimum heading level used in chapter
-      let minLevel = 99;
-      const findMinHeading = (nodes) => {
-        for (const n of nodes) {
-          if (n.type === 'heading' && n.attrs?.level < minLevel) {
-            minLevel = n.attrs.level;
-          }
-          if (n.content && Array.isArray(n.content)) findMinHeading(n.content);
-        }
-      };
-      findMinHeading(contentNodes);
-      
-      // We want the min level to map to 2 (since 1 is chapter title)
-      const shift = minLevel === 99 ? 0 : 2 - minLevel;
-      
-      // Emit level 1 heading with clean title — the #show rule auto-formats as "CHAPTER N: TITLE"
-      typst += `#heading(level: 1)[${escapeTypst(cleanTitle)}]\n\n`;
-      const chapterState = {
-        lastOrderedEnd: 0,
-        lastWasContinuation: false,
-        chNum: index + 1,
-        figCount: 0,
-        tblCount: 0,
-      };
-      typst += convertTipTapToTypst(contentNodes, imagePrefix, shift, chapterState);
-      if (index < project.chapters.length - 1) {
-        typst += `\n#pagebreak()\n\n`;
-      }
-    });
+    const { figMap, tblMap } = buildRefMaps(unifiedNodes);
+
+    const globalState = {
+      lastOrderedEnd: 0,
+      lastWasContinuation: false,
+      chNum: 0,
+      figCount: 0,
+      tblCount: 0,
+      figMap,
+      tblMap,
+      templateId,
+    };
+
+    typst += convertTipTapToTypst(unifiedNodes, imagePrefix, 0, globalState);
   }
 
   const audit = auditTypstSource(typst);

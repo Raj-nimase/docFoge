@@ -24,6 +24,7 @@ export default function TableBubbleMenu({ editor }) {
   const updateTableAttr = (attrs) => {
     if (!editor || editor.isDestroyed) return;
     editor.chain().focus().updateAttributes('table', attrs).run();
+    setRevision((n) => n + 1);
   };
 
   const currentStyle = getTableAttr('tableStyle', 'modern');

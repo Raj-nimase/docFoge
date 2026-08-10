@@ -12,8 +12,8 @@ import {
   nodeInputRule,
   nodePasteRule,
 } from "@tiptap/core";
-import { Plugin, PluginKey, TextSelection } from "prosemirror-state";
-import { Decoration, DecorationSet } from "prosemirror-view";
+import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import {
   extractLatex,
   isSingleFormula,
@@ -38,7 +38,9 @@ import SlashCommandMenu from "@/features/Editor/components/SlashCommandMenu/Slas
 import { mergeChaptersToSingleDoc, splitSingleDocToChapters, splitSingleDocToProject } from "./docUtils";
 import useScrollSyncStore from "@/features/Editor/scrollSync/scrollSyncStore";
 import CertificateCanvasEditor from "./CertificateCanvasEditor";
-import { MathView, ImageView, ImageGroupView, TableView } from "./nodes";
+import { MathView, ImageView, ImageGroupView, TableView, ReferenceNode } from "./nodes";
+import RefGhostExtension from "./nodes/RefGhostDecorationPlugin";
+import RefSuggestionMenu from "../RefSuggestionMenu/RefSuggestionMenu";
 
 const ImageGroupExtension = Node.create({
   name: "imageGroup",
@@ -546,6 +548,8 @@ function FrontMatterSectionEditor({ section }) {
       MathPasteHandler,
       HeadingCleaner,
       ImageGroupExtension,
+      ReferenceNode,
+      RefGhostExtension,
       Image.configure({
         inline: false,
         allowBase64: true,
@@ -622,6 +626,7 @@ function FrontMatterSectionEditor({ section }) {
         <div className="chapter-paper">
           {editor && <SelectionBubbleMenu editor={editor} />}
           {editor && <TableBubbleMenu editor={editor} />}
+          {editor && <RefSuggestionMenu editor={editor} />}
           <EditorContent editor={editor} className="tiptap-editor" />
         </div>
       </div>
@@ -1362,6 +1367,7 @@ function MultiChapterEditor() {
           {editor && !editor.isDestroyed && <TableBubbleMenu editor={editor} />}
           {editor && !editor.isDestroyed && <ImageBubbleMenu editor={editor} />}
           {editor && !editor.isDestroyed && <SlashCommandMenu editor={editor} />}
+          {editor && !editor.isDestroyed && <RefSuggestionMenu editor={editor} />}
           <EditorContent editor={editor} className="tiptap-editor" />
         </div>
       </div>

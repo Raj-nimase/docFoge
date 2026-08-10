@@ -40,7 +40,7 @@ async function main() {
                 {
                   type: 'text',
                   text: 'This is a sample paragraph that should wrap around the left-aligned image. ' +
-                        'The Typst generator wraps this paragraph using the @preview/wrap-it package. ' +
+                        'The Typst generator wraps this paragraph using the @preview/meander package. ' +
                         'We are verifying that the generated Typst syntax is valid and compiles cleanly. ' +
                         `[Run ID: ${Date.now()}]`
                 }
@@ -63,8 +63,8 @@ async function main() {
     throw new Error(`Typst safety check failed: ${reason}`);
   }
 
-  if (!typst.includes('wrap-content')) {
-    throw new Error('Generated Typst code does not contain wrap-content command.');
+  if (!typst.includes('meander.reflow')) {
+    throw new Error('Generated Typst code does not contain meander.reflow command.');
   }
 
   console.log('Generated Typst successfully. Checking image assets...');
@@ -103,7 +103,7 @@ async function main() {
     throw new Error(`Cleanup failed: Temporary .typ file still exists at ${typPath}`);
   }
 
-  console.log('Typst compilation with wrap-content successful!');
+  console.log('Typst compilation with meander.reflow successful!');
 }
 
 main().catch((err) => {

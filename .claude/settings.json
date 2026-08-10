@@ -1,13 +1,11 @@
 {
+  "hasCompletedOnboarding": true,
   "env": {
-    "ANTHROPIC_AUTH_TOKEN": "sk-e6ggGge85tu61YtaObSzk0Nlvu6HyNswmJAHVRCinHXuWE8t",
-    "ANTHROPIC_BASE_URL": "https://agentrouter.org/",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
-    "ANTHROPIC_MODEL" : "claude-opus-4-8"
-  },
-  "permissions": {
-    "allow": [],
-    "deny": []
-  },
-  "apiKeyHelper":  "echo 'sk-e6ggGge85tu61YtaObSzk0Nlvu6HyNswmJAHVRCinHXuWE8t'"
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:20128/v1",
+    "ANTHROPIC_AUTH_TOKEN": "sk-5d87897dfa3eac65-q4eeag-e5618158",
+    "ANTHROPIC_DEFAULT_FABLE_MODEL": "nvidia/deepseek-ai/deepseek-v4-flash",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "nvidia/deepseek-ai/deepseek-v4-pro",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "kr/claude-sonnet-4.5",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "cc/claude-haiku-4-5-20251001"
+  }
 }

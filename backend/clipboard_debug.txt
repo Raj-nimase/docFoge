@@ -1,0 +1,44 @@
+--- DEBUG CLIPBOARD HTML ---
+ORIGINAL:
+<html>
+<body>
+<!--StartFragment-->Google classifies Maps SDK for Android/iOS and Maps JavaScript API map loads under its pricing SKUs. The current Google documentation lists <strong data-start="1221" data-end="1273">10,000 free monthly requests for Essentials SKUs</strong>, while Map Tiles API has a separate 100,000-request free allowance<!--EndFragment-->
+</body>
+</html>
+
+TRANSFORMED:
+<!--StartFragment-->Google classifies Maps SDK for Android/iOS and Maps JavaScript API map loads under its pricing SKUs. The current Google documentation lists <strong data-start="1221" data-end="1273">10,000 free monthly requests for Essentials SKUs</strong>, while Map Tiles API has a separate 100,000-request free allowance<!--EndFragment-->
+----------------------------
+--- DEBUG CLIPBOARD HTML ---
+ORIGINAL:
+<html>
+<body>
+<!--StartFragment-->Google classifies Maps SDK for Android/iOS and Maps JavaScript API map loads under its pricing SKUs. The current Google documentation lists <strong data-start="1221" data-end="1273">10,000 free monthly requests for Essentials SKUs</strong>, while Map Tiles API has a separate 100,000-request free allowance<!--EndFragment-->
+</body>
+</html>
+
+TRANSFORMED:
+<!--StartFragment-->Google classifies Maps SDK for Android/iOS and Maps JavaScript API map loads under its pricing SKUs. The current Google documentation lists <strong data-start="1221" data-end="1273">10,000 free monthly requests for Essentials SKUs</strong>, while Map Tiles API has a separate 100,000-request free allowance<!--EndFragment-->
+----------------------------
+--- DEBUG CLIPBOARD HTML ---
+ORIGINAL:
+<html>
+<body>
+<!--StartFragment--><html><head></head><body><table><thead><tr><th>Feature</th><th align="right">Google API needed continuously?</th></tr></thead><tbody><tr><td>Display map</td><td align="right">No</td></tr><tr><td>Move bus marker</td><td align="right">No</td></tr><tr><td>Move student marker</td><td align="right">No</td></tr><tr><td>Display bus stops</td><td align="right">No</td></tr><tr><td>Draw route polyline from stored coordinates</td><td align="right">No</td></tr><tr><td>500 m detection</td><td align="right">No</td></tr><tr><td>Bus GPS tracking</td><td align="right">No</td></tr><tr><td>Store GPS history</td><td align="right">No</td></tr><tr><td>Geocode a new address</td><td align="right">Sometimes</td></tr><tr><td>Search places</td><td align="right">Sometimes</td></tr><tr><td>Calculate road route</td><td align="right">Yes</td></tr><tr><td>ETA based on traffic</td><td align="right">Potentially</td></tr><tr><td>Turn-by-turn navigation</td><td align="right">Yes</td></tr></tbody></table></body></html><!--EndFragment-->
+</body>
+</html>
+
+TRANSFORMED:
+<!--StartFragment--><table><thead><tr><th>Feature</th><th align="right">Google API needed continuously?</th></tr></thead><tbody><tr><td>Display map</td><td align="right">No</td></tr><tr><td>Move bus marker</td><td align="right">No</td></tr><tr><td>Move student marker</td><td align="right">No</td></tr><tr><td>Display bus stops</td><td align="right">No</td></tr><tr><td>Draw route polyline from stored coordinates</td><td align="right">No</td></tr><tr><td>500 m detection</td><td align="right">No</td></tr><tr><td>Bus GPS tracking</td><td align="right">No</td></tr><tr><td>Store GPS history</td><td align="right">No</td></tr><tr><td>Geocode a new address</td><td align="right">Sometimes</td></tr><tr><td>Search places</td><td align="right">Sometimes</td></tr><tr><td>Calculate road route</td><td align="right">Yes</td></tr><tr><td>ETA based on traffic</td><td align="right">Potentially</td></tr><tr><td>Turn-by-turn navigation</td><td align="right">Yes</td></tr></tbody></table>
+----------------------------
+--- DEBUG CLIPBOARD HTML ---
+ORIGINAL:
+<html>
+<body>
+<!--StartFragment--><html><head></head><body><table><thead><tr><th>Feature</th><th align="right">Google API needed continuously?</th></tr></thead><tbody><tr><td>Display map</td><td align="right">No</td></tr><tr><td>Move bus marker</td><td align="right">No</td></tr><tr><td>Move student marker</td><td align="right">No</td></tr><tr><td>Display bus stops</td><td align="right">No</td></tr><tr><td>Draw route polyline from stored coordinates</td><td align="right">No</td></tr><tr><td>500 m detection</td><td align="right">No</td></tr><tr><td>Bus GPS tracking</td><td align="right">No</td></tr><tr><td>Store GPS history</td><td align="right">No</td></tr><tr><td>Geocode a new address</td><td align="right">Sometimes</td></tr><tr><td>Search places</td><td align="right">Sometimes</td></tr><tr><td>Calculate road route</td><td align="right">Yes</td></tr><tr><td>ETA based on traffic</td><td align="right">Potentially</td></tr><tr><td>Turn-by-turn navigation</td><td align="right">Yes</td></tr></tbody></table></body></html><!--EndFragment-->
+</body>
+</html>
+
+TRANSFORMED:
+<!--StartFragment--><table><thead><tr><th>Feature</th><th align="right">Google API needed continuously?</th></tr></thead><tbody><tr><td>Display map</td><td align="right">No</td></tr><tr><td>Move bus marker</td><td align="right">No</td></tr><tr><td>Move student marker</td><td align="right">No</td></tr><tr><td>Display bus stops</td><td align="right">No</td></tr><tr><td>Draw route polyline from stored coordinates</td><td align="right">No</td></tr><tr><td>500 m detection</td><td align="right">No</td></tr><tr><td>Bus GPS tracking</td><td align="right">No</td></tr><tr><td>Store GPS history</td><td align="right">No</td></tr><tr><td>Geocode a new address</td><td align="right">Sometimes</td></tr><tr><td>Search places</td><td align="right">Sometimes</td></tr><tr><td>Calculate road route</td><td align="right">Yes</td></tr><tr><td>ETA based on traffic</td><td align="right">Potentially</td></tr><tr><td>Turn-by-turn navigation</td><td align="right">Yes</td></tr></tbody></table>
+----------------------------
